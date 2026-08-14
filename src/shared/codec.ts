@@ -1,0 +1,113 @@
+import { deflateSync, Inflate } from "fflate";
+import { z } from "zod";
+import { fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
+
+export const CURRENT_PAYLOAD_VERSION = "2" as const;
+export const MAX_PAYLOAD_LENGTH = 7_800;
+export const MAX_SCRIPT_LENGTH = 32_000;
+const MAX_DECOMPRESSED_LENGTH = 64_000;
+const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
+
+const sealedSecretSchema = z.record(
+  z.string().regex(SECRET_NAME, "Secret names must look like environment variables."),
+  z.string().min(1).max(2_048),
+);
+
+export const envelopeSchema = z
+  .object({
+    s: z.string().min(1).max(MAX_SCRIPT_LENGTH),
+    i: z.literal(true).optional(),
+    k: sealedSecretSchema.optional(),
+  })
+  .strict();
+
+export type Envelope = z.infer<typeof envelopeSchema>;
+export type PayloadVersion = "1" | "2";
+
+export type DecodedPayload = {
+  version: PayloadVersion;
+  envelope: Envelope;
+};
+
+function inflateWithLimit(compressed: Uint8Array): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  const inflate = new Inflate((chunk) => {
+    length += chunk.byteLength;
+    if (length > MAX_DECOMPRESSED_LENGTH) {
+      throw new Error("The decoded payload is too large.");
+    }
+    chunks.push(chunk);
+  });
+
+  for (let offset = 0; offset < compressed.byteLength; offset += 256) {
+    const end = Math.min(offset + 256, compressed.byteLength);
+    inflate.push(compressed.subarray(offset, end), end === compressed.byteLength);
+  }
+
+  const result = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
+
+export function encodePayload(
+  input: Envelope,
+  version: PayloadVersion = CURRENT_PAYLOAD_VERSION,
+): string {
+  const envelope = envelopeSchema.parse(input);
+  const json = JSON.stringify(envelope);
+  const compressed = deflateSync(utf8(json), { level: 9 });
+  const payload = `${version}${toBase64Url(compressed)}`;
+
+  if (payload.length > MAX_PAYLOAD_LENGTH) {
+    throw new Error(
+      `The encoded payload is ${payload.length.toLocaleString()} characters; the limit is ${MAX_PAYLOAD_LENGTH.toLocaleString()}.`,
+    );
+  }
+
+  return payload;
+}
+
+export function decodePayload(payload: string): DecodedPayload {
+  if (payload.length < 2 || payload.length > MAX_PAYLOAD_LENGTH) {
+    throw new Error("The payload length is invalid.");
+  }
+
+  const version = payload[0];
+  if (version !== "1" && version !== "2") {
+    throw new Error(`Unsupported payload version: ${version ?? "missing"}.`);
+  }
+
+  try {
+    const compressed = fromBase64Url(payload.slice(1));
+    const json = text(inflateWithLimit(compressed));
+    return { version, envelope: envelopeSchema.parse(JSON.parse(json)) };
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Unsupported payload version")) {
+      throw error;
+    }
+    throw new Error("The smartlink payload is invalid or corrupted.", { cause: error });
+  }
+}
+
+export function payloadFromInput(input: string): string {
+  const trimmed = input.trim();
+  if (/^[12][A-Za-z0-9_-]+$/u.test(trimmed)) {
+    return trimmed;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const match = url.pathname.match(/\/r\/([^/]+)$/u) ?? url.pathname.match(/\/d\/([^/]+)$/u);
+    if (!match?.[1]) {
+      throw new Error("missing payload path");
+    }
+    return match[1];
+  } catch (error) {
+    throw new Error("Expected a smartlink URL or encoded payload.", { cause: error });
+  }
+}

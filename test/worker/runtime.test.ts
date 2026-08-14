@@ -1,0 +1,125 @@
+import { beforeAll, describe, expect, it } from "vitest";
+import { createSmartlink } from "../../src/cli/build.js";
+import { encodePayload } from "../../src/shared/codec.js";
+import { generateKeyPair, sealSecret } from "../../src/shared/seal.js";
+import worker from "../../src/worker/index.js";
+import { validateWorkerScript } from "../../src/worker/sandbox.js";
+
+const origin = "https://runtime.example";
+let pair: Awaited<ReturnType<typeof generateKeyPair>>;
+
+beforeAll(async () => {
+  pair = await generateKeyPair(1);
+});
+
+function testEnv() {
+  return {
+    ACTIVE_KEY_ID: "1" as const,
+    LANDING_URL: "https://smartlinks-coral.vercel.app" as const,
+    PRIVATE_KEY_1: pair.privateKeySecret,
+  };
+}
+
+describe("Worker routes", () => {
+  it("serves health metadata and the active public key", async () => {
+    const health = await worker.fetch(new Request(origin), testEnv());
+    expect(health.status).toBe(200);
+    await expect(health.json()).resolves.toMatchObject({
+      status: "ok",
+      currentPayloadVersion: "2",
+    });
+
+    const response = await worker.fetch(new Request(`${origin}/pk`), testEnv());
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ keyId: 1, publicKey: pair.publicKey });
+  });
+
+  it("executes a CLI-built link with params and sealed secrets", async () => {
+    const created = await createSmartlink({
+      source: `return { status: 201, headers: { "x-runtime": "quickjs" }, body: \`\${ctx.params.name}:\${ctx.secrets.TOKEN}\` }`,
+      service: origin,
+      secrets: { TOKEN: "sealed-value" },
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(`${created.link}?name=Jonas`), testEnv());
+
+    expect(response.status).toBe(201);
+    expect(response.headers.get("x-runtime")).toBe("quickjs");
+    await expect(response.text()).resolves.toBe("Jonas:sealed-value");
+  });
+
+  it("supports legacy version 1 links", async () => {
+    const payload = encodePayload({ s: 'return { body: "legacy" }' }, "1");
+    const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());
+    await expect(response.text()).resolves.toBe("legacy");
+  });
+
+  it("requires and processes an opt-in interstitial", async () => {
+    const created = await createSmartlink({
+      source: 'return { body: "confirmed" }',
+      service: origin,
+      interstitial: true,
+      validate: validateWorkerScript,
+    });
+    const review = await worker.fetch(new Request(created.link), testEnv());
+    expect(review.headers.get("content-type")).toContain("text/html");
+    await expect(review.text()).resolves.toContain("Review before running");
+
+    const execution = await worker.fetch(
+      new Request(`${created.link}?__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    await expect(execution.text()).resolves.toBe("confirmed");
+  });
+
+  it("never executes preview or prefetch requests", async () => {
+    const payload = encodePayload({ s: "this is not valid JavaScript" }, "1");
+    const response = await worker.fetch(
+      new Request(`${origin}/r/${payload}`, {
+        headers: { "user-agent": "Slackbot-LinkExpanding" },
+      }),
+      testEnv(),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toContain("Preview requests never execute it");
+
+    const head = await worker.fetch(
+      new Request(`${origin}/r/${payload}`, { method: "HEAD" }),
+      testEnv(),
+    );
+    expect(head.status).toBe(200);
+    await expect(head.text()).resolves.toBe("");
+  });
+
+  it("provides a non-executing decoder page", async () => {
+    const created = await createSmartlink({
+      source: 'return { body: "decoded" }',
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.decoder), testEnv());
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toContain("Decoded smartlink");
+  });
+
+  it("rejects a sealed blob copied to another script", async () => {
+    const original = "async()=>({body:'original'})";
+    const blob = await sealSecret("secret", original, pair);
+    const payload = encodePayload({ s: "async()=>({body:'changed'})", k: { TOKEN: blob } });
+    const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Sealed secret TOKEN could not be decrypted.",
+    });
+  });
+
+  it("returns bounded errors for malformed links and missing routes", async () => {
+    const malformed = await worker.fetch(new Request(`${origin}/r/2broken`), testEnv());
+    expect(malformed.status).toBe(400);
+
+    const missing = await worker.fetch(new Request(`${origin}/unknown`), testEnv());
+    expect(missing.status).toBe(404);
+  });
+});

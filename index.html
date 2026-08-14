@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Turn small JavaScript programs into URLs and run them in an isolated Cloudflare Worker."
+    />
+    <meta name="theme-color" content="#000000" />
+    <meta property="og:title" content="Smartlinks" />
+    <meta
+      property="og:description"
+      content="A CLI and runtime for turning small JavaScript programs into URLs."
+    />
+    <meta property="og:type" content="website" />
+    <title>Smartlinks</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">Smartlinks <span>[preview]</span></a>
+      <nav aria-label="Primary navigation">
+        <a class="active" href="#overview">Overview</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/jonaslsaa/smartlinks">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section id="overview" aria-labelledby="title">
+        <h1 id="title">Smartlinks</h1>
+        <p class="lead">
+          Smartlinks is a CLI and runtime for turning small JavaScript programs into URLs.
+        </p>
+        <p>
+          The link is the deployment. Query parameters are its inputs, and the script’s
+          return value becomes the response. There are no accounts and nothing is stored.
+        </p>
+      </section>
+
+      <section id="install" aria-labelledby="install-title">
+        <h2 id="install-title">Start Here</h2>
+        <p>Install the CLI and build a link:</p>
+        <pre><code>npm install -g github:jonaslsaa/smartlinks
+smartlinks build script.js</code></pre>
+        <p>
+          Add <code>--secret TOKEN</code> to encrypt a secret for the exact script before
+          putting it in the URL.
+        </p>
+      </section>
+
+      <section aria-labelledby="runtime-title">
+        <h2 id="runtime-title">Runtime</h2>
+        <ul>
+          <li>The script receives params, headers, secrets, and a guarded fetch function.</li>
+          <li>The CLI compresses the source and seals secrets to the service public key.</li>
+          <li>A fresh QuickJS sandbox runs the script inside a Cloudflare Worker.</li>
+        </ul>
+        <p class="note">
+          Smartlinks are immutable, and anyone with the link can run them. Use scoped,
+          revocable credentials.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <span>Source: <a href="https://github.com/jonaslsaa/smartlinks">GitHub</a></span>
+    </footer>
+  </body>
+</html>

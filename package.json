@@ -1,0 +1,65 @@
+{
+  "name": "smartlinks",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn small JavaScript programs into self-contained, executable URLs.",
+  "type": "module",
+  "bin": {
+    "smartlinks": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.18"
+  },
+  "overrides": {
+    "esbuild": "0.28.2",
+    "vite": "7.3.6",
+    "workerd": "1.20260814.1"
+  },
+  "scripts": {
+    "build": "tsup",
+    "check": "npm run format:check && npm run typecheck && npm test && npm run worker:types:check && npm run worker:dry-run",
+    "dev": "wrangler dev",
+    "format": "biome check --write .",
+    "format:check": "biome check .",
+    "prepack": "npm run build",
+    "test": "npm run test:unit && npm run test:worker",
+    "test:cli": "node scripts/cli-smoke.mjs",
+    "test:unit": "vitest run --config vitest.config.ts",
+    "test:worker": "vitest run --config vitest.worker.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
+    "worker:dry-run": "wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "worker:startup": "wrangler check startup",
+    "worker:types": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false wrangler types",
+    "worker:types:check": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false wrangler types --check"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0",
+    "@hpke/core": "^1.9.0",
+    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
+    "acorn": "^8.15.0",
+    "astring": "^1.9.0",
+    "clipboardy": "^4.0.0",
+    "commander": "^12.1.0",
+    "fflate": "^0.8.2",
+    "ipaddr.js": "^2.2.0",
+    "quickjs-emscripten-core": "^0.32.0",
+    "terser": "^5.43.1",
+    "undici": "^6.28.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "@cloudflare/vitest-pool-workers": "0.21.3",
+    "@cloudflare/workers-types": "5.20260814.1",
+    "@types/node": "20.19.33",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.10",
+    "wrangler": "4.123.0"
+  }
+}

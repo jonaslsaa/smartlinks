@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  distribution:
+    name: Distribution (Node 18.18)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.18.2
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Verify committed CLI bundle
+        run: git diff --exit-code -- dist
+      - name: Smoke-test secret-bearing CLI build
+        run: npm run test:cli
+
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check

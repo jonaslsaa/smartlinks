@@ -23,7 +23,9 @@ be fixed, anyone with a link can run it, etc.).
 
 ## Decisions already made (do not relitigate)
 
-1. **Platform**: Cloudflare Worker, free tier. One worker, no storage bindings.
+1. **Platform**: Cloudflare Worker for link execution, free tier. One worker,
+   no storage bindings. The public landing page is a static site hosted on
+   Vercel.
 2. **No `eval`**: Workers forbid it, and we don't want user code in our isolate
    anyway. Execute scripts in a **QuickJS-in-WASM interpreter** (use
    `quickjs-emscripten`, or `@sebastianwessel/quickjs` if it keeps things
@@ -111,16 +113,16 @@ Host↔guest boundary passes plain JSON-able values only.
 
 | Route | Behavior |
 |---|---|
-| `GET /` | Landing page (see below) |
+| `GET /` | Minimal service metadata/health response |
 | `ALL /r/<payload>` | Runner: bot check → interstitial check → decode → decrypt secrets (verify script-hash AAD) → sandbox → map return value to response |
 | `GET /d/<payload>` | Decoder: pretty-printed script source + envelope metadata, "audit before you click" page |
 | `GET /pk` | Current public key + key ID (JSON) — the CLI uses this to seal |
 
-## Landing page (`/`)
+## Landing page
 
-A super simple static HTML page served inline from the worker — no framework,
-no build step. Content: one-paragraph explanation, a copy-pasteable CLI
-install + usage example, an example link to try, and the honest downsides
+A super simple static HTML page hosted on Vercel from this repository — no
+framework or build step. Content: one-paragraph explanation, a copy-pasteable
+CLI install + usage example, an example link to try, and the honest downsides
 list (immutable links, anyone-with-link-can-run, best-effort hobby service).
 That's all. Authoring happens entirely in the CLI.
 
@@ -159,7 +161,7 @@ baked-in default domain.
    value mapping. Test: script can't reach host globals; private-IP fetch is
    rejected.
 5. `src/bots.ts` — preview/prefetch detection per decision #7.
-6. `src/worker/index.ts` — routes, interstitial flow, inline landing page.
+6. `src/worker/index.ts` — runner routes and interstitial flow.
 7. `src/cli/` — the CLI (`build` / `decode` / `run`), sharing `src/shared/`
    codec, seal, and sandbox modules with the worker. Round-trip test: link
    built by the CLI executes correctly in the worker.
@@ -184,8 +186,9 @@ user, non-JS languages, editing existing links (immutability is the model).
 - **CLI distribution**: not published to npm in v1; installed from this repo
   (`npm install -g .` or `npx` from a git checkout). Publishing is a later
   decision.
-- **Free-plan CPU (10 ms)**: expected fine for QuickJS + tiny scripts; if
-  exceeded in practice, upgrading to Workers Paid ($5/mo) is the accepted fix,
-  not re-architecting.
+- **Workers CPU allowance**: external latency and local startup samples are not CPU-time
+  measurements, and the deterministic QuickJS interrupt count is not calibrated to CPU cycles.
+  Validate the deployed runtime with Cloudflare's CPU metrics. If the chosen plan is too tight
+  in practice, upgrading is the accepted fix, not re-architecting.
 - Builder "test run" button: nice-to-have; skipping it in v1 is fine (build
   the link, click it).
