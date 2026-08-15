@@ -137,7 +137,8 @@ function validateBrowserBoundary(request: IncomingMessage, origin: string): void
   if (request.headers.origin !== undefined && request.headers.origin !== origin) {
     throw new ServeRequestError(403, "Cross-origin requests are not allowed.");
   }
-  if (request.headers["sec-fetch-site"] === "cross-site") {
+  const fetchSite = request.headers["sec-fetch-site"];
+  if (fetchSite !== undefined && fetchSite !== "none" && fetchSite !== "same-origin") {
     throw new ServeRequestError(403, "Cross-site requests are not allowed.");
   }
 }

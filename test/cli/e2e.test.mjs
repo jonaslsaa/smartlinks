@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -108,6 +108,23 @@ async function stopServe(server) {
   const stopped = new Promise((resolve) => server.child.once("exit", resolve));
   server.child.kill("SIGTERM");
   await stopped;
+}
+
+async function requestWithHeaders(url, headers) {
+  return new Promise((resolve, reject) => {
+    const request = httpRequest(url, { headers }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.once("end", () => {
+        resolve({
+          body: Buffer.concat(chunks).toString("utf8"),
+          status: response.statusCode,
+        });
+      });
+    });
+    request.once("error", reject);
+    request.end();
+  });
 }
 
 test("the built CLI exposes its version and public subcommands", async () => {
@@ -359,6 +376,19 @@ return {
       });
       assert.equal(crossSite.status, 403);
       assert.match(await crossSite.text(), /Cross-origin requests are not allowed/u);
+
+      for (const fetchSite of ["same-site", "cross-site"]) {
+        const blocked = await requestWithHeaders(server.origin, {
+          accept: "text/html",
+          "sec-fetch-site": fetchSite,
+        });
+        assert.equal(blocked.status, 403, fetchSite);
+        assert.match(blocked.body, /Cross-site requests are not allowed/u, fetchSite);
+      }
+
+      const wrongHost = await requestWithHeaders(server.origin, { host: "attacker.example" });
+      assert.equal(wrongHost.status, 400);
+      assert.match(wrongHost.body, /Host header does not match/u);
 
       await writeFile(script, 'const value: number = "wrong";\nreturn { body: value };\n');
       const typeError = await fetch(server.origin, { headers: { accept: "text/html" } });
