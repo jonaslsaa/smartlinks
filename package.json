@@ -1,7 +1,6 @@
 {
-  "name": "smartlinks",
+  "name": "@jonaslsa/smartlinks",
   "version": "0.1.0",
-  "private": true,
   "description": "Turn small JavaScript programs into self-contained, executable URLs.",
   "type": "module",
   "bin": {
@@ -11,6 +10,14 @@
     "dist",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jonaslsaa/smartlinks.git"
+  },
+  "homepage": "https://sl.jonaslsa.com",
   "engines": {
     "node": ">=18.18"
   },
