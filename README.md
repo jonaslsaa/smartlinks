@@ -97,12 +97,18 @@ program. Only ciphertext and a key ID enter the URL.
 
 ```sh
 export GITHUB_TOKEN=github_pat_…
-smartlinks build examples/github-workflow-dispatch.js --secret GITHUB_TOKEN --copy
+smartlinks build examples/github-workflow-dispatch.js --secret GITHUB_TOKEN --expires 7d --copy
 ```
 
 The private key stays in the Cloudflare Worker. This keeps a secret out of the visible and
 decoded link, but it does not make the link private: anyone holding the complete URL can run
-the program with that credential. Use narrowly scoped, revocable secrets.
+the program with that credential until it expires. The expiry is cryptographically bound to
+sealed secrets, so changing or removing it makes those secrets undecryptable. Use narrowly scoped,
+revocable secrets.
+
+Links without sealed secrets can also expire, but that expiry is advisory: because the source is
+public, someone can decode it and build a new link without the deadline. Preventing that would
+require a signed or stored payload, which Smartlinks deliberately does not have.
 
 ## The CLI
 
@@ -113,8 +119,10 @@ smartlinks decode <link-or-payload>      Inspect a Smartlink without executing i
 ```
 
 Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
-include `--secret`, `--interstitial`, `--copy`, `--out`, `--json`, `--no-minify`, and
-`--no-type-check`.
+include `--secret`, `--expires`, `--interstitial`, `--copy`, `--out`, `--json`, `--no-minify`,
+and `--no-type-check`. `--expires` accepts a duration such as `30m`, `1h`, or `7d`, or an
+absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
+running the script; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
 Local networking is off by default; opt in with `smartlinks run --allow-network`.
 
 Generated links are opaque bearer artifacts. `--copy` sends the link to the clipboard without
@@ -130,20 +138,21 @@ response contract, then transpiled from the `.ts` extension before validation an
 
 1. The CLI type-checks TypeScript, transpiles it, safely minifies, raw-DEFLATE compresses, and
    base64url-encodes the function body and metadata.
-2. The runtime decodes the URL and opens any sealed secrets.
+2. The runtime decodes the URL, rejects an expired execution, and opens any sealed secrets.
 3. A fresh QuickJS sandbox runs the function with bounded memory, stack, execution, network,
    and body sizes.
 4. The return value becomes the HTTP response.
 
-The leading payload character versions the format so old links keep working as the codec
-evolves. Payloads are capped at 7,800 characters to remain comfortably below common URL limits.
+The leading payload character identifies the format; current links use payload v2. Payloads are
+capped at 7,800 characters to remain comfortably below common URL limits.
 
 ## Know the boundary
 
-Smartlinks are immutable bearer links. There are no accounts, stored scripts, revocation lists,
-or per-link analytics. The hosted runtime allows 60 executions per minute per client IP at each
-Cloudflare location; excess executions return HTTP 429. Source code is intentionally decodable.
-Use an interstitial for human-triggered side effects and scoped secrets for authenticated actions.
+Smartlinks are immutable bearer links. They can have a build-time expiry, but there are no
+accounts, stored scripts, revocation lists, or per-link analytics. The hosted runtime allows 60
+executions per minute per client IP at each Cloudflare location; excess executions return HTTP
+429. Source code is intentionally decodable. Use an interstitial for human-triggered side effects
+and scoped secrets for authenticated actions.
 
 The runtime blocks local hostname suffixes, private/local/reserved IP literals, cross-origin
 redirects, and oversized bodies. Local `run --allow-network` is stricter: it also resolves and
@@ -170,11 +179,13 @@ npm run check
 end-to-end tests of the built CLI, generated bindings, and a Wrangler production dry-run.
 
 Pull requests run the full check. Merging a current, green PR to protected `main` deploys the
-Worker and smoke-tests the live runtime; the same pre-merge checks are not repeated after merge.
+Worker and smoke-tests an expiring, sealed link against the live runtime; the same pre-merge checks
+are not repeated after merge.
 For a package release, run the **Release npm package** workflow and choose patch, minor, or major.
-Open the release PR linked in the run summary, then merge it after CI passes. The merge publishes
-that version to npm and creates its tag and GitHub release. A manual `npx wrangler deploy` remains
-available for production recovery.
+Open the release PR linked in the run summary, then merge it after CI passes. Publishing waits for
+that exact merge commit's **Deploy Worker** workflow and production smoke test, then publishes to
+npm and creates the tag and GitHub release. A manual `npx wrangler deploy` remains available for
+production recovery.
 
 ## Self-hosting
 

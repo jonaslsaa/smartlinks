@@ -1,4 +1,4 @@
-import type { DecodedPayload } from "../shared/codec.js";
+import { type DecodedPayload, formatNotAfter, isExpired } from "../shared/codec.js";
 import { formatStoredScript } from "../shared/script.js";
 import { escapeHtml, html } from "./http.js";
 
@@ -27,6 +27,16 @@ export function previewPage(head = false): Response {
   return head ? new Response(null, response) : response;
 }
 
+export function expiredPage(): Response {
+  return html(
+    page(
+      "Smartlink expired",
+      "<h1>This link has expired</h1><p>Its program can no longer be executed.</p>",
+    ),
+    { status: 410, headers: { "cache-control": "no-store" } },
+  );
+}
+
 export function interstitialPage(decoded: DecodedPayload, action: string): Response {
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
   const secretNames = Object.keys(decoded.envelope.k ?? {});
@@ -46,10 +56,12 @@ export function interstitialPage(decoded: DecodedPayload, action: string): Respo
 export function decoderPage(decoded: DecodedPayload): Response {
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
   const secretNames = Object.keys(decoded.envelope.k ?? {});
+  const notAfter = decoded.envelope.notAfter;
   const metadata = [
     `Payload version: ${decoded.version}`,
     `Confirmation required: ${decoded.envelope.i === true ? "yes" : "no"}`,
     `Sealed secrets: ${secretNames.length ? secretNames.join(", ") : "none"}`,
+    `Expiry: ${notAfter === undefined ? "never" : `${formatNotAfter(notAfter)}${isExpired(notAfter) ? " (expired)" : ""}`}`,
   ];
 
   return html(
@@ -57,6 +69,10 @@ export function decoderPage(decoded: DecodedPayload): Response {
       "Decode smartlink",
       `<h1>Decoded smartlink</h1><p>${metadata.map(escapeHtml).join("<br>")}</p><pre><code>${escapeHtml(script)}</code></pre><p>The encrypted secret values are intentionally not displayed.</p>`,
     ),
-    { headers: { "cache-control": "public, max-age=300" } },
+    {
+      headers: {
+        "cache-control": notAfter === undefined ? "public, max-age=300" : "no-store",
+      },
+    },
   );
 }

@@ -17,15 +17,28 @@ export type GeneratedKeyPair = PublicKey & {
   privateKeySecret: string;
 };
 
+export type SecretBinding = {
+  script: string;
+  notAfter?: number;
+};
+
 function assertKeyId(keyId: number): void {
   if (!Number.isInteger(keyId) || keyId < 1 || keyId > 255) {
     throw new Error("The key ID must be an integer between 1 and 255.");
   }
 }
 
-async function aad(keyId: number, script: string): Promise<Uint8Array> {
-  const scriptHash = await crypto.subtle.digest("SHA-256", Uint8Array.from(utf8(script)).buffer);
-  return concatBytes(Uint8Array.of(keyId), new Uint8Array(scriptHash));
+async function aad(keyId: number, binding: SecretBinding): Promise<Uint8Array> {
+  const scriptHash = await crypto.subtle.digest(
+    "SHA-256",
+    Uint8Array.from(utf8(binding.script)).buffer,
+  );
+  const expiry = binding.notAfter === undefined ? "none" : String(binding.notAfter);
+  return concatBytes(
+    Uint8Array.of(keyId),
+    new Uint8Array(scriptHash),
+    utf8(`smartlinks/not-after/${expiry}`),
+  );
 }
 
 export async function generateKeyPair(keyId: number): Promise<GeneratedKeyPair> {
@@ -63,7 +76,7 @@ export function publicKeyFromPrivateSecret(keyId: number, secret: string): Publi
 
 export async function sealSecret(
   plaintext: string,
-  script: string,
+  binding: SecretBinding,
   recipient: PublicKey,
 ): Promise<string> {
   assertKeyId(recipient.keyId);
@@ -71,7 +84,7 @@ export async function sealSecret(
   const sealed = await suite.seal(
     { recipientPublicKey: publicKey, info: HPKE_INFO },
     utf8(plaintext),
-    await aad(recipient.keyId, script),
+    await aad(recipient.keyId, binding),
   );
 
   return toBase64Url(
@@ -94,7 +107,7 @@ export function sealedSecretKeyId(blob: string): number {
 
 export async function openSecret(
   blob: string,
-  script: string,
+  binding: SecretBinding,
   privateSecret: string,
 ): Promise<string> {
   const bytes = fromBase64Url(blob);
@@ -119,7 +132,7 @@ export async function openSecret(
       info: HPKE_INFO,
     },
     bytes.subarray(encapsulatedEnd),
-    await aad(keyId, script),
+    await aad(keyId, binding),
   );
   return text(plaintext);
 }
