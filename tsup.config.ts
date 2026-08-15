@@ -1,4 +1,5 @@
 import { defineConfig } from "tsup";
+import packageJson from "./package.json" with { type: "json" };
 
 export default defineConfig({
   entry: ["src/cli/index.ts"],
@@ -8,4 +9,5 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   banner: { js: "#!/usr/bin/env node" },
+  define: { __SMARTLINKS_VERSION__: JSON.stringify(packageJson.version) },
 });

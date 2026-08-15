@@ -23,6 +23,8 @@ import {
   splitAssignment,
 } from "./values.js";
 
+declare const __SMARTLINKS_VERSION__: string;
+
 // Node 18 exposes Web Crypto from node:crypto, but not as a global by default.
 // HPKE and the shared Worker code use the standard global Web Crypto interface.
 if (!globalThis.crypto) {
@@ -271,7 +273,7 @@ async function keygenCommand(options: {
 const program = new Command()
   .name("smartlinks")
   .description("Turn small JavaScript programs into self-contained, executable URLs.")
-  .version("0.1.0")
+  .version(__SMARTLINKS_VERSION__)
   .showHelpAfterError()
   .addHelpText(
     "after",

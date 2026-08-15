@@ -203,6 +203,11 @@ npm run check
 runtime. `npm run check` additionally runs Biome, strict TypeScript checks, generated binding
 checks, and a real Wrangler production dry-run.
 
+Releases are created from the **Release npm package** workflow in GitHub Actions. Choose
+`patch`, `minor`, or `major`; choose `current` only to retry a release after its version commit
+was already pushed. The workflow validates `main`, updates the package and CLI versions,
+publishes through npm trusted publishing, and creates the matching GitHub release.
+
 For local Worker development:
 
 ```sh

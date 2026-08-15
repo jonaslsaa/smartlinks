@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { promisify } from "node:util";
 
@@ -6,6 +7,12 @@ const exec = promisify(execFile);
 const cli = new URL("../dist/index.js", import.meta.url);
 const example = new URL("../examples/badge.js", import.meta.url);
 const typedExample = new URL("../examples/typed-response.ts", import.meta.url);
+const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+
+const version = await exec(process.execPath, [cli.pathname, "--version"]);
+if (version.stdout.trim() !== packageJson.version) {
+  throw new Error("The CLI version does not match package.json.");
+}
 
 const keygen = await exec(process.execPath, [cli.pathname, "keygen", "--json"]);
 const key = JSON.parse(keygen.stdout);
