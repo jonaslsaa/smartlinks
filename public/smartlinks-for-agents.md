@@ -24,7 +24,9 @@ and `return` are valid. Imports and Node APIs are unavailable inside QuickJS.
 
 The script receives `ctx` with:
 
-- `params`: query parameters, excluding names beginning with `__`.
+- `params`: query parameters, excluding names beginning with `__`. A parameter present with no
+  value (`?a=`) is the empty string, not absent — validate before coercing, since `Number("")` is
+  `0`.
 - `paramValues`: every value for repeated query parameters, same exclusion.
 - `method`: the incoming HTTP method.
 - `headers`: incoming headers with lowercase names.
@@ -35,8 +37,9 @@ The script receives `ctx` with:
   `verifyHmacSha256(key, message, signature, encoding?)` (constant-time),
   `random(byteCount, encoding?)` drawing up to 256 bytes of host entropy, and the `seal`/`open`
   token helpers below. Inputs are strings; encoding is lowercase `hex` (default) or `base64`.
-  At most 16 cryptographic operations per execution, 1 MiB of string input per hashing or HMAC
-  operation.
+  At most 16 cryptographic operations per execution, and 1 MiB of string input per hashing or HMAC
+  operation. `ctx.compile` draws on this budget only through `seal`, one per value; its own
+  one-attempt limit is separate.
 - `compile`: mint one child Smartlink from a statically packaged closure.
 
 Prefer deriving values with `hmacSha256(ctx.secrets.KEY!, ctx.requestId + counter)` when the link
@@ -51,7 +54,8 @@ returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirec
 `bodyUsed`, `text()`, and `json()`; the body can be consumed once. Streams, `Request`, `Blob`,
 `FormData`, cloning, custom redirect modes, and guest abort signals are not supported.
 
-Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` for text,
+Return an absolute HTTP(S) URL for a 302 redirect (return `{ status, headers }` with a `location`
+header for any other redirect status), `{ status?, headers?, body? }` for text,
 `{ status?, headers?, bodyBase64 }` for bytes, or `undefined` for the default completion page.
 `body` and `bodyBase64` are mutually exclusive. `bodyBase64` accepts padded or unpadded Base64,
 is limited to 1 MiB after decoding, and defaults to `application/octet-stream` when headers do
@@ -162,10 +166,14 @@ the installed help as authoritative (`smartlinks --help`, `help build`, `help ru
 without executing the script (QuickJS validation is compile-only); `run` is the local execution
 and validation path.
 
+`SMARTLINKS_URL` overrides the runtime origin, including the host baked into built links; with no
+secrets nothing is fetched, so a wrong value silently emits links to a host that may not exist.
+
 ## `smartlinks build <script.js|script.ts>`
 
 - `--interstitial`: require browser confirmation — GET renders the confirmation page, the
-  confirming POST executes, and any other request receives HTTP 405.
+  confirming POST executes, and any other request receives HTTP 405. Unsuitable for multi-step
+  flows: relative links and `<form method=get>` re-enter by GET, so every step reconfirms.
 - `--interstitial-note TEXT`: add an author note (whitespace-normalized, 140 Unicode characters
   max) and require confirmation.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline.
@@ -173,7 +181,7 @@ and validation path.
   Unix seconds in UTC; past dates are rejected.
 - `--copy`: copy the execution URL and print only a compact size receipt.
 - `--out FILE`: write the URL to a file and print the receipt; new and existing files are set to
-  owner-only permissions on POSIX.
+  owner-only permissions on POSIX. The file ends with a trailing newline; trim it when scripting.
 - `--json`: machine-readable output; without `--copy` or `--out` it includes the execution URL
   once, never a decoder URL.
 - `--sign`: sign every immutable payload field with the identity configured by `smartlinks login`.
@@ -233,7 +241,9 @@ byte-count receipt instead of binary data.
 ## `smartlinks decode <link-or-payload> [--json]`
 
 Inspects the emitted script and metadata without executing or decrypting secrets. Renders
-`notAfter` as an absolute UTC timestamp and marks expired links; displays any author note and the same payload facts shown by the browser interstitial. `decode` is entirely local; it works offline and on expired links"
+`notAfter` as an absolute UTC timestamp and marks expired links; displays any author note and the
+same payload facts shown by the browser interstitial. `decode` is entirely local: it works offline
+and on expired links, so neither expiry nor rate limits affect what a reader learns from a payload.
 
 ## Author signing
 
@@ -265,6 +275,10 @@ with the complete URL can invoke the script with its sealed authority until `not
 present. Prefer narrowly scoped, revocable credentials; avoid inline `NAME=value` secrets because
 shell history retains them; if there is a frontend, do not leak secrets to the client.
 
+Sealing is the only way to keep a value out of the decoded artifact, but the running script stays
+an oracle: anything its output is a function of can be recovered by exercising the link. Seal what
+the script never reflects back.
+
 Expiry on a link with sealed secrets is enforced by that binding; without them it is advisory —
 the Worker still returns HTTP 410 after the deadline, but anyone can decode the public source and
 build a separate link without it.
@@ -280,7 +294,8 @@ fails open or closed.
 - Execution links are immutable, with no authentication, revocation list, or per-link analytics.
   `notAfter` is checked before sandbox execution; normal expired executions return HTTP 410. A
   script that throws, exhausts a budget, or returns an invalid response shape yields HTTP 422.
-  The hosted runtime is rate-limited for fair use; excess executions return HTTP 429.
+  The hosted runtime may rate-limit executions; excess executions return HTTP 429 with a
+  `retry-after` header to honor before retrying.
 - Encoded payloads are limited to 7,800 characters; raw and emitted source have a
   one-million-character wrong-file guard.
 - Each request gets a fresh QuickJS runtime: 16 MiB heap, 512 KiB stack, deterministic
@@ -313,7 +328,8 @@ compression collapses repetition; neither shrinks unique string data.
 Ratios improve as scripts grow — the same markup shape measures 2.8x at 1,900 source characters
 and 5.8x at 27,000 — so small scripts understate the headroom. A full HTML page with inline CSS,
 escaping, and a fetch call lands near 2,500. Write readable code rather than golfing it, keep
-bulk data out of the payload, and read the printed budget instead of estimating.
+bulk data out of the payload, and read the printed budget instead of estimating. Each `--secret`
+adds about 110 characters of encrypted envelope, near enough independent of the value's length.
 
 Keep scripts explicit and least-privileged; size is a payload question, not a design constraint.
 Inspect with `decode` before finalizing, and smoke-test the immutable link if that is safe.
