@@ -3,6 +3,7 @@ import {
   CURRENT_PAYLOAD_VERSION,
   decodePayload,
   encodePayload,
+  MAX_SCRIPT_LENGTH,
   payloadFromInput,
 } from "../../src/shared/codec.js";
 import { formatStoredScript, minifyScriptBody, wrapScriptBody } from "../../src/shared/script.js";
@@ -36,6 +37,22 @@ describe("payload codec", () => {
     expect(() => decodePayload("9abc")).toThrow("Unsupported payload version");
     expect(() => decodePayload("2abc")).toThrow("invalid or corrupted");
   });
+
+  it("allows large compressible scripts when the encoded link fits", () => {
+    const script = `async()=>"${"repeated".repeat(10_000)}"`;
+    const payload = encodePayload({ s: script });
+
+    expect(script.length).toBeGreaterThan(32_000);
+    expect(decodePayload(payload).envelope.s).toBe(script);
+  });
+
+  it("round-trips escape-heavy source against the decoder's byte limit", () => {
+    const script = `async()=>{/*${"\\".repeat(600_000)}*/return"ok"}`;
+    const payload = encodePayload({ s: script });
+
+    expect(payload.length).toBeLessThan(7_800);
+    expect(decodePayload(payload).envelope.s).toBe(script);
+  });
 });
 
 describe("script encoding", () => {
@@ -49,5 +66,11 @@ describe("script encoding", () => {
     expect(minified.length).toBeLessThan(wrapScriptBody(source).length);
     expect(minified).toMatch(/^async/u);
     expect(formatStoredScript("2", minified)).toContain(".params.destination");
+  });
+
+  it("keeps only a generous wrong-file input guard", () => {
+    expect(() => wrapScriptBody("x".repeat(MAX_SCRIPT_LENGTH + 1))).toThrow(
+      "1,000,000 character safety limit",
+    );
   });
 });

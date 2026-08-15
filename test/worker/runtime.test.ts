@@ -55,6 +55,19 @@ describe("Worker routes", () => {
     await expect(response.text()).resolves.toBe("legacy");
   });
 
+  it("executes highly compressible source above the old source limit", async () => {
+    const created = await createSmartlink({
+      source: `${"// padding\n".repeat(4_000)}return { body: "large" }`,
+      service: origin,
+      minify: false,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+
+    expect(created.source.length).toBeGreaterThan(32_000);
+    await expect(response.text()).resolves.toBe("large");
+  });
+
   it("requires and processes an opt-in interstitial", async () => {
     const created = await createSmartlink({
       source: 'return { body: "confirmed" }',

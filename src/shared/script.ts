@@ -20,15 +20,19 @@ export async function minifyScriptBody(source: string): Promise<string> {
   return code;
 }
 
+export function assertScriptLength(source: string): void {
+  if (source.length > MAX_SCRIPT_LENGTH) {
+    throw new Error(
+      `The input exceeds the ${MAX_SCRIPT_LENGTH.toLocaleString()} character safety limit. Check that you selected the intended script file.`,
+    );
+  }
+}
+
 export function wrapScriptBody(source: string): string {
   if (!source.trim()) {
     throw new Error("The script is empty.");
   }
-  if (source.length > MAX_SCRIPT_LENGTH) {
-    throw new Error(
-      `The script exceeds the ${MAX_SCRIPT_LENGTH.toLocaleString()} character limit.`,
-    );
-  }
+  assertScriptLength(source);
 
   return `async ctx=>{${source}\n}`;
 }

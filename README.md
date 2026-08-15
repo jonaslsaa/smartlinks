@@ -33,6 +33,21 @@ smartlinks build hello.js --copy
 # Open the copied URL with ?name=Jonas appended.
 ```
 
+`.ts` files work too. The CLI uses the extension to transpile TypeScript before minification,
+validation, secret sealing, and encoding:
+
+```ts
+type Greeting = { body: string };
+
+const name: string = ctx.params.name ?? "world";
+return { body: `Hello, ${name}!` } satisfies Greeting;
+```
+
+This is syntax transpilation, not project type-checking: run `tsc --noEmit` separately when
+you want type errors checked. Execution links and decoder pages contain the emitted JavaScript,
+so the Worker needs no TypeScript compiler. Files without a `.ts` extension continue through
+the JavaScript path unchanged.
+
 The CLI also prints a `/d/…` audit URL that decodes the script without running it. Add
 `--interstitial` when the execution link itself should show the decoded script and require
 an explicit confirmation POST before running.
@@ -67,6 +82,7 @@ See the ready-to-build examples:
 
 - [Smart redirect](examples/redirect.js)
 - [SVG status badge](examples/badge.js)
+- [Typed response](examples/typed-response.ts)
 - [Webhook adapter](examples/webhook-adapter.js)
 - [GitHub workflow dispatch](examples/github-workflow-dispatch.js)
 
@@ -102,7 +118,7 @@ interstitial for human-triggered side effects.
 ## CLI reference
 
 ```text
-smartlinks build <script.js>
+smartlinks build <script.js|script.ts>
   [--interstitial]
   [--secret NAME[=value] ...]
   [--service URL]
@@ -112,7 +128,7 @@ smartlinks build <script.js>
 
 smartlinks decode <link-or-payload> [--json]
 
-smartlinks run <script.js>
+smartlinks run <script.js|script.ts>
   [--param NAME=value ...]
   [--secret NAME[=value] ...]
   [--header NAME=value ...]
@@ -125,8 +141,10 @@ smartlinks run <script.js>
 smartlinks keygen [--key-id 1] [--set-worker] [--json]
 ```
 
-`smartlinks build` compile-checks the exact production wrapper with QuickJS's `compileOnly`
-mode and discards the temporary bytecode; it never executes the script. `smartlinks run` is
+For `.ts` input, both commands transpile to JavaScript first; `--no-minify` skips minification
+but still removes TypeScript syntax. `smartlinks build` compile-checks the exact emitted
+production wrapper with QuickJS's `compileOnly` mode and discards the temporary bytecode; it
+never executes the script. `smartlinks run` is
 the explicit local execution command and uses the same codec, guarded fetch implementation,
 response mapper, wrapper, and QuickJS engine as production. Its network bridge stays disabled
 unless `--allow-network` is present. Set `SMARTLINKS_URL` to override the baked-in runtime
@@ -137,6 +155,9 @@ without repeating `--service`.
 Payload version 2 first minifies the complete async function with Terser, stores it in a
 short-key JSON envelope, applies raw DEFLATE level 9, then uses unpadded base64url. The first
 URL character is the payload version. Links are rejected above 7,800 payload characters.
+Source has only a generous one-million-character safety guard for accidentally selected files;
+large input is accepted when minification and compression bring the encoded payload under the
+real URL limit.
 
 A Base85/Base86-style encoding looks denser in isolation, but most additional alphabet
 characters are reserved or inconsistently handled in URLs. Once those characters are

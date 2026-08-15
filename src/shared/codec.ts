@@ -4,8 +4,10 @@ import { fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
 
 export const CURRENT_PAYLOAD_VERSION = "2" as const;
 export const MAX_PAYLOAD_LENGTH = 7_800;
-export const MAX_SCRIPT_LENGTH = 32_000;
-const MAX_DECOMPRESSED_LENGTH = 64_000;
+export const MAX_SCRIPT_LENGTH = 1_000_000;
+// A single JavaScript code unit can occupy six UTF-8 bytes after JSON escaping
+// (for example, a lone surrogate). Keep extra room for envelope metadata and secrets.
+const MAX_DECOMPRESSED_LENGTH = MAX_SCRIPT_LENGTH * 6 + 64_000;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
 
 const sealedSecretSchema = z.record(
@@ -60,7 +62,11 @@ export function encodePayload(
 ): string {
   const envelope = envelopeSchema.parse(input);
   const json = JSON.stringify(envelope);
-  const compressed = deflateSync(utf8(json), { level: 9 });
+  const serialized = utf8(json);
+  if (serialized.byteLength > MAX_DECOMPRESSED_LENGTH) {
+    throw new Error("The serialized payload is too large.");
+  }
+  const compressed = deflateSync(serialized, { level: 9 });
   const payload = `${version}${toBase64Url(compressed)}`;
 
   if (payload.length > MAX_PAYLOAD_LENGTH) {

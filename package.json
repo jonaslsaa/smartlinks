@@ -48,6 +48,7 @@
     "ipaddr.js": "^2.2.0",
     "quickjs-emscripten-core": "^0.32.0",
     "terser": "^5.43.1",
+    "typescript": "^5.9.3",
     "undici": "^6.28.0",
     "zod": "^4.4.3"
   },
@@ -57,7 +58,6 @@
     "@cloudflare/workers-types": "5.20260814.1",
     "@types/node": "20.19.33",
     "tsup": "^8.5.0",
-    "typescript": "^5.9.3",
     "vite": "7.3.6",
     "vitest": "4.1.10",
     "wrangler": "4.123.0"

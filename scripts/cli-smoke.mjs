@@ -5,9 +5,23 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const cli = new URL("../dist/index.js", import.meta.url);
 const example = new URL("../examples/badge.js", import.meta.url);
+const typedExample = new URL("../examples/typed-response.ts", import.meta.url);
 
 const keygen = await exec(process.execPath, [cli.pathname, "keygen", "--json"]);
 const key = JSON.parse(keygen.stdout);
+
+const typedRun = await exec(process.execPath, [
+  cli.pathname,
+  "run",
+  typedExample.pathname,
+  "--param",
+  "name=CLI",
+  "--json",
+]);
+const typedOutput = JSON.parse(typedRun.stdout);
+if (typedOutput.status !== 200 || typedOutput.body !== "Hello from TypeScript, CLI!") {
+  throw new Error("The TypeScript CLI smoke did not transpile and execute the script.");
+}
 
 try {
   await exec(process.execPath, [
@@ -57,7 +71,7 @@ try {
     [
       cli.pathname,
       "build",
-      example.pathname,
+      typedExample.pathname,
       "--secret",
       "SMARTLINKS_SMOKE_SECRET",
       "--service",

@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { webcrypto } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import * as p from "@clack/prompts";
 import clipboard from "clipboardy";
 import { Command, Option } from "commander";
@@ -14,6 +13,7 @@ import { formatStoredScript, minifyScriptBody, wrapScriptBody } from "../shared/
 import { generateKeyPair } from "../shared/seal.js";
 import { createSmartlink } from "./build.js";
 import { createNodeFetch } from "./node-fetch.js";
+import { readScriptSource } from "./source.js";
 import { fail, startUi } from "./ui.js";
 import {
   assignments,
@@ -73,7 +73,7 @@ async function fetchPublicKey(service: string): Promise<z.infer<typeof publicKey
 
 async function buildCommand(file: string, options: BuildOptions): Promise<void> {
   const interactive = startUi("smartlinks build", options.json === true);
-  const originalSource = await readFile(file, "utf8");
+  const originalSource = await readScriptSource(file);
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
   const service = normalizeServiceUrl(
     options.service ?? process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL,
@@ -155,7 +155,7 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
 
 async function runCommand(file: string, options: RunOptions): Promise<void> {
   const interactive = startUi("smartlinks run", options.json === true);
-  const originalSource = await readFile(file, "utf8");
+  const originalSource = await readScriptSource(file);
   const source = options.minify
     ? await minifyScriptBody(originalSource)
     : wrapScriptBody(originalSource);
@@ -281,13 +281,13 @@ const program = new Command()
 program
   .command("build")
   .description("Minify a script and build an executable smartlink.")
-  .argument("<script.js>", "JavaScript function body to encode")
+  .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to encode")
   .option("-i, --interstitial", "require browser confirmation before execution")
   .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
   .option("--service <url>", "runtime base URL")
   .option("--copy", "copy the finished link to the clipboard")
   .option("--json", "print machine-readable output")
-  .addOption(new Option("--no-minify", "preserve source formatting instead of minifying"))
+  .addOption(new Option("--no-minify", "skip JavaScript minification"))
   .action(buildCommand);
 
 program
@@ -300,7 +300,7 @@ program
 program
   .command("run")
   .description("Execute a script locally in the production QuickJS sandbox.")
-  .argument("<script.js>", "JavaScript function body to execute")
+  .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to execute")
   .option("-p, --param <NAME=value>", "query parameter; repeatable", collect, [])
   .option("-s, --secret <NAME[=value]>", "secret from value, environment, or prompt", collect, [])
   .option("-H, --header <NAME=value>", "request header; repeatable", collect, [])
@@ -308,7 +308,7 @@ program
   .option("--body <text>", "request body")
   .option("--allow-network", "allow guarded outbound ctx.fetch calls")
   .option("--json", "print machine-readable output")
-  .addOption(new Option("--no-minify", "preserve source formatting instead of minifying"))
+  .addOption(new Option("--no-minify", "skip JavaScript minification"))
   .action(runCommand);
 
 program

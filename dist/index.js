@@ -3,7 +3,6 @@
 // src/cli/index.ts
 import { spawn } from "child_process";
 import { webcrypto } from "crypto";
-import { readFile } from "fs/promises";
 import * as p3 from "@clack/prompts";
 import clipboard from "clipboardy";
 import { Command, Option } from "commander";
@@ -50,8 +49,8 @@ function text(bytes) {
 // src/shared/codec.ts
 var CURRENT_PAYLOAD_VERSION = "2";
 var MAX_PAYLOAD_LENGTH = 7800;
-var MAX_SCRIPT_LENGTH = 32e3;
-var MAX_DECOMPRESSED_LENGTH = 64e3;
+var MAX_SCRIPT_LENGTH = 1e6;
+var MAX_DECOMPRESSED_LENGTH = MAX_SCRIPT_LENGTH * 6 + 64e3;
 var SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
 var sealedSecretSchema = z.record(
   z.string().regex(SECRET_NAME, "Secret names must look like environment variables."),
@@ -87,7 +86,11 @@ function inflateWithLimit(compressed) {
 function encodePayload(input, version = CURRENT_PAYLOAD_VERSION) {
   const envelope = envelopeSchema.parse(input);
   const json = JSON.stringify(envelope);
-  const compressed = deflateSync(utf8(json), { level: 9 });
+  const serialized = utf8(json);
+  if (serialized.byteLength > MAX_DECOMPRESSED_LENGTH) {
+    throw new Error("The serialized payload is too large.");
+  }
+  const compressed = deflateSync(serialized, { level: 9 });
   const payload = `${version}${toBase64Url(compressed)}`;
   if (payload.length > MAX_PAYLOAD_LENGTH) {
     throw new Error(
@@ -394,15 +397,18 @@ async function minifyScriptBody(source) {
   }
   return code;
 }
+function assertScriptLength(source) {
+  if (source.length > MAX_SCRIPT_LENGTH) {
+    throw new Error(
+      `The input exceeds the ${MAX_SCRIPT_LENGTH.toLocaleString()} character safety limit. Check that you selected the intended script file.`
+    );
+  }
+}
 function wrapScriptBody(source) {
   if (!source.trim()) {
     throw new Error("The script is empty.");
   }
-  if (source.length > MAX_SCRIPT_LENGTH) {
-    throw new Error(
-      `The script exceeds the ${MAX_SCRIPT_LENGTH.toLocaleString()} character limit.`
-    );
-  }
+  assertScriptLength(source);
   return `async ctx=>{${source}
 }`;
 }
@@ -746,6 +752,43 @@ function createNodeFetch(resolve = resolveHost) {
   };
 }
 
+// src/cli/source.ts
+import { readFile } from "fs/promises";
+import { extname } from "path";
+function diagnosticLocation(diagnostic) {
+  if (!diagnostic.file || diagnostic.start === void 0) {
+    return "";
+  }
+  const { line, character } = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
+  return `${line + 1}:${character + 1}: `;
+}
+async function transpileScriptSource(source, file) {
+  assertScriptLength(source);
+  if (extname(file).toLowerCase() !== ".ts") {
+    return source;
+  }
+  const ts = await import("typescript");
+  const result = ts.transpileModule(source, {
+    fileName: file,
+    reportDiagnostics: true,
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext
+    }
+  });
+  const error = result.diagnostics?.find(
+    (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error
+  );
+  if (error) {
+    const message = ts.flattenDiagnosticMessageText(error.messageText, " ");
+    throw new Error(`Could not transpile ${file}: ${diagnosticLocation(error)}${message}`);
+  }
+  return result.outputText;
+}
+async function readScriptSource(file) {
+  return transpileScriptSource(await readFile(file, "utf8"), file);
+}
+
 // src/cli/ui.ts
 import * as p from "@clack/prompts";
 function startUi(title, json) {
@@ -861,7 +904,7 @@ async function fetchPublicKey(service) {
 }
 async function buildCommand(file, options) {
   const interactive = startUi("smartlinks build", options.json === true);
-  const originalSource = await readFile(file, "utf8");
+  const originalSource = await readScriptSource(file);
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
   const service = normalizeServiceUrl(
     options.service ?? process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL
@@ -938,7 +981,7 @@ Sealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}`,
 }
 async function runCommand(file, options) {
   const interactive = startUi("smartlinks run", options.json === true);
-  const originalSource = await readFile(file, "utf8");
+  const originalSource = await readScriptSource(file);
   const source = options.minify ? await minifyScriptBody(originalSource) : wrapScriptBody(originalSource);
   const method = options.method.toUpperCase();
   const guestFetch = options.allowNetwork ? createGuardedFetch({ fetchImpl: createNodeFetch() }) : async () => {
@@ -1045,9 +1088,9 @@ Examples:
   smartlinks run script.js --param owner=jonaslsaa
 `
 );
-program.command("build").description("Minify a script and build an executable smartlink.").argument("<script.js>", "JavaScript function body to encode").option("-i, --interstitial", "require browser confirmation before execution").option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, []).option("--service <url>", "runtime base URL").option("--copy", "copy the finished link to the clipboard").option("--json", "print machine-readable output").addOption(new Option("--no-minify", "preserve source formatting instead of minifying")).action(buildCommand);
+program.command("build").description("Minify a script and build an executable smartlink.").argument("<script.js|script.ts>", "JavaScript or TypeScript function body to encode").option("-i, --interstitial", "require browser confirmation before execution").option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, []).option("--service <url>", "runtime base URL").option("--copy", "copy the finished link to the clipboard").option("--json", "print machine-readable output").addOption(new Option("--no-minify", "skip JavaScript minification")).action(buildCommand);
 program.command("decode").description("Inspect a smartlink without executing it.").argument("<link-or-payload>", "smartlink URL or encoded payload").option("--json", "print machine-readable output").action(decodeCommand);
-program.command("run").description("Execute a script locally in the production QuickJS sandbox.").argument("<script.js>", "JavaScript function body to execute").option("-p, --param <NAME=value>", "query parameter; repeatable", collect, []).option("-s, --secret <NAME[=value]>", "secret from value, environment, or prompt", collect, []).option("-H, --header <NAME=value>", "request header; repeatable", collect, []).option("-X, --method <method>", "request method", "GET").option("--body <text>", "request body").option("--allow-network", "allow guarded outbound ctx.fetch calls").option("--json", "print machine-readable output").addOption(new Option("--no-minify", "preserve source formatting instead of minifying")).action(runCommand);
+program.command("run").description("Execute a script locally in the production QuickJS sandbox.").argument("<script.js|script.ts>", "JavaScript or TypeScript function body to execute").option("-p, --param <NAME=value>", "query parameter; repeatable", collect, []).option("-s, --secret <NAME[=value]>", "secret from value, environment, or prompt", collect, []).option("-H, --header <NAME=value>", "request header; repeatable", collect, []).option("-X, --method <method>", "request method", "GET").option("--body <text>", "request body").option("--allow-network", "allow guarded outbound ctx.fetch calls").option("--json", "print machine-readable output").addOption(new Option("--no-minify", "skip JavaScript minification")).action(runCommand);
 program.command("keygen").description("Generate an X25519 HPKE key pair for the Worker.").option("--key-id <number>", "one-byte rotation key ID", "1").option("--set-worker", "store the private key using Wrangler instead of printing it").option("--json", "print machine-readable output").action(keygenCommand);
 program.parseAsync().catch((error) => {
   fail(error);
