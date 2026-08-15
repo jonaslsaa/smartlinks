@@ -18,8 +18,7 @@ jobs:
           node-version: 18.18.2
           cache: npm
       - run: npm ci
-      - run: npm run build
-      - name: Smoke-test secret-bearing CLI build
+      - name: End-to-end test every CLI command
         run: npm run test:cli
 
   quality:
