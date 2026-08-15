@@ -49,24 +49,30 @@ references resolve against it, so `href="?q=value"` and a bare `<form method=get
 same link with new parameters; add `cache-control: no-store` when each execution should differ.
 Escape every interpolated value — query parameters and fetched data are attacker-controlled.
 
+TypeScript is checked in isolation with strict compiler settings and built-in types for `ctx`,
+global `fetch`, and valid script results — no project `tsconfig`, no import resolution. The link
+and decoder contain emitted JavaScript. `--no-type-check` skips semantic checking; it and
+`--no-minify` both still transpile TypeScript.
+
 ### Stateless tokens
 
 `ctx.crypto.seal(value, options?)` encrypts any JSON value into an opaque base64url token;
 `ctx.crypto.open(token, options?)` authenticates it and returns the value, throwing on any
 tampered, truncated, foreign, or mismatched token. Each call is one cryptographic operation.
-Tokens let a link hand the client state it can neither read nor forge.
+Tokens let a link hand the client state the client can neither read nor forge, and recover it on
+a later request.
 
 Without options, a token is bound to the exact artifact: identical script, closures, expiry,
 interstitial flag, and author note. Rebuilding with any change rotates the key and invalidates
-outstanding tokens — the identity model working as intended. Children minted with `ctx.compile`
-are distinct artifacts and never share transparent tokens with their parent.
+outstanding tokens by design; children minted with `ctx.compile` are distinct artifacts and never
+share transparent tokens with their parent.
 
 `options.key` (a string of at least 16 bytes) skips artifact binding, so tokens survive rebuilds
 and cross between cooperating links: generate the key once and supply it to both builds through
 the environment (`export VOUCHER_KEY=$(openssl rand -base64 32)`, then `--secret VOUCHER_KEY` on
 each). `--secret NAME=@random` instead seals a fresh 32-byte key that nobody, including the
-author, ever sees; each build generates its own, so it suits a key passed only downward to
-`ctx.compile` children via the `seal` option, never one two separate builds must agree on.
+author, ever sees; each build generates its own, so it suits keys passed only downward to
+`ctx.compile` children via `seal`, never keys two builds must agree on.
 `options.context` domain-separates tokens: a token sealed with `{ context: "cooldown" }` opens
 only with that context.
 
@@ -117,14 +123,14 @@ Options:
 - `interstitial?: boolean` — explicit value overrides the parent; omission inherits.
 - `note?: string` — child-specific author note, implies an interstitial. Notes do not inherit,
   and `note` cannot combine with `interstitial: false`.
-- `seal?: Record<string, string>` — strings to encrypt for the child's `ctx.secrets`: direct
-  parent secrets, derived values, or generated values.
+- `seal?: Record<string, string>` — strings to encrypt for the child's `ctx.secrets`, each value
+  at most 1,024 characters: direct parent secrets, derived values, or generated values.
 
 One `ctx.compile` attempt per execution, including failed attempts. Tuple data is canonical JSON
 with a 64 KB encoded limit, 32-level depth limit, 10,000-value limit, and no `__proto__` keys.
 The runtime rejects any decrypted parent-secret bytes found in child source, packaged closures,
-or tuple data — move intentional delegation through `seal`, where each value also consumes one of
-the 16 cryptographic operations. This exact-byte scan is an accidental-leak guardrail, not
+or tuple data — move intentional delegation through `seal`, where each value also consumes a
+cryptographic operation. This exact-byte scan is an accidental-leak guardrail, not
 information-flow analysis; transformed, encoded, or split secret values cannot be identified.
 
 There is no stored ancestry, generation counter, or depth policy: a child carrying another
@@ -134,31 +140,28 @@ budgets, validation, expiry resolution, sealing, and payload limits.
 A parent whose mint branch is reachable by anyone holding its URL is an unauthenticated admin
 endpoint. Keep parent links private or verify a signed request before compiling.
 
-TypeScript is checked in isolation with strict compiler settings and built-in types for `ctx`,
-global `fetch`, and valid script results — no project `tsconfig`, no import resolution. The link
-and decoder contain emitted JavaScript. `--no-type-check` skips semantic checking; it and
-`--no-minify` both still transpile TypeScript.
-
 ## CLI discovery
 
 Smartlinks requires Node.js 24 or newer: `npm install --global @jonaslsa/smartlinks`, then treat
 the installed help as authoritative (`smartlinks --help`, `help build`, `help run`,
-`help decode`). There is no `compile` or `dry-run` command: `build` type-checks, validates with
-QuickJS's compile-only mode, seals, compresses, and links without executing the script; `run` is
-the local execution and validation path.
+`help decode`). There is no `compile` or `dry-run` command: `build` performs the whole pipeline
+without executing the script (QuickJS validation is compile-only); `run` is the local execution
+and validation path.
 
 ## `smartlinks build <script.js|script.ts>`
 
-- `--interstitial`: require a browser confirmation before execution.
+- `--interstitial`: require browser confirmation — GET renders the confirmation page, the
+  confirming POST executes, and any other request receives HTTP 405.
 - `--interstitial-note TEXT`: add an author note (whitespace-normalized, 140 Unicode characters
   max) and require confirmation.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline.
 - `--expires VALUE`: a duration (`30m`, `1h`, `7d`) or absolute ISO 8601 date, stored as integer
-  Unix seconds in UTC; past dates are rejected. Expired links return HTTP 410 for normal
-  execution; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
+  Unix seconds in UTC; past dates are rejected.
 - `--copy`: copy the execution URL and print only a compact size receipt.
-- `--out FILE`: write the URL to a file (owner-only permissions on POSIX) and print the receipt.
-- `--json`: machine-readable output; includes the execution URL once, no decoder URL.
+- `--out FILE`: write the URL to a file and print the receipt; new and existing files are set to
+  owner-only permissions on POSIX.
+- `--json`: machine-readable output; without `--copy` or `--out` it includes the execution URL
+  once, never a decoder URL.
 - `--no-type-check`, `--no-minify`: as above.
 
 If a browser decoder URL is needed, replace the execution URL's first `/r/` path segment with
@@ -188,7 +191,7 @@ The local dry-run before building a final link.
 
 `run --serve` serves only the root path on `127.0.0.1:8787` (`--port` overrides; `0` picks a
 free port), re-reads and checks the source for every request, and uses the real browser query
-parameters, method, headers, and body — so the request-simulation flags above are intentionally
+parameters, method, headers, and body — so the request flags above and `--json` are intentionally
 unavailable. Local secrets, `--allow-network`, `--no-type-check`, and `--no-minify` still apply.
 Serve mode never builds a link, fetches the runtime key, or contacts production.
 
@@ -235,10 +238,9 @@ with the complete URL can invoke the script with its sealed authority until `not
 present. Prefer narrowly scoped, revocable credentials; avoid inline `NAME=value` secrets because
 shell history retains them; if there is a frontend, do not leak secrets to the client.
 
-`notAfter` is cryptographically bound to sealed secrets: altering or removing it makes them fail
-to decrypt. On a link without sealed secrets, expiry is advisory — the Worker still returns HTTP
-410 after the deadline, but anyone can decode the public source and build a separate link without
-it.
+Expiry on a link with sealed secrets is enforced by that binding; without them it is advisory —
+the Worker still returns HTTP 410 after the deadline, but anyone can decode the public source and
+build a separate link without it.
 
 Expiry is the zero-infrastructure kill switch. An author who already runs an endpoint gets an
 immediate one by gating execution on it:
@@ -250,30 +252,28 @@ if (!(await fetch("https://status.example.com/deploy-link")).ok) {
 ```
 
 Flipping that endpoint to 404 kills every link checking it — real revocation with no service-side
-registry. The costs are real: one of the five fetches and extra latency on every execution, and
-availability coupled to that endpoint (the form above fails closed when the host is down). It is
-opt-in per link and only as trustworthy as the author's own hosting.
+registry. It is opt-in per link and costs what it looks like: one of the five fetches and extra
+latency on every execution, availability coupled to that endpoint (the form above fails closed
+when the host is down), and trust in the author's own hosting.
 
 ## Runtime and link limits
 
 - Execution links are immutable, with no authentication, revocation list, or per-link analytics.
-  `notAfter` is checked before sandbox execution; normal expired executions return HTTP 410. The
-  hosted runtime is rate-limited for fair use; excess executions return HTTP 429.
-- Encoded payloads are limited to 7,800 characters. Raw and emitted source have a
-  one-million-character wrong-file guard; minification and compression determine whether the URL
-  fits.
+  `notAfter` is checked before sandbox execution; normal expired executions return HTTP 410. A
+  script that throws, exhausts a budget, or returns an invalid response shape yields HTTP 422.
+  The hosted runtime is rate-limited for fair use; excess executions return HTTP 429.
+- Encoded payloads are limited to 7,800 characters; raw and emitted source have a
+  one-million-character wrong-file guard.
 - Each request gets a fresh QuickJS runtime: 16 MiB heap, 512 KiB stack, deterministic
   1,500-interrupt-poll budget (not a CPU-time measurement), and a 15-second host-wait deadline.
-- One `ctx.compile` attempt per execution on the hosted Workers Free runtime — a separate limit
-  set from production CPU measurements.
 - `fetch` permits HTTP(S); blocks Smartlinks runtime hostnames, local hostnames, and
   private/local/reserved IP literals; limits same-origin redirects to three, total requests to
   five, request and response bodies to 1 MiB, and each fetch to ten seconds. Cross-origin
   redirects are rejected. A Smartlink cannot invoke the runtime by HTTP; use `ctx.compile` to
   create a child link. Local `run --allow-network` additionally resolves and pins DNS connections
   to validated public addresses.
-- Known crawler, preview, prefetch, and `HEAD` requests do not execute scripts. Detection is
-  intentionally best-effort.
+- Known crawler, preview, prefetch, and `HEAD` requests do not execute scripts; they receive a
+  non-executing HTTP 200 preview, even after expiry. Detection is intentionally best-effort.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 
 ## Budgeting the payload
@@ -291,9 +291,7 @@ compression collapses repetition; neither shrinks unique string data.
 Ratios improve as scripts grow — the same markup shape measures 2.8x at 1,900 source characters
 and 5.8x at 27,000 — so small scripts understate the headroom. A full HTML page with inline CSS,
 escaping, and a fetch call lands near 2,500. Write readable code rather than golfing it, keep
-bulk data out of the payload, and read the budget printed by `build --out FILE` or `--copy`
-instead of estimating.
+bulk data out of the payload, and read the printed budget instead of estimating.
 
 Keep scripts explicit and least-privileged; size is a payload question, not a design constraint.
-Use `run` first, inspect with `decode`, then `build --out link.txt` or `--copy` for the final
-immutable link — and smoke-test it if that is safe.
+Inspect with `decode` before finalizing, and smoke-test the immutable link if that is safe.
