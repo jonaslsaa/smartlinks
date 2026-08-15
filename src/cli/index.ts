@@ -1,10 +1,11 @@
 import { spawn } from "node:child_process";
 import { webcrypto } from "node:crypto";
+import { chmod, stat, writeFile } from "node:fs/promises";
 import * as p from "@clack/prompts";
 import clipboard from "clipboardy";
 import { Command, Option } from "commander";
 import { z } from "zod";
-import { decodePayload, payloadFromInput } from "../shared/codec.js";
+import { decodePayload, MAX_PAYLOAD_LENGTH, payloadFromInput } from "../shared/codec.js";
 import { createGuardedFetch } from "../shared/guarded-fetch.js";
 import {
   createRequestId,
@@ -43,6 +44,7 @@ type BuildOptions = {
   minify: boolean;
   typeCheck: boolean;
   copy?: boolean;
+  out?: string;
   json?: boolean;
 };
 
@@ -63,6 +65,40 @@ function fitsInteractiveNote(value: string): boolean {
   return value.length <= availableColumns;
 }
 
+function payloadBudgetPercent(payloadLength: number): number {
+  return Math.max(1, Math.round((payloadLength / MAX_PAYLOAD_LENGTH) * 100));
+}
+
+function buildStats(linkLength: number, payloadLength: number): string {
+  const budgetPercent = payloadBudgetPercent(payloadLength);
+  return `${linkLength.toLocaleString()} characters · payload v2 · fits (${budgetPercent}% of budget)`;
+}
+
+function buildReceipt(stats: string, options: Pick<BuildOptions, "copy" | "out">): string {
+  return [
+    options.copy ? "Copied to clipboard" : undefined,
+    stats,
+    options.out ? `written to ${options.out}` : undefined,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" · ");
+}
+
+async function assertOutputDoesNotOverwriteInput(input: string, output: string): Promise<void> {
+  const [inputStats, outputStats] = await Promise.all([
+    stat(input),
+    stat(output).catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return undefined;
+      }
+      throw error;
+    }),
+  ]);
+  if (outputStats && inputStats.dev === outputStats.dev && inputStats.ino === outputStats.ino) {
+    throw new Error("The build output must not overwrite the input script.");
+  }
+}
+
 async function fetchPublicKey(service: string): Promise<z.infer<typeof publicKeySchema>> {
   let response: Response;
   try {
@@ -80,6 +116,9 @@ async function fetchPublicKey(service: string): Promise<z.infer<typeof publicKey
 
 async function buildCommand(file: string, options: BuildOptions): Promise<void> {
   const interactive = startUi("smartlinks build", options.json === true);
+  if (options.out) {
+    await assertOutputDoesNotOverwriteInput(file, options.out);
+  }
   const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
   const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
@@ -104,15 +143,27 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   if (options.copy) {
     await clipboard.write(created.link);
   }
+  if (options.out) {
+    await writeFile(options.out, `${created.link}\n`, { encoding: "utf8", mode: 0o600 });
+    if (process.platform !== "win32") {
+      await chmod(options.out, 0o600);
+    }
+  }
+
+  const stats = buildStats(created.link.length, created.payload.length);
 
   if (options.json) {
     console.log(
       JSON.stringify(
         {
-          link: created.link,
-          decoder: created.decoder,
+          ...(!options.copy && !options.out ? { link: created.link } : {}),
           characters: created.link.length,
+          payloadCharacters: created.payload.length,
           payloadVersion: 2,
+          budgetPercent: payloadBudgetPercent(created.payload.length),
+          fits: true,
+          ...(options.copy ? { copied: true } : {}),
+          ...(options.out ? { out: options.out } : {}),
         },
         null,
         2,
@@ -121,23 +172,24 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     return;
   }
   if (interactive) {
-    if (fitsInteractiveNote(created.link)) {
-      p.note(created.link, options.copy ? "Smartlink (copied)" : "Smartlink");
-      p.log.info(`Audit: ${created.decoder}`);
+    if (options.copy || options.out) {
+      p.outro(buildReceipt(stats, options));
     } else {
-      p.log.success(options.copy ? "Smartlink copied to clipboard" : "Smartlink ready");
-      if (!options.copy) {
+      if (fitsInteractiveNote(created.link)) {
+        p.note(created.link, "Smartlink");
+      } else {
+        p.log.success("Smartlink ready");
         p.log.message(created.link);
       }
-      p.log.info(
-        `Audit: run smartlinks decode with ${options.copy ? "the copied link" : "the link above"}`,
-      );
+      p.log.info("Audit: run smartlinks decode with the link above");
+      p.outro(stats);
     }
-    p.outro(`${created.link.length.toLocaleString()} characters · payload v2`);
+  } else if (options.copy || options.out) {
+    console.log(buildReceipt(stats, options));
   } else {
     console.log(created.link);
-    console.error(`Audit: ${created.decoder}`);
-    console.error(`${created.link.length.toLocaleString()} characters · payload v2`);
+    console.error("Audit: run smartlinks decode with the link above");
+    console.error(stats);
   }
 }
 
@@ -300,7 +352,8 @@ program
   .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to encode")
   .option("-i, --interstitial", "require browser confirmation before execution")
   .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
-  .option("--copy", "copy the finished link to the clipboard")
+  .option("--copy", "copy the link without printing it")
+  .option("--out <file>", "write the link privately without printing it")
   .option("--json", "print machine-readable output")
   .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
   .addOption(new Option("--no-minify", "skip JavaScript minification"))

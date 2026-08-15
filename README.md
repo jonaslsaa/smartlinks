@@ -107,14 +107,20 @@ the program with that credential. Use narrowly scoped, revocable secrets.
 ## The CLI
 
 ```text
-smartlinks build <script.js|script.ts>   Build an immutable execution and audit URL
+smartlinks build <script.js|script.ts>   Build an immutable execution URL
 smartlinks run <script.js|script.ts>     Run locally with the production sandbox
 smartlinks decode <link-or-payload>      Inspect a Smartlink without executing it
 ```
 
 Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
-include `--secret`, `--interstitial`, `--copy`, `--json`, `--no-minify`, and `--no-type-check`.
+include `--secret`, `--interstitial`, `--copy`, `--out`, `--json`, `--no-minify`, and
+`--no-type-check`.
 Local networking is off by default; opt in with `smartlinks run --allow-network`.
+
+Generated links are opaque bearer artifacts. `--copy` sends the link to the clipboard without
+printing it, while `--out link.txt` writes it to a file with owner-only POSIX permissions; both
+print only a compact size and payload-budget receipt. Plain `--json` includes the execution URL
+once and omits the equivalent decoder URL. `smartlinks decode` accepts the execution URL directly.
 
 TypeScript input is strictly type-checked against the Smartlinks `ctx`, global `fetch`, and
 response contract, then transpiled from the `.ts` extension before validation and encoding. Use
