@@ -48,27 +48,41 @@ describe("compile closure extraction", () => {
     expect(extracted.closures[1]).toContain("leafCtx.params.prefix + value");
   });
 
-  it("rejects outer captures that would be unavailable in the child", async () => {
-    await expect(
-      extractCompileClosures(`
-        const prefix = "hello";
-        const child = async (_childCtx, name) => ({ body: prefix + name });
-        return ctx.compile(child, ["Jonas"]);
-      `),
-    ).rejects.toThrow("cannot capture outer variables: prefix");
+  it("packages immutable primitive constants with a named closure", async () => {
+    const extracted = await extractCompileClosures(`
+      const prefix = "hello";
+      const signed = -2;
+      const count = 3n;
+      const enabled = true;
+      const empty = null;
+      const template = \`fixed\`;
+      const child = async (_childCtx, name) => ({
+        body: prefix + name + signed + count + enabled + empty + template,
+      });
+      return ctx.compile(child, ["Jonas"]);
+    `);
+
+    expect(extracted.closures[0]).toContain('const prefix = "hello";');
+    expect(extracted.closures[0]).toContain("const signed = -2;");
+    expect(extracted.closures[0]).toContain("const count = 3n;");
+    expect(extracted.closures[0]).toContain("const enabled = true;");
+    expect(extracted.closures[0]).toContain("const empty = null;");
+    expect(extracted.closures[0]).toContain("const template = `fixed`;");
+    expect(extracted.closures[0]).toContain("return child;");
   });
 
-  it("uses lexical scope when a nested function shadows an outer capture", async () => {
-    await expect(
-      extractCompileClosures(`
-        const secret = "outer";
-        const child = async (_childCtx) => {
-          const nested = (secret) => secret;
-          return { body: secret + nested("inner") };
-        };
-        return ctx.compile(child, []);
-      `),
-    ).rejects.toThrow("cannot capture outer variables: secret");
+  it("uses exact lexical bindings when nested parameters shadow packaged constants", async () => {
+    const extracted = await extractCompileClosures(`
+      const label = "outer";
+      const child = async (_childCtx) => {
+        const nested = (label) => label;
+        return { body: label + nested("inner") };
+      };
+      return ctx.compile(child, []);
+    `);
+
+    expect(extracted.closures[0]).toContain('const label = "outer";');
+    expect(extracted.closures[0]).toContain("const nested = (label) => label");
   });
 
   it("rejects parent bindings that shadow supported child globals", async () => {
@@ -79,7 +93,195 @@ describe("compile closure extraction", () => {
         const child = async (_childCtx) => ({ body: String(Math.max()) + String((await fetch()).ok) });
         return ctx.compile(child, []);
       `),
-    ).rejects.toThrow("cannot capture outer variables: Math, fetch");
+    ).rejects.toThrow("cannot capture outer variables: Math");
+  });
+
+  it("packages transitive helpers and constants in original declaration order", async () => {
+    const extracted = await extractCompileClosures(`
+      const CSS = ".label { color: red; }";
+      const escapeHtml = (value) => value.replaceAll("&", "&amp;");
+      function render(value) { return "<style>" + CSS + "</style>" + escapeHtml(value); }
+      const child = async (_childCtx, value) => ({ body: render(value) });
+      return ctx.compile(child, ["Jonas & Ada"]);
+    `);
+
+    const packaged = extracted.closures[0] ?? "";
+    expect(packaged).toContain('const CSS = ".label { color: red; }";');
+    expect(packaged).toContain("const escapeHtml =");
+    expect(packaged).toContain("function render(value)");
+    expect(packaged).toContain("return child;");
+    expect(packaged.indexOf("const CSS")).toBeLessThan(packaged.indexOf("const escapeHtml"));
+    expect(packaged.indexOf("const escapeHtml")).toBeLessThan(packaged.indexOf("function render"));
+    expect(packaged.indexOf("function render")).toBeLessThan(packaged.indexOf("const child"));
+  });
+
+  it("packages self-recursive and mutually recursive call-only helpers", async () => {
+    const extracted = await extractCompileClosures(`
+      const factorial = (value) => value < 2 ? 1 : value * factorial(value - 1);
+      const even = (value) => value === 0 || odd(value - 1);
+      const odd = (value) => value !== 0 && even(value - 1);
+      const child = async (_childCtx, value) => ({ body: String(factorial(value)) + even(value) });
+      return ctx.compile(child, [4]);
+    `);
+
+    const packaged = extracted.closures[0] ?? "";
+    expect(packaged).toContain("factorial(value - 1)");
+    expect(packaged).toContain("odd(value - 1)");
+    expect(packaged).toContain("even(value - 1)");
+  });
+
+  it("permits helper references that are themselves statically packaged compile arguments", async () => {
+    const extracted = await extractCompileClosures(`
+      const leaf = async (_leafCtx) => ({ body: "leaf" });
+      const child = async (childCtx) => {
+        if (childCtx.params.run === "1") await leaf(childCtx);
+        return childCtx.compile(leaf, []);
+      };
+      return ctx.compile(child, []);
+    `);
+
+    expect(extracted.closures).toHaveLength(2);
+    expect(extracted.closures[0]).toContain("childCtx.compile(1, [])");
+    expect(extracted.closures[0]).toContain("await leaf(childCtx)");
+  });
+
+  it("rejects non-call helper observations anywhere in the parent program", async () => {
+    await expect(
+      extractCompileClosures(`
+        const escapeHtml = (value) => value;
+        const formatter = escapeHtml;
+        const child = async (_childCtx, value) => ({ body: escapeHtml(value) });
+        return ctx.compile(child, [formatter("ok")]);
+      `),
+    ).rejects.toThrow("Packaged function escapeHtml must only be called directly");
+
+    await expect(
+      extractCompileClosures(`
+        function escapeHtml(value) { return value; }
+        escapeHtml.cache = "parent-state";
+        const child = async (_childCtx, value) => ({ body: escapeHtml(value) });
+        return ctx.compile(child, ["ok"]);
+      `),
+    ).rejects.toThrow("Packaged function escapeHtml must only be called directly");
+
+    await expect(
+      extractCompileClosures(`
+        function escapeHtml(value) {
+          escapeHtml.cache = "internal-state";
+          return value;
+        }
+        const child = async (_childCtx, value) => ({ body: escapeHtml(value) });
+        return ctx.compile(child, ["ok"]);
+      `),
+    ).rejects.toThrow("Packaged function escapeHtml must only be called directly");
+  });
+
+  it("rejects function-object observations through the compiled closure's own binding", async () => {
+    await expect(
+      extractCompileClosures(`
+        const child = async (_childCtx) => ({ body: String(child.label) });
+        child.label = "parent-state";
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow("Packaged function child must only be called directly");
+
+    const recursive = await extractCompileClosures(`
+      const child = async (_childCtx, value) => value === 0
+        ? { body: "done" }
+        : child(_childCtx, value - 1);
+      return ctx.compile(child, [2]);
+    `);
+    expect(recursive.closures[0]).toContain("child(_childCtx, value - 1)");
+  });
+
+  it("rejects named function expressions and mutable value dependencies", async () => {
+    await expect(
+      extractCompileClosures(`
+        const escapeHtml = function inner(value) { return value; };
+        const child = async (_childCtx, value) => ({ body: escapeHtml(value) });
+        return ctx.compile(child, ["ok"]);
+      `),
+    ).rejects.toThrow("cannot capture outer variables: escapeHtml");
+
+    await expect(
+      extractCompileClosures(`
+        const config = { prefix: "hello" };
+        const child = async (_childCtx, value) => ({ body: config.prefix + value });
+        return ctx.compile(child, ["ok"]);
+      `),
+    ).rejects.toThrow("cannot capture outer variables: config");
+  });
+
+  it("names transitive dependency failures and parent-context access", async () => {
+    await expect(
+      extractCompileClosures(`
+        const prefix = String(Date.now());
+        const escapeHtml = (value) => prefix + value;
+        const render = (value) => escapeHtml(value);
+        const child = async (_childCtx, value) => ({ body: render(value) });
+        return ctx.compile(child, ["ok"]);
+      `),
+    ).rejects.toThrow(
+      "Compile closure dependency child -> render -> escapeHtml -> prefix is unavailable because prefix has a computed initializer",
+    );
+
+    await expect(
+      extractCompileClosures(`
+        const render = () => ctx.params.name ?? "";
+        const child = async (_childCtx) => ({ body: render() });
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow("Compile closure dependency child -> render references the parent ctx");
+  });
+
+  it("rejects ctx.compile access from a packaged dependency helper", async () => {
+    await expect(
+      extractCompileClosures(`
+        const mint = (childCtx) => childCtx.compile(
+          async (_leafCtx) => ({ body: "leaf" }),
+          [],
+        );
+        const child = async (childCtx) => mint(childCtx);
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow(
+      "Packaged helper mint cannot access a .compile property; call ctx.compile directly inside the compile closure",
+    );
+
+    await expect(
+      extractCompileClosures(`
+        const compileSource = (compiler, source) => compiler.compile(source);
+        const child = async (_childCtx, compiler) => ({ body: compileSource(compiler, "source") });
+        return ctx.compile(child, [{}]);
+      `),
+    ).rejects.toThrow("Packaged helper compileSource cannot access a .compile property");
+
+    await expect(
+      extractCompileClosures(`
+        const mint = (childCtx) => {
+          const { compile } = childCtx;
+          return compile(async (_leafCtx) => ({ body: "leaf" }), []);
+        };
+        const child = async (childCtx) => mint(childCtx);
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow("Packaged helper mint cannot access a .compile property");
+  });
+
+  it("rejects arguments-based function-object access in packaged helpers", async () => {
+    await expect(
+      extractCompileClosures(`
+        const helper = function () {
+          arguments.callee.calls = (arguments.callee.calls ?? 0) + 1;
+          return arguments.callee.calls;
+        };
+        helper();
+        const child = async (_childCtx) => ({ body: String(helper()) });
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow(
+      "Packaged helper helper cannot use arguments; declare parameters or a rest parameter instead",
+    );
   });
 
   it("explains why direct eval cannot be combined with runtime compilation", async () => {
@@ -298,12 +500,11 @@ describe("compile closure extraction", () => {
       `),
     ).rejects.toThrow("cannot capture outer variables: ctx");
 
-    await expect(
-      extractCompileClosures(`
-        const parentValue = "parent";
-        return ctx.compile(async (_childCtx) => ({ body: parentValue }), []);
-      `),
-    ).rejects.toThrow("cannot capture outer variables: parentValue");
+    const packagedInline = await extractCompileClosures(`
+      const parentValue = "parent";
+      return ctx.compile(async (_childCtx) => ({ body: parentValue }), []);
+    `);
+    expect(packagedInline.closures[0]).toContain('const parentValue = "parent";');
 
     await expect(
       extractCompileClosures(
