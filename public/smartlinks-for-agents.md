@@ -157,6 +157,14 @@ Use this as the local dry-run before building a final link.
 - `--no-type-check`: skip strict semantic checking for TypeScript; syntax must still transpile.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
 
+Use `smartlinks run <script.ts> --serve` when iterating on browser-visible output. It serves only
+the root path on `127.0.0.1:8787`, re-reads and checks the source for every request, and uses the
+incoming browser query parameters, method, headers, and body. `--port` selects another port; port
+`0` selects an available one. Request-simulation flags (`--param`, `--header`, `--method`,
+`--body`, and `--json`) are intentionally unavailable in serve mode. Local secrets,
+`--allow-network`, `--no-type-check`, and `--no-minify` continue to apply. Serve mode does not
+build a link, fetch the runtime key, or contact production.
+
 Local execution uses the same wrapper, QuickJS engine, request-context normalization, general
 URL/method/header/body/count/redirect policy, response mapping, and compile validation as
 production. Local compile sealing uses an ephemeral in-process keypair and returns a local-only
