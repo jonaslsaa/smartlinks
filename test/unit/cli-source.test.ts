@@ -104,7 +104,9 @@ describe("CLI script input", () => {
     await expect(
       transpileScriptSource(
         `
-          const child = async (name: string, count: number) => ({ body: name.repeat(count) });
+          const child = async (childCtx: typeof ctx, name: string, count: number) => ({
+            body: childCtx.requestId + name.repeat(count),
+          });
           return ctx.compile(child, ["Jonas", 2], {
             ttlSeconds: 3600,
             interstitial: false,
@@ -118,7 +120,7 @@ describe("CLI script input", () => {
     await expect(
       transpileScriptSource(
         `
-          const child = async (count: number) => ({ body: String(count) });
+          const child = async (_childCtx: typeof ctx, count: number) => ({ body: String(count) });
           return ctx.compile(child, ["wrong"]);
         `,
         "compile-mismatch.ts",
@@ -128,12 +130,31 @@ describe("CLI script input", () => {
     await expect(
       transpileScriptSource(
         `
-          const child = async () => ({ body: 123 });
+          const child = async (_childCtx: typeof ctx) => ({ body: 123 });
           return ctx.compile(child, []);
         `,
         "compile-result.ts",
       ),
     ).rejects.toThrow("Type 'number' is not assignable to type 'string'");
+
+    await expect(
+      transpileScriptSource(
+        `return ctx.compile(async (childCtx, name: string) => ({
+          body: childCtx.params.prefix + name,
+        }), ["Jonas"]);`,
+        "compile-inline.ts",
+      ),
+    ).resolves.toContain("childCtx.params.prefix");
+
+    await expect(
+      transpileScriptSource(
+        `
+          const child = async (name: string) => ({ body: name });
+          return ctx.compile(child, ["Jonas"]);
+        `,
+        "compile-old-signature.ts",
+      ),
+    ).rejects.toThrow("not assignable to parameter of type '(childContext: __SmartlinksContext)");
   });
 
   it("can explicitly skip semantic type checking", async () => {

@@ -202,10 +202,6 @@ function contextBinding(program: Program, scopes: ScopeManager): Variable {
   return context;
 }
 
-function contextReferences(context: Variable): ReadonlySet<object> {
-  return new Set(context.references.map((reference) => reference.identifier));
-}
-
 function resolvedReferences(scopes: ScopeManager): ReadonlyMap<object, Variable | null> {
   const references = new Map<object, Variable | null>();
   for (const scope of scopes.scopes) {
@@ -256,7 +252,11 @@ function assertNoDirectEvalWithCompile(
   }
 }
 
-function compileCall(node: Node, contexts: ReadonlySet<object>): node is CallExpression {
+function compileCall(
+  node: Node,
+  context: Variable,
+  references: ReadonlyMap<object, Variable | null>,
+): node is CallExpression {
   if (node.type !== "CallExpression") {
     return false;
   }
@@ -264,14 +264,34 @@ function compileCall(node: Node, contexts: ReadonlySet<object>): node is CallExp
   if (call.callee.type !== "MemberExpression") {
     return false;
   }
+  const objectBinding = isIdentifier(call.callee.object)
+    ? references.get(call.callee.object)
+    : undefined;
   return (
     !call.callee.computed &&
-    isIdentifier(call.callee.object) &&
-    call.callee.object.name === "ctx" &&
-    contexts.has(call.callee.object) &&
+    objectBinding === context &&
     isIdentifier(call.callee.property) &&
     call.callee.property.name === "compile"
   );
+}
+
+function closureContextBinding(
+  closure: CompileClosure,
+  scopes: ScopeManager,
+): Variable | undefined {
+  const parameter = closure.params[0];
+  if (!parameter) {
+    throw new Error("Compile closures must accept the child context as their first parameter.");
+  }
+  if (!isIdentifier(parameter)) {
+    return undefined;
+  }
+  const scope = scopes.acquire(closure, true);
+  const binding = scope?.set.get(parameter.name);
+  if (!binding) {
+    throw new Error("Could not analyze a compile closure's child context binding.");
+  }
+  return binding;
 }
 
 function resolveClosure(
@@ -304,13 +324,21 @@ function resolveClosure(
   return named.closure;
 }
 
-function insideReplacement(
+function insideNestedReplacement(
   range: [number, number] | undefined,
+  closure: CompileClosure,
   replacements: readonly Replacement[],
 ): boolean {
   return (
     range !== undefined &&
-    replacements.some((replacement) => range[0] >= replacement.start && range[1] <= replacement.end)
+    replacements.some(
+      (replacement) =>
+        replacement.start >= closure.start &&
+        replacement.end <= closure.end &&
+        !(replacement.start === closure.start && replacement.end === closure.end) &&
+        range[0] >= replacement.start &&
+        range[1] <= replacement.end,
+    )
   );
 }
 
@@ -318,7 +346,6 @@ function assertNoCapturedVariables(
   closure: CompileClosure,
   replacements: readonly Replacement[],
   scopes: ScopeManager,
-  context: Variable,
 ): void {
   const scope = scopes.acquire(closure, true);
   if (!scope) {
@@ -328,11 +355,9 @@ function assertNoCapturedVariables(
   for (const reference of scope.through) {
     const allowedGlobal =
       reference.resolved === null && ALLOWED_GLOBALS.has(reference.identifier.name);
-    const childContext = reference.resolved === context;
     if (
-      !insideReplacement(reference.identifier.range, replacements) &&
-      !allowedGlobal &&
-      !childContext
+      !insideNestedReplacement(reference.identifier.range, closure, replacements) &&
+      !allowedGlobal
     ) {
       captures.add(reference.identifier.name);
     }
@@ -351,15 +376,22 @@ function applyReplacements(
   replacements: readonly Replacement[],
 ): string {
   let result = source.slice(rangeStart, rangeEnd);
-  const contained = replacements
+  const contained = replacements.filter(
+    (replacement) =>
+      replacement.start >= rangeStart &&
+      replacement.end <= rangeEnd &&
+      !(replacement.start === rangeStart && replacement.end === rangeEnd),
+  );
+  const outermost = contained
     .filter(
-      (replacement) =>
-        replacement.start >= rangeStart &&
-        replacement.end <= rangeEnd &&
-        !(replacement.start === rangeStart && replacement.end === rangeEnd),
+      (candidate) =>
+        !contained.some(
+          (other) =>
+            other !== candidate && candidate.start >= other.start && candidate.end <= other.end,
+        ),
     )
     .sort((left, right) => right.start - left.start);
-  for (const replacement of contained) {
+  for (const replacement of outermost) {
     const start = replacement.start - rangeStart;
     const end = replacement.end - rangeStart;
     result = `${result.slice(0, start)}${replacement.value}${result.slice(end)}`;
@@ -383,15 +415,32 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
   const context = contextBinding(program, scopes);
   const references = resolvedReferences(scopes);
   assertNoDirectEvalWithCompile(program, context, references);
-  const contexts = contextReferences(context);
   const available = namedClosures(program, scopes);
   const closures: CompileClosure[] = [];
   const indexes = new Map<CompileClosure, number>();
   const replacements: Replacement[] = [];
 
-  walk(program, (node) => {
-    if (!compileCall(node, contexts)) {
-      return undefined;
+  function registerClosure(closure: CompileClosure): number {
+    const existing = indexes.get(closure);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const index = closures.length;
+    closures.push(closure);
+    indexes.set(closure, index);
+    const childContext = closureContextBinding(closure, scopes);
+    if (childContext) {
+      walk(closure, (node) => {
+        processCompileCall(node, childContext);
+        return undefined;
+      });
+    }
+    return index;
+  }
+
+  function processCompileCall(node: Node, currentContext: Variable): void {
+    if (!compileCall(node, currentContext, references)) {
+      return;
     }
     if (node.arguments.length < 2 || node.arguments.length > 3) {
       throw new Error("ctx.compile expects a closure, an argument tuple, and optional options.");
@@ -401,18 +450,20 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
       throw new Error("ctx.compile requires a closure as its first argument.");
     }
     const closure = resolveClosure(argument, available, references);
-    let index = indexes.get(closure);
-    if (index === undefined) {
-      index = closures.length;
-      closures.push(closure);
-      indexes.set(closure, index);
-    }
-    replacements.push({ start: argument.start, end: argument.end, value: String(index) });
+    replacements.push({
+      start: argument.start,
+      end: argument.end,
+      value: String(registerClosure(closure)),
+    });
+  }
+
+  walk(program, (node) => {
+    processCompileCall(node, context);
     return undefined;
   });
 
   for (const closure of closures) {
-    assertNoCapturedVariables(closure, replacements, scopes, context);
+    assertNoCapturedVariables(closure, replacements, scopes);
   }
 
   const bodyStart = WRAPPER_PREFIX.length;

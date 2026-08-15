@@ -85,7 +85,9 @@ be fixed, anyone with a link can run it, etc.).
     with compact table indexes. Args are a typed positional JSON tuple. Children
     are ordinary links and may carry their own approved compile closures; there
     is no stored tree, generation field, or depth rule.
-    `ctx` inside the extracted closure is rebound to the child execution context.
+    The closure's explicit first parameter receives the child execution context;
+    the tuple maps to its remaining parameters. Parent bindings, including `ctx`,
+    are rejected as captures.
     Compile arguments are data and must not be interpreted as executable code.
 
 ## URL and envelope format

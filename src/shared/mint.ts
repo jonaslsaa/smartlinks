@@ -115,7 +115,7 @@ function stringLiteral(value: string): string {
 }
 
 export function compiledChildSource(closure: string, argumentJson: string): string {
-  return `async ctx=>(${closure})(...JSON.parse(${stringLiteral(argumentJson)}))`;
+  return `async ctx=>(${closure})(ctx,...JSON.parse(${stringLiteral(argumentJson)}))`;
 }
 
 function childNotAfter(

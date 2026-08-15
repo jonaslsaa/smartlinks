@@ -49,16 +49,15 @@ headers do not supply a content type. `content-disposition` remains author-contr
 
 ### Runtime compilation
 
-`ctx.compile(closure, args, options?)` returns a child execution URL. `args` is a positional JSON
-tuple whose TypeScript types must match the closure parameters. The closure must be inline or a
-top-level `const`/function declaration and may use its parameters, `ctx`, `fetch`, and supported
-JavaScript globals, but it cannot capture other outer variables. Pass runtime values explicitly in
-the tuple. The CLI extracts and type-checks every closure before minification, replaces the guest
-reference with an internal table index, and packages the finite closure table in the link.
-
-Inside the packaged closure, `ctx` is the child's execution context, not the parent context in
-which `ctx.compile` was called. Pass parent values through the argument tuple; use `ctx` for the
-child request's parameters, headers, body, and secrets.
+`ctx.compile(closure, args, options?)` returns a child execution URL. The closure's first parameter
+is the child execution context, supplied automatically by the runtime. `args` is a positional JSON
+tuple whose TypeScript types must match the remaining closure parameters. For a named TypeScript
+closure, annotate the first parameter as `typeof ctx`; inline closures are contextually typed.
+The closure must be inline or a top-level `const`/function declaration and may use its parameters,
+`fetch`, and supported JavaScript globals, but it cannot capture outer variables, including the
+parent's `ctx`. Pass parent values explicitly in the tuple. The CLI extracts and type-checks every
+closure before minification, replaces the guest reference with an internal table index, and
+packages the finite closure table in the link.
 
 Compile arguments are data. Never evaluate them, pass them to `Function`, interpolate them into
 executable source, or otherwise interpret attacker-controlled arguments inside a child carrying

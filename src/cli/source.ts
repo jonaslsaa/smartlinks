@@ -83,7 +83,10 @@ type __SmartlinksCompileOptions = {
   interstitial?: boolean;
 };
 type __SmartlinksCompile = <const Args extends readonly __SmartlinksJson[]>(
-  closure: (...args: Args) => __SmartlinksResult | Promise<__SmartlinksResult>,
+  closure: (
+    childContext: __SmartlinksContext,
+    ...args: Args
+  ) => __SmartlinksResult | Promise<__SmartlinksResult>,
   args: Args,
   options?: __SmartlinksCompileOptions,
 ) => Promise<string>;
