@@ -3,7 +3,7 @@ import { webcrypto } from "node:crypto";
 import { chmod, stat, writeFile } from "node:fs/promises";
 import * as p from "@clack/prompts";
 import clipboard from "clipboardy";
-import { Command, Option } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
 import {
   decodePayload,
@@ -12,20 +12,12 @@ import {
   MAX_PAYLOAD_LENGTH,
   payloadFromInput,
 } from "../shared/codec.js";
-import {
-  createRequestId,
-  localRequestBody,
-  lowercaseHeaders,
-  userParams,
-  userParamValues,
-} from "../shared/request-context.js";
-import { isBinaryLiteralResponse, mapScriptResult } from "../shared/result.js";
-import type { SandboxContext } from "../shared/sandbox.js";
 import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
-import { createSmartlink, prepareSmartlinkProgram } from "./build.js";
+import { createSmartlink } from "./build.js";
 import { parseExpiry } from "./expiry.js";
-import { runLocalProgram } from "./local-run.js";
+import { createSyntheticRequest, executeLocalRequest } from "./run.js";
+import { serveLocalScript } from "./serve.js";
 import { readScriptSource } from "./source.js";
 import { fail, startUi } from "./ui.js";
 import { collect, normalizeServiceUrl, resolveSecrets, splitAssignment } from "./values.js";
@@ -75,9 +67,19 @@ type RunOptions = {
   method: string;
   body?: string;
   minify: boolean;
+  port: number;
+  serve?: boolean;
   typeCheck: boolean;
   json?: boolean;
 };
+
+function parsePort(value: string): number {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    throw new InvalidArgumentError("The port must be an integer from 0 to 65535.");
+  }
+  return port;
+}
 
 function fitsInteractiveNote(value: string): boolean {
   const availableColumns = Math.max((process.stdout.columns ?? 80) - 6, 20);
@@ -271,45 +273,55 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
 
 async function runCommand(file: string, options: RunOptions): Promise<void> {
   const interactive = startUi("smartlinks run", options.json === true);
-  const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
-  const { source, closures } = await prepareSmartlinkProgram(originalSource, options.minify);
-  const method = options.method.toUpperCase();
   const parameters = options.param.map((value) => splitAssignment(value, "Parameter"));
-  const secrets = await resolveSecrets(options.secret, { prompt: interactive });
-  const context: SandboxContext = {
-    params: userParams(parameters),
-    paramValues: userParamValues(parameters),
-    method,
-    headers: lowercaseHeaders(
-      options.header.map((value) => splitAssignment(value, "Header")),
-      true,
-    ),
-    body: localRequestBody(method, options.body),
-    secrets,
-    requestId: createRequestId(),
-  };
-  const blockedHostnames =
-    options.allowNetwork === true
-      ? [new URL(normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL)).hostname]
-      : [];
-  const result = await runLocalProgram({
-    source,
-    closures,
-    context,
+  const requestHeaders = options.header.map((value) => splitAssignment(value, "Header"));
+  const executionOptions = {
     allowNetwork: options.allowNetwork === true,
-    blockedHostnames,
+    blockedHostnames:
+      options.allowNetwork === true
+        ? [new URL(normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL)).hostname]
+        : [],
+    file,
+    minify: options.minify,
+    secrets: await resolveSecrets(options.secret, { prompt: interactive }),
+    typeCheck: options.typeCheck,
+  };
+
+  if (options.serve) {
+    await serveLocalScript({
+      ...executionOptions,
+      port: options.port,
+      onListen: (url) => {
+        if (interactive) {
+          p.log.success(`Serving ${file} at ${url}`);
+          p.log.info("Save the script and refresh the browser · Ctrl+C to stop");
+        } else {
+          console.log(`Serving ${file} at ${url}`);
+        }
+      },
+    });
+    if (interactive) {
+      p.outro("Local server stopped");
+    }
+    return;
+  }
+
+  const request = createSyntheticRequest({
+    ...(options.body === undefined ? {} : { body: options.body }),
+    headers: requestHeaders,
+    method: options.method,
+    parameters,
   });
-  const response = mapScriptResult(result);
-  const binary = isBinaryLiteralResponse(result);
+  const { binary, response } = await executeLocalRequest(request, executionOptions);
   const binaryBody = binary ? Buffer.from(await response.arrayBuffer()) : undefined;
-  const headers = Object.fromEntries(response.headers);
+  const responseHeaders = Object.fromEntries(response.headers);
 
   if (options.json) {
     console.log(
       JSON.stringify(
         {
           status: response.status,
-          headers,
+          headers: responseHeaders,
           ...(binaryBody === undefined
             ? { body: await response.text() }
             : { bodyBase64: binaryBody.toString("base64") }),
@@ -329,8 +341,8 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
         `Binary response · HTTP ${response.status}`,
       );
     }
-    if (Object.keys(headers).length) {
-      p.log.info(JSON.stringify(headers));
+    if (Object.keys(responseHeaders).length) {
+      p.log.info(JSON.stringify(responseHeaders));
     }
     p.outro("Executed locally in a fresh QuickJS sandbox");
   } else if (binaryBody !== undefined) {
@@ -440,13 +452,32 @@ program
   .command("run")
   .description("Execute a script locally in the production QuickJS sandbox.")
   .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to execute")
-  .option("-p, --param <NAME=value>", "query parameter; repeatable", collect, [])
+  .addOption(
+    new Option("-p, --param <NAME=value>", "query parameter; repeatable")
+      .argParser(collect)
+      .default([])
+      .conflicts("serve"),
+  )
   .option("-s, --secret <NAME[=value]>", "secret from value, environment, or prompt", collect, [])
-  .option("-H, --header <NAME=value>", "request header; repeatable", collect, [])
-  .option("-X, --method <method>", "request method", "GET")
-  .option("--body <text>", "request body")
+  .addOption(
+    new Option("-H, --header <NAME=value>", "request header; repeatable")
+      .argParser(collect)
+      .default([])
+      .conflicts("serve"),
+  )
+  .addOption(
+    new Option("-X, --method <method>", "request method").default("GET").conflicts("serve"),
+  )
+  .addOption(new Option("--body <text>", "request body").conflicts("serve"))
   .option("--allow-network", "allow guarded outbound fetch calls")
-  .option("--json", "print machine-readable output")
+  .option("--serve", "serve the script on a loopback HTTP server")
+  .addOption(
+    new Option("--port <number>", "serve port; use 0 to choose an available port")
+      .argParser(parsePort)
+      .default(8787)
+      .implies({ serve: true }),
+  )
+  .addOption(new Option("--json", "print machine-readable output").conflicts("serve"))
   .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
   .addOption(new Option("--no-minify", "skip JavaScript minification"))
   .action(runCommand);

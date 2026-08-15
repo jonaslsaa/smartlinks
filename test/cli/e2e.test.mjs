@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -50,6 +50,66 @@ async function close(server) {
   });
 }
 
+async function startServe(script, args = [], options = {}) {
+  const child = spawn(process.execPath, [cli, "run", script, "--serve", "--port", "0", ...args], {
+    cwd: repositoryRoot,
+    env: { ...process.env, ...options.env },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+
+  const origin = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`Serve mode did not start. stdout=${stdout} stderr=${stderr}`));
+    }, 10_000);
+    const inspectOutput = () => {
+      const match = stdout.match(/ at (http:\/\/127\.0\.0\.1:\d+)/u);
+      if (!match?.[1]) {
+        return;
+      }
+      clearTimeout(timeout);
+      child.off("exit", onExit);
+      child.stdout.off("data", inspectOutput);
+      resolve(match[1]);
+    };
+    const onExit = (code, signal) => {
+      clearTimeout(timeout);
+      reject(
+        new Error(
+          `Serve mode exited before listening (${code ?? signal}). stdout=${stdout} stderr=${stderr}`,
+        ),
+      );
+    };
+    child.once("exit", onExit);
+    child.stdout.on("data", inspectOutput);
+    inspectOutput();
+  });
+
+  return {
+    child,
+    origin,
+    output: () => ({ stdout, stderr }),
+  };
+}
+
+async function stopServe(server) {
+  if (server.child.exitCode !== null || server.child.signalCode !== null) {
+    return;
+  }
+  const stopped = new Promise((resolve) => server.child.once("exit", resolve));
+  server.child.kill("SIGTERM");
+  await stopped;
+}
+
 test("the built CLI exposes its version and public subcommands", async () => {
   const version = await runCli(["--version"]);
   assert.equal(version.stdout.trim(), packageJson.version);
@@ -69,6 +129,8 @@ test("the built CLI exposes its version and public subcommands", async () => {
 
   const runHelp = await runCli(["help", "run"]);
   assert.match(runHelp.stdout, /--no-type-check\b/u);
+  assert.match(runHelp.stdout, /--serve\b/u);
+  assert.match(runHelp.stdout, /--port <number>/u);
 });
 
 test("keygen emits a usable key pair for the requested key ID", async () => {
@@ -240,6 +302,140 @@ return {
       assert.match(rawResult.stderr.toString(), /HTTP 200/u);
     });
   }
+});
+
+test("run --serve refreshes the production sandbox from real browser requests", async () => {
+  const firstSource = `
+return {
+  status: 201,
+  headers: { "content-type": "application/json", "x-smartlinks-serve": "yes" },
+  body: JSON.stringify({
+    params: ctx.params,
+    paramValues: ctx.paramValues,
+    method: ctx.method,
+    trace: ctx.headers["x-trace"],
+    body: ctx.body,
+    secret: ctx.secrets.LOCAL_TOKEN,
+  }),
+};
+`;
+
+  await withTemporaryScript("ts", firstSource, async (script) => {
+    const server = await startServe(script, ["--secret", "LOCAL_TOKEN=local-secret"], {
+      env: { SMARTLINKS_URL: "http://127.0.0.1:1" },
+    });
+    try {
+      const first = await fetch(`${server.origin}/?tag=one&tag=two&__confirm=1`, {
+        method: "POST",
+        headers: { "content-type": "text/plain", "x-trace": "browser-request" },
+        body: "hello",
+      });
+      assert.equal(first.status, 201);
+      assert.equal(first.headers.get("x-smartlinks-serve"), "yes");
+      assert.deepEqual(await first.json(), {
+        params: { tag: "two" },
+        paramValues: { tag: ["one", "two"] },
+        method: "POST",
+        trace: "browser-request",
+        body: "hello",
+        secret: "local-secret",
+      });
+
+      const oversized = await fetch(server.origin, {
+        method: "POST",
+        body: "x".repeat(1_048_577),
+      });
+      assert.equal(oversized.status, 413);
+      assert.match((await oversized.json()).error, /Request body exceeds/u);
+
+      const favicon = await fetch(`${server.origin}/favicon.ico`);
+      assert.equal(favicon.status, 204);
+
+      const missing = await fetch(`${server.origin}/asset.css`);
+      assert.equal(missing.status, 404);
+
+      const crossSite = await fetch(server.origin, {
+        headers: { accept: "text/html", origin: "https://attacker.example" },
+      });
+      assert.equal(crossSite.status, 403);
+      assert.match(await crossSite.text(), /Cross-origin requests are not allowed/u);
+
+      await writeFile(script, 'const value: number = "wrong";\nreturn { body: value };\n');
+      const typeError = await fetch(server.origin, { headers: { accept: "text/html" } });
+      assert.equal(typeError.status, 422);
+      const typeErrorBody = await typeError.text();
+      assert.match(typeErrorBody, /Local Smartlinks preview/u);
+      assert.match(typeErrorBody, /Could not type-check/u);
+
+      const html = "<!doctype html><title>Edited</title><h1>Saved</h1>";
+      await writeFile(
+        script,
+        `return { headers: { "content-type": "text/html" }, body: ${JSON.stringify(html)} };\n`,
+      );
+      const edited = await fetch(server.origin);
+      assert.equal(edited.status, 200);
+      assert.equal(await edited.text(), html);
+
+      await writeFile(script, 'return "https://example.com/next";\n');
+      const redirect = await fetch(server.origin, { redirect: "manual" });
+      assert.equal(redirect.status, 302);
+      assert.equal(redirect.headers.get("location"), "https://example.com/next");
+
+      await writeFile(
+        script,
+        'await fetch("https://example.com");\nreturn { body: "unreachable" };\n',
+      );
+      const networkBlocked = await fetch(server.origin);
+      assert.equal(networkBlocked.status, 422);
+      assert.match((await networkBlocked.json()).error, /Network access is disabled/u);
+
+      await writeFile(script, 'throw new Error("HEAD must not execute");\n');
+      const head = await fetch(server.origin, { method: "HEAD" });
+      assert.equal(head.status, 200);
+      assert.equal(await head.text(), "");
+
+      await writeFile(script, "const completed = true;\n");
+      const defaultPage = await fetch(server.origin, { headers: { accept: "text/html" } });
+      assert.equal(defaultPage.status, 200);
+      assert.match(await defaultPage.text(), /Local Smartlinks preview/u);
+
+      await writeFile(
+        script,
+        'const child = async (name: string) => ({ body: "compiled:" + name });\nreturn ctx.compile(child, [ctx.params.name ?? "world"]);\n',
+      );
+      const compiled = await fetch(`${server.origin}/?name=Browser`);
+      assert.equal(compiled.status, 200);
+      assert.equal(await compiled.text(), "compiled:Browser");
+
+      const binary = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+      await writeFile(
+        script,
+        `return { bodyBase64: ${JSON.stringify(binary.toString("base64"))} };\n`,
+      );
+      const binaryResponse = await fetch(server.origin);
+      assert.equal(binaryResponse.headers.get("content-type"), "application/octet-stream");
+      assert.deepEqual(Buffer.from(await binaryResponse.arrayBuffer()), binary);
+    } finally {
+      await stopServe(server);
+    }
+  });
+});
+
+test("run --serve rejects one-shot request flags", async () => {
+  await assert.rejects(
+    runCli(["run", "missing.ts", "--serve", "--param", "name=value"]),
+    (error) => {
+      assert.match(
+        error.stderr,
+        /option '-p, --param <NAME=value>' cannot be used with option '--serve'/u,
+      );
+      return true;
+    },
+  );
+  await assert.rejects(runCli(["run", "missing.ts", "--serve", "--port", "65536"]), (error) => {
+    assert.match(error.stderr, /port must be an integer from 0 to 65535/u);
+    return true;
+  });
 });
 
 test("build output round-trips through decode as a URL and raw payload", async () => {

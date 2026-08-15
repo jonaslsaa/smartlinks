@@ -3,6 +3,7 @@ import {
   createRequestId,
   localRequestBody,
   lowercaseHeaders,
+  readBoundedRequestBody,
   userParams,
   userParamValues,
 } from "../../src/shared/request-context.js";
@@ -47,5 +48,24 @@ describe("request context normalization", () => {
     expect(() => localRequestBody("GET", "body")).toThrow("cannot include a body");
     expect(() => localRequestBody("HEAD", "body")).toThrow("cannot include a body");
     expect(localRequestBody("POST", "body")).toBe("body");
+  });
+
+  it("bounds streamed request bodies by UTF-8 bytes", async () => {
+    await expect(
+      readBoundedRequestBody(new Request("https://example.com", { method: "POST", body: "€" }), 3),
+    ).resolves.toBe("€");
+    await expect(
+      readBoundedRequestBody(new Request("https://example.com", { method: "POST", body: "€x" }), 3),
+    ).rejects.toThrow("Request body exceeds");
+    await expect(
+      readBoundedRequestBody(
+        new Request("https://example.com", {
+          method: "POST",
+          headers: { "content-length": "4" },
+          body: "x",
+        }),
+        3,
+      ),
+    ).rejects.toThrow("Request body exceeds");
   });
 });
