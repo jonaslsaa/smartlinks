@@ -10,15 +10,43 @@ export const MAX_SCRIPT_LENGTH = 1_000_000;
 export const MAX_DECOMPRESSED_LENGTH = MAX_SCRIPT_LENGTH * 6 + 64_000;
 export const MAX_NOT_AFTER = 8_640_000_000_000;
 export const MAX_COMPILE_CLOSURES = 64;
+export const MAX_INTERSTITIAL_NOTE_LENGTH = 140;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
+
+function isControlCharacter(character: string): boolean {
+  const codePoint = character.codePointAt(0) ?? 0;
+  return codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f);
+}
 
 const sealedSecretSchema = z.record(
   z.string().regex(SECRET_NAME, "Secret names must look like environment variables."),
   z.string().min(1).max(2_048),
 );
 const notAfterSchema = z.number().int().positive().max(MAX_NOT_AFTER);
+export const interstitialNoteSchema = z.string().transform((value, context) => {
+  const normalized = value.replace(/\s+/gu, " ").trim();
+  if (!normalized) {
+    context.addIssue({ code: "custom", message: "The interstitial note cannot be empty." });
+    return z.NEVER;
+  }
+  if ([...normalized].some(isControlCharacter)) {
+    context.addIssue({
+      code: "custom",
+      message: "The interstitial note cannot contain control characters.",
+    });
+    return z.NEVER;
+  }
+  if ([...normalized].length > MAX_INTERSTITIAL_NOTE_LENGTH) {
+    context.addIssue({
+      code: "custom",
+      message: `The interstitial note may contain at most ${MAX_INTERSTITIAL_NOTE_LENGTH} characters.`,
+    });
+    return z.NEVER;
+  }
+  return normalized;
+});
 
-export const envelopeSchema = z
+const envelopeObjectSchema = z
   .object({
     s: z.string().min(1).max(MAX_SCRIPT_LENGTH),
     i: z.literal(true).optional(),
@@ -26,13 +54,24 @@ export const envelopeSchema = z
     c: z.array(z.string().min(1).max(MAX_SCRIPT_LENGTH)).max(MAX_COMPILE_CLOSURES).optional(),
     k: sealedSecretSchema.optional(),
     notAfter: notAfterSchema.optional(),
+    interstitialNote: interstitialNoteSchema.optional(),
   })
   .strict();
 
-const wireEnvelopeSchema = envelopeSchema
-  .omit({ notAfter: true })
+export const envelopeSchema = envelopeObjectSchema.superRefine((envelope, context) => {
+  if (envelope.interstitialNote !== undefined && envelope.i !== true) {
+    context.addIssue({
+      code: "custom",
+      message: "An interstitial note requires an interstitial.",
+    });
+  }
+});
+
+const wireEnvelopeSchema = envelopeObjectSchema
+  .omit({ notAfter: true, interstitialNote: true })
   .extend({
     n: notAfterSchema.optional(),
+    m: interstitialNoteSchema.optional(),
     // Decode links authored before expiry received its compact wire key.
     notAfter: notAfterSchema.optional(),
   })
@@ -41,6 +80,12 @@ const wireEnvelopeSchema = envelopeSchema
       context.addIssue({
         code: "custom",
         message: 'The payload cannot contain both "n" and "notAfter".',
+      });
+    }
+    if (envelope.m !== undefined && envelope.i !== true) {
+      context.addIssue({
+        code: "custom",
+        message: "An interstitial note requires an interstitial.",
       });
     }
   });
@@ -58,11 +103,12 @@ export type RawDeflates = readonly [RawDeflate, ...RawDeflate[]];
 
 export function serializeEnvelope(input: Envelope): Uint8Array {
   const envelope = envelopeSchema.parse(input);
-  const { notAfter, ...wireEnvelope } = envelope;
+  const { notAfter, interstitialNote, ...wireEnvelope } = envelope;
   const serialized = utf8(
     JSON.stringify({
       ...wireEnvelope,
       ...(notAfter === undefined ? {} : { n: notAfter }),
+      ...(interstitialNote === undefined ? {} : { m: interstitialNote }),
     }),
   );
   if (serialized.byteLength > MAX_DECOMPRESSED_LENGTH) {
@@ -168,6 +214,7 @@ export function parseDecompressedPayload(
 ): DecodedPayload {
   const {
     n,
+    m,
     notAfter: legacyNotAfter,
     ...wireEnvelope
   } = wireEnvelopeSchema.parse(JSON.parse(text(decompressed)));
@@ -176,6 +223,7 @@ export function parseDecompressedPayload(
     envelope: envelopeSchema.parse({
       ...wireEnvelope,
       ...(n === undefined && legacyNotAfter === undefined ? {} : { notAfter: n ?? legacyNotAfter }),
+      ...(m === undefined ? {} : { interstitialNote: m }),
     }),
   };
 }

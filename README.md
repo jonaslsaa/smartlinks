@@ -117,16 +117,17 @@ approved closures and mint another ordinary Smartlink—there is no stored link 
 metadata.
 
 `ttlSeconds` is optional and can never extend an existing parent expiry. `interstitial` may be
-explicitly enabled or disabled; omission inherits the parent. `seal` accepts strings deliberately
-chosen by the parent, whether directly delegated, derived, or generated. Parent links that expose
-a mint path are unauthenticated administrative endpoints unless their own code verifies a request,
-so keep them private or gate that branch cryptographically.
+explicitly enabled or disabled; omission inherits the parent. `note` adds a child-specific
+author note and implies an interstitial; notes never inherit from the parent. `seal` accepts strings
+deliberately chosen by the parent, whether directly delegated, derived, or generated. Parent links
+that expose a mint path are unauthenticated administrative endpoints unless their own code verifies
+a request, so keep them private or gate that branch cryptographically.
 
 ## Sealed secrets
 
 Secrets are encrypted locally with the runtime's public key and bound to the complete immutable
 program: its entry function, compile closures, baked child data, expiry, execution policy, and
-secret name. Only ciphertext and a key ID enter the URL.
+optional author note, plus the secret name. Only ciphertext and a key ID enter the URL.
 
 ```sh
 export GITHUB_TOKEN=github_pat_…
@@ -153,7 +154,8 @@ smartlinks decode <link-or-payload>      Inspect a Smartlink without executing i
 
 Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
 include `--secret`, `--expires`, `--interstitial`, `--copy`, `--out`, `--json`, `--no-minify`,
-and `--no-type-check`. `--expires` accepts a duration such as `30m`, `1h`, or `7d`, or an
+`--interstitial-note`, and `--no-type-check`. `--interstitial-note` adds a short author-provided
+note and implies `--interstitial`. `--expires` accepts a duration such as `30m`, `1h`, or `7d`, or an
 absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
 running the script; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
 Local networking is off by default; opt in with `smartlinks run --allow-network`.
@@ -175,6 +177,12 @@ Generated links are opaque bearer artifacts. `--copy` sends the link to the clip
 printing it, while `--out link.txt` writes it to a file with owner-only POSIX permissions; both
 print only a compact size and payload-budget receipt. Plain `--json` includes the execution URL
 once and omits the equivalent decoder URL. `smartlinks decode` accepts the execution URL directly.
+
+An interstitial separates immutable system guidance, an optional author-provided note, machine
+facts, and the decoded source. Notes are whitespace-normalized and limited to 140 Unicode
+characters. They are public metadata: compression and base64url encoding obscure them in the URL,
+but anyone can decode them. When a link contains sealed secrets, changing or removing its note
+makes those secrets undecryptable.
 
 TypeScript input is strictly type-checked against the Smartlinks `ctx`, global `fetch`, and
 response contract, then transpiled from the `.ts` extension before validation and encoding. Use

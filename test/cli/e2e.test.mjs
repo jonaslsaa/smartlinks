@@ -141,6 +141,7 @@ test("the built CLI exposes its version and public subcommands", async () => {
   assert.doesNotMatch(buildHelp.stdout, /--service\b/u);
   assert.match(buildHelp.stdout, /--no-type-check\b/u);
   assert.match(buildHelp.stdout, /--expires <duration-or-date>/u);
+  assert.match(buildHelp.stdout, /--interstitial-note <text>/u);
   assert.match(buildHelp.stdout, /--copy\s+copy the link without printing it/u);
   assert.match(buildHelp.stdout, /--out <file>\s+write the link privately without printing it/u);
 
@@ -504,7 +505,8 @@ test("build output round-trips through decode as a URL and raw payload", async (
                 script,
                 "--secret",
                 "E2E_TOKEN=value",
-                "--interstitial",
+                "--interstitial-note",
+                "  Deploys\n the reviewed release  ",
                 "--expires",
                 "2100-01-01T00:00:00Z",
                 "--no-minify",
@@ -521,6 +523,7 @@ test("build output round-trips through decode as a URL and raw payload", async (
         assert.equal(built.notAfter, Date.parse("2100-01-01T00:00:00Z") / 1000);
         assert.equal(built.expiresAt, "2100-01-01T00:00:00.000Z");
         assert.equal(built.expired, false);
+        assert.equal(built.interstitialNote, "Deploys the reviewed release");
         assert.equal(built.characters, built.link.length);
         assert.equal(built.fits, true);
         assert.equal(typeof built.payloadCharacters, "number");
@@ -535,6 +538,7 @@ test("build output round-trips through decode as a URL and raw payload", async (
         assert.equal(decodedFromUrl.notAfter, built.notAfter);
         assert.equal(decodedFromUrl.expiresAt, built.expiresAt);
         assert.equal(decodedFromUrl.expired, false);
+        assert.equal(decodedFromUrl.interstitialNote, built.interstitialNote);
         assert.match(decodedFromUrl.script, /ctx\.params\.name/u);
 
         const payload = new URL(built.link).pathname.slice("/r/".length);

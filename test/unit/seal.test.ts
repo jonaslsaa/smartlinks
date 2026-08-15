@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   artifactSecretBinding,
+  boundSealedSecrets,
   generateKeyPair,
   openSecret,
   publicKeyFromPrivateSecret,
@@ -56,6 +57,7 @@ describe("sealed secrets", () => {
       c: ["async value=>value"],
       i: true as const,
       notAfter: 2_000_000_000,
+      interstitialNote: "Deploys the reviewed release",
     };
     const binding = artifactSecretBinding("2", envelope, "TOKEN");
     const blob = await sealSecret("top secret", binding, pair);
@@ -66,11 +68,31 @@ describe("sealed secrets", () => {
       artifactSecretBinding("2", { ...envelope, c: ["async value=>String(value)"] }, "TOKEN"),
       artifactSecretBinding("2", { ...envelope, i: undefined }, "TOKEN"),
       artifactSecretBinding("2", { ...envelope, notAfter: envelope.notAfter + 1 }, "TOKEN"),
+      artifactSecretBinding("2", { ...envelope, interstitialNote: "Changed note" }, "TOKEN"),
+      artifactSecretBinding("2", { ...envelope, interstitialNote: undefined }, "TOKEN"),
       artifactSecretBinding("2", envelope, "RENAMED_TOKEN"),
     ];
     for (const changedBinding of tampered) {
       await expect(openSecret(blob, changedBinding, pair.privateKeySecret)).rejects.toThrow();
     }
+  });
+
+  it("does not let legacy sealed links gain an unauthenticated author note", async () => {
+    const pair = await generateKeyPair(1);
+    const script = "async()=>1";
+    const blob = await sealSecret("top secret", { script }, pair);
+
+    expect(() =>
+      boundSealedSecrets({
+        version: "2",
+        envelope: {
+          s: script,
+          i: true,
+          interstitialNote: "Injected note",
+          k: { TOKEN: blob },
+        },
+      }),
+    ).toThrow("complete-artifact binding");
   });
 
   it("validates the one-byte rotation key ID", async () => {

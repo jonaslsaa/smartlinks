@@ -68,6 +68,35 @@ describe("smartlink minting", () => {
     expect(encode.mock.calls[0]?.[0]).toMatchObject({ i: true, notAfter: 2_000 });
   });
 
+  it("lets children opt into their own note without inheriting the parent's note", async () => {
+    const encode = vi.fn(async (envelope, version) => encodePayload(envelope, version));
+    const compile = await compiler({
+      parent: {
+        version: "2",
+        envelope: {
+          s: "async ctx=>ctx.compile(0,[])",
+          c: ["async()=>({body:'ok'})"],
+          i: true,
+          interstitialNote: "Parent note",
+        },
+      },
+      encode,
+    });
+
+    await compile(0, [], undefined);
+    expect(encode.mock.calls[0]?.[0]).toMatchObject({ i: true });
+    expect(encode.mock.calls[0]?.[0].interstitialNote).toBeUndefined();
+
+    await compile(0, [], { note: "  Child\n note  " });
+    expect(encode.mock.calls[1]?.[0]).toMatchObject({
+      i: true,
+      interstitialNote: "Child note",
+    });
+    await expect(compile(0, [], { note: "No", interstitial: false })).rejects.toThrow(
+      "note cannot be used with interstitial: false",
+    );
+  });
+
   it("rejects plaintext parent secrets in args but permits explicit sealing", async () => {
     const compile = await compiler({ parentSecrets: { TOKEN: "sensitive-value" } });
 

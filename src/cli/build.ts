@@ -1,3 +1,4 @@
+import { interstitialNoteSchema } from "../shared/codec.js";
 import { compiledChildSource } from "../shared/mint.js";
 import { validateScript } from "../shared/sandbox.js";
 import { minifyFunctionExpression, minifyScriptBody, wrapScriptBody } from "../shared/script.js";
@@ -9,6 +10,7 @@ export type CreateSmartlinkOptions = {
   source: string;
   service: string;
   interstitial?: boolean;
+  interstitialNote?: string;
   notAfter?: number;
   secrets?: Record<string, string>;
   publicKey?: PublicKey;
@@ -22,6 +24,7 @@ export type CreatedSmartlink = {
   payload: string;
   source: string;
   closures: string[];
+  interstitialNote?: string;
 };
 
 export async function prepareSmartlinkProgram(
@@ -53,12 +56,18 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
   }
 
   const publicKey = options.publicKey;
+  const interstitialNote =
+    options.interstitialNote === undefined
+      ? undefined
+      : interstitialNoteSchema.parse(options.interstitialNote);
+  const interstitial = options.interstitial === true || interstitialNote !== undefined;
   const envelope = {
     s: source,
-    ...(options.interstitial ? { i: true as const } : {}),
+    ...(interstitial ? { i: true as const } : {}),
     ...(closures.length ? { c: closures } : {}),
     ...(secretEntries.length ? { a: 1 as const } : {}),
     ...(options.notAfter !== undefined ? { notAfter: options.notAfter } : {}),
+    ...(interstitialNote === undefined ? {} : { interstitialNote }),
   };
   const sealedEntries = publicKey
     ? await Promise.all(
@@ -80,6 +89,7 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
     payload,
     source,
     closures,
+    ...(interstitialNote === undefined ? {} : { interstitialNote }),
     link: `${options.service}/r/${payload}`,
     decoder: `${options.service}/d/${payload}`,
   };

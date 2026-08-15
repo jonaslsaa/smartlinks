@@ -1,14 +1,20 @@
-import { type DecodedPayload, formatNotAfter, isExpired } from "../shared/codec.js";
+import type { DecodedPayload } from "../shared/codec.js";
+import { payloadFacts } from "../shared/payload-facts.js";
 import { formatStoredScript } from "../shared/script.js";
 import { escapeHtml, html } from "./http.js";
 
 const PAGE_STYLE = `
   :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; background:#090909; color:#f3f3f3 }
   body { width:min(calc(100% - 32px), 760px); margin:48px auto; line-height:1.55 }
-  h1 { font-size:28px; margin:0 0 12px } p { color:#b9b9b9 }
+  h1 { font-size:30px; margin:0 0 12px; letter-spacing:-.02em } h2 { font-size:18px; margin:32px 0 10px } h3 { font-size:14px; color:#aaa } p { color:#b9b9b9 }
   pre { overflow:auto; padding:18px; border:1px solid #303030; background:#111; color:#eee; line-height:1.5 }
-  button,a { color:inherit } button { border:1px solid #777; background:#f3f3f3; color:#111; padding:10px 16px; font:inherit; cursor:pointer }
-  .warning { border-left:2px solid #d0a64b; padding:10px 14px; background:#17130b }
+  button,a { color:inherit } button { border:0; border-radius:7px; background:#f3f3f3; color:#111; padding:11px 17px; font:600 15px/1.2 inherit; cursor:pointer }
+  .panel { border:1px solid #303030; border-radius:9px; padding:16px 18px; background:#111; margin:20px 0 }
+  .system { border-color:#5b4821; background:#17130b } .system strong { display:block; color:#f3d58b; margin-bottom:4px }
+  .author-note { border-color:#34516b; background:#0d151c } .eyebrow { display:block; color:#8fbde5; font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px }
+  .author-note p,.system p { margin:0 }
+  dl { display:grid; grid-template-columns:max-content 1fr; gap:8px 20px; margin:0 } dt { color:#888 } dd { margin:0; overflow-wrap:anywhere }
+  form { margin-top:24px }
   code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace }
 `;
 
@@ -27,6 +33,25 @@ function compileClosureHtml(decoded: DecodedPayload): string {
         `<h3>Closure ${index}</h3><pre><code>${escapeHtml(formatStoredScript("2", closure))}</code></pre>`,
     )
     .join("")}`;
+}
+
+function authorNoteHtml(decoded: DecodedPayload): string {
+  const note = decoded.envelope.interstitialNote;
+  return note === undefined
+    ? ""
+    : `<section class="panel author-note"><span class="eyebrow">Author-provided note</span><p>${escapeHtml(note)}</p></section>`;
+}
+
+function factsHtml(decoded: DecodedPayload): string {
+  const facts = payloadFacts(decoded);
+  const expiry =
+    facts.expiresAt === null
+      ? "Does not expire"
+      : `${facts.expiresAt}${facts.expired ? " (expired)" : ""}`;
+  const secrets = facts.sealedSecrets.length
+    ? `${facts.sealedSecrets.length}: ${facts.sealedSecrets.map(escapeHtml).join(", ")}`
+    : "None";
+  return `<section class="panel"><span class="eyebrow">Smartlink facts</span><dl><dt>Payload version</dt><dd>${facts.payloadVersion}</dd><dt>Expiry</dt><dd>${escapeHtml(expiry)}</dd><dt>Sealed secrets</dt><dd>${secrets}</dd><dt>Compile closures</dt><dd>${facts.compileClosures}</dd></dl></section>`;
 }
 
 export function previewPage(head = false): Response {
@@ -53,15 +78,11 @@ export function expiredPage(): Response {
 export function interstitialPage(decoded: DecodedPayload, action: string): Response {
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
   const closures = compileClosureHtml(decoded);
-  const secretNames = Object.keys(decoded.envelope.k ?? {});
-  const secretText = secretNames.length
-    ? `<p>Sealed secrets available to this script: <code>${secretNames.map(escapeHtml).join("</code>, <code>")}</code>.</p>`
-    : "<p>This script contains no sealed secrets.</p>";
 
   return html(
     page(
       "Confirm smartlink",
-      `<h1>Review before running</h1><p class="warning">This link will run the script shown below. Continue only if you trust where it came from and understand what it will do.</p><pre><code>${escapeHtml(script)}</code></pre>${closures}${secretText}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
+      `<h1>Review before running</h1><section class="panel system"><strong>This link runs a program.</strong><p>Review its note, capabilities, and source before continuing.</p></section>${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
     ),
     { headers: { "cache-control": "no-store" } },
   );
@@ -70,20 +91,12 @@ export function interstitialPage(decoded: DecodedPayload, action: string): Respo
 export function decoderPage(decoded: DecodedPayload): Response {
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
   const closures = compileClosureHtml(decoded);
-  const secretNames = Object.keys(decoded.envelope.k ?? {});
   const notAfter = decoded.envelope.notAfter;
-  const metadata = [
-    `Payload version: ${decoded.version}`,
-    `Confirmation required: ${decoded.envelope.i === true ? "yes" : "no"}`,
-    `Compile closures: ${decoded.envelope.c?.length ?? 0}`,
-    `Sealed secrets: ${secretNames.length ? secretNames.join(", ") : "none"}`,
-    `Expiry: ${notAfter === undefined ? "never" : `${formatNotAfter(notAfter)}${isExpired(notAfter) ? " (expired)" : ""}`}`,
-  ];
 
   return html(
     page(
       "Decode smartlink",
-      `<h1>Decoded smartlink</h1><p>${metadata.map(escapeHtml).join("<br>")}</p><pre><code>${escapeHtml(script)}</code></pre>${closures}<p>The encrypted secret values are intentionally not displayed.</p>`,
+      `<h1>Decoded smartlink</h1>${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<p>The encrypted secret values are intentionally not displayed.</p>`,
     ),
     {
       headers: {

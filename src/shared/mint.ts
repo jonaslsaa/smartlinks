@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { type DecodedPayload, type Envelope, MAX_NOT_AFTER, type PayloadVersion } from "./codec.js";
+import {
+  type DecodedPayload,
+  type Envelope,
+  interstitialNoteSchema,
+  MAX_NOT_AFTER,
+  type PayloadVersion,
+} from "./codec.js";
 import type { CryptoOperationBudget } from "./guest-crypto.js";
 import { artifactSecretBinding, type PublicKey, sealSecret } from "./seal.js";
 
@@ -21,6 +27,7 @@ const compileOptionsSchema = z
       .optional(),
     ttlSeconds: z.number().int().positive().max(MAX_NOT_AFTER).optional(),
     interstitial: z.boolean().optional(),
+    note: interstitialNoteSchema.optional(),
   })
   .strict();
 
@@ -191,7 +198,13 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
       compileOptions.ttlSeconds,
       nowSeconds,
     );
-    const interstitial = compileOptions.interstitial ?? options.parent.envelope.i === true;
+    if (compileOptions.note !== undefined && compileOptions.interstitial === false) {
+      throw new Error("Invalid ctx.compile options: note cannot be used with interstitial: false.");
+    }
+    const interstitial =
+      compileOptions.note !== undefined
+        ? true
+        : (compileOptions.interstitial ?? options.parent.envelope.i === true);
     const source = compiledChildSource(closure, argumentJson);
     assertNoPlaintextSecrets(source, closures, args, argumentJson, options.parentSecrets);
     await options.validate(options.parent.version, source);
@@ -204,6 +217,7 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
       ...(closures.length ? { c: closures } : {}),
       ...(secretEntries.length ? { a: 1 as const } : {}),
       ...(notAfter === undefined ? {} : { notAfter }),
+      ...(compileOptions.note === undefined ? {} : { interstitialNote: compileOptions.note }),
     };
     const publicKey = secretEntries.length ? await options.getPublicKey() : undefined;
     const sealedEntries = publicKey

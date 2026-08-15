@@ -63,6 +63,8 @@ Options are:
   without a deadline may mint a child without one. Children shared outside the parent's audience
   should usually expire; prefer hours, not days.
 - `interstitial?: boolean`: explicit `true` or `false` overrides the parent; omission inherits it.
+- `note?: string`: add a child-specific author note and imply an interstitial. Notes do not inherit
+  from the parent, and `note` cannot be combined with `interstitial: false`.
 - `seal?: Record<string, string>`: strings to encrypt for the child's `ctx.secrets`. Direct parent
   secrets, deliberately derived values, and generated values are all supported.
 
@@ -113,6 +115,8 @@ execution and validation path.
 ## `smartlinks build <script.js|script.ts>`
 
 - `--interstitial`: require a browser confirmation before execution.
+- `--interstitial-note TEXT`: add an author-provided note and require browser confirmation. The
+  note is whitespace-normalized and limited to 140 Unicode characters.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline values.
 - `--expires VALUE`: expire the link after a duration (`30m`, `1h`, `7d`) or at an absolute ISO
   8601 date. The CLI stores the deadline as integer Unix seconds in UTC and rejects past dates.
@@ -180,16 +184,22 @@ writing binary data to the terminal.
 
 `smartlinks decode <link-or-payload> [--json]` inspects the emitted script and metadata without
 executing it or decrypting secrets. It renders `notAfter` as an absolute UTC timestamp and marks
-links whose deadline has passed.
+links whose deadline has passed. It also displays any author-provided note and the same payload
+facts shown by the browser interstitial.
 
 ## Secrets and authority
 
 The CLI fetches the runtime's public key and encrypts each requested secret locally. Ciphertext is
 bound to the active key ID, target secret name, and complete immutable authority-bearing artifact:
 the entry script, ordered compile table, baked program data, expiry, and execution-policy flags.
-Changing any of those fields makes decryption fail. Dynamic request parameters remain variable
+An optional author note is part of that binding too. Changing any of those fields makes decryption
+fail. Dynamic request parameters remain variable
 input to the authenticated program and are not part of this binding. The private key remains a
 Worker secret.
+
+Author notes are public, attributed text rather than verified identity. They are compressed and
+base64url-encoded with the rest of the envelope, but anyone can recover them with `decode`; never
+put credentials or private data in a note.
 
 Encryption hides values from URL inspection; it does not make the execution URL private. Anyone
 with the complete URL can invoke the script with its sealed authority until `notAfter`, when
