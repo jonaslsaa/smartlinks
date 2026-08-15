@@ -111,10 +111,10 @@ Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? 
 response, return `{ status?, headers?, bodyBase64 }` for bytes, or return nothing for a small
 success page. `body` and `bodyBase64` are mutually exclusive. Binary responses are limited to
 1 MiB after decoding and default to `application/octet-stream` when no content type is supplied.
-Every response receives a runtime-owned browser-security floor. An author-provided Content
-Security Policy can tighten that floor but cannot replace it. The runtime also reserves
-`x-smartlinks-preview`; other response headers remain under the author's control. Top-level `await`
-works.
+Every mapped script response receives a runtime-owned browser-security floor. An author-provided
+Content Security Policy can tighten that floor but cannot replace it. The runtime reserves
+`x-smartlinks-preview` for non-executing previews and removes it from executed responses; other
+response headers remain under the author's control. Top-level `await` works.
 
 ## Mint a link from a link
 
