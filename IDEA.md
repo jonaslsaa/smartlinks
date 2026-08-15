@@ -98,13 +98,16 @@ authors write a plain async function body and `return` their result. `ctx`:
 
 ```
 ctx.params    // object: query params (minus __reserved)
+ctx.paramValues // object: every value for repeated query params
 ctx.method    // "GET" | "POST" | ...
 ctx.headers   // object, lowercased keys
 ctx.body      // string | null (request body, if any)
 ctx.secrets   // object: decrypted secrets by name (plaintext strings)
-ctx.fetch(url, opts) // guarded fetch bridge (see decision #9); returns
-                     // { status, headers, text } — plain objects only,
-                     // no Response class in the guest
+ctx.requestId // opaque execution correlation ID
+ctx.crypto    // SHA-256 and HMAC-SHA256 helpers
+
+fetch(url, opts) // guarded global fetch bridge (see decision #9); returns a
+                 // bounded Response-like object with text() and json()
 ```
 
 Host↔guest boundary passes plain JSON-able values only.

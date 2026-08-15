@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  createRequestId,
   localRequestBody,
   lowercaseHeaders,
   userParams,
+  userParamValues,
 } from "../../src/shared/request-context.js";
 
 describe("request context normalization", () => {
@@ -13,6 +15,14 @@ describe("request context normalization", () => {
         ["__confirm", "1"],
       ]),
     ).toEqual({ name: "Jonas" });
+    expect(
+      userParamValues([
+        ["tag", "one"],
+        ["tag", "two"],
+        ["constructor", "safe"],
+        ["__confirm", "1"],
+      ]),
+    ).toEqual({ tag: ["one", "two"], constructor: ["safe"] });
     expect(lowercaseHeaders([["Content-Type", "application/json"]], true)).toEqual({
       "content-type": "application/json",
     });
@@ -25,6 +35,11 @@ describe("request context normalization", () => {
         true,
       ),
     ).toThrow("provided more than once");
+  });
+
+  it("uses a platform request ID when available and otherwise creates one", () => {
+    expect(createRequestId(" ray-id ")).toBe("ray-id");
+    expect(createRequestId()).toMatch(/^[0-9a-f-]{36}$/u);
   });
 
   it("rejects local GET and HEAD bodies just as production omits them", () => {

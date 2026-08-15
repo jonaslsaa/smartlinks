@@ -63,6 +63,23 @@ describe("Worker routes", () => {
     await expect(response.text()).resolves.toBe("Jonas:sealed-value");
   });
 
+  it("supplies repeated params, request IDs, and crypto in production", async () => {
+    const created = await createSmartlink({
+      source: `
+        const signature = await ctx.crypto.hmacSha256("key", "message");
+        return { body: [ctx.paramValues.tag.join(","), ctx.requestId, await ctx.crypto.verifyHmacSha256("key", "message", signature)].join(":") };
+      `,
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(
+      new Request(`${created.link}?tag=one&tag=two`, { headers: { "cf-ray": "ray-123" } }),
+      testEnv(),
+    );
+
+    await expect(response.text()).resolves.toBe("one,two:ray-123:true");
+  });
+
   it("supports legacy version 1 links", async () => {
     const payload = encodePayload({ s: 'return { body: "legacy" }' }, "1");
     const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());

@@ -1,5 +1,8 @@
-const release = await ctx.fetch("https://api.github.com/repos/cloudflare/workers-sdk/releases/latest", {
+const release = await fetch("https://api.github.com/repos/cloudflare/workers-sdk/releases/latest", {
   headers: { accept: "application/vnd.github+json", "user-agent": "smartlinks" },
 });
-const tag = JSON.parse(release.text).tag_name;
+if (!release.ok) {
+  return { status: 502, body: `GitHub returned HTTP ${release.status}` };
+}
+const { tag_name: tag } = await release.json();
 return `https://github.com/cloudflare/workers-sdk/releases/tag/${encodeURIComponent(tag)}`;

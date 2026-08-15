@@ -13,17 +13,53 @@ type __SmartlinksFetchOptions = {
   body?: string;
 };
 type __SmartlinksFetchResponse = {
-  status: number;
-  headers: Record<string, string>;
-  text: string;
+  readonly status: number;
+  readonly statusText: string;
+  readonly ok: boolean;
+  readonly url: string;
+  readonly redirected: boolean;
+  readonly bodyUsed: boolean;
+  readonly headers: {
+    get(name: string): string | null;
+    has(name: string): boolean;
+    entries(): IterableIterator<[string, string]>;
+    keys(): IterableIterator<string>;
+    values(): IterableIterator<string>;
+    forEach(
+      callback: (value: string, name: string, headers: __SmartlinksFetchResponse["headers"]) => void,
+      thisArg?: unknown,
+    ): void;
+    [Symbol.iterator](): IterableIterator<[string, string]>;
+  };
+  text(): Promise<string>;
+  json<T = unknown>(): Promise<T>;
 };
+declare function fetch(
+  url: string,
+  options?: __SmartlinksFetchOptions,
+): Promise<__SmartlinksFetchResponse>;
 type __SmartlinksContext = {
   params: __SmartlinksStringMap;
+  paramValues: { [name: string]: string[] | undefined };
   method: string;
   headers: __SmartlinksStringMap;
   body: string | null;
   secrets: __SmartlinksStringMap;
-  fetch(url: string, options?: __SmartlinksFetchOptions): Promise<__SmartlinksFetchResponse>;
+  requestId: string;
+  crypto: {
+    sha256(message: string, encoding?: "hex" | "base64"): Promise<string>;
+    hmacSha256(
+      key: string,
+      message: string,
+      encoding?: "hex" | "base64",
+    ): Promise<string>;
+    verifyHmacSha256(
+      key: string,
+      message: string,
+      signature: string,
+      encoding?: "hex" | "base64",
+    ): Promise<boolean>;
+  };
 };
 type __SmartlinksResult =
   | string

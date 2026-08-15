@@ -61,15 +61,22 @@ describe("CLI script input", () => {
     );
 
     await expect(
-      transpileScriptSource('return await ctx.fetch("https://example.com");', "fetch-response.ts"),
+      transpileScriptSource('return await fetch("https://example.com");', "fetch-response.ts"),
     ).rejects.toThrow("Type '__SmartlinksFetchResponse' is not assignable");
 
     await expect(
       transpileScriptSource(
-        'const response = await ctx.fetch("https://example.com");\nreturn { body: response.text };',
+        'const response = await fetch("https://example.com");\nreturn { body: await response.text() };',
         "mapped-fetch-response.ts",
       ),
-    ).resolves.toContain("body: response.text");
+    ).resolves.toContain("body: await response.text()");
+
+    await expect(
+      transpileScriptSource(
+        'const signature = await ctx.crypto.hmacSha256("key", "body");\nreturn { body: ctx.requestId + ":" + ctx.paramValues.tag?.join(",") + ":" + signature };',
+        "capabilities.ts",
+      ),
+    ).resolves.toContain("ctx.crypto.hmacSha256");
   });
 
   it("allows an omitted return for the default completion page", async () => {

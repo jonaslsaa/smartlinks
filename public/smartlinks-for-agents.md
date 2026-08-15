@@ -22,17 +22,29 @@ and `return` are valid. Imports and Node APIs are unavailable inside QuickJS.
 The script receives `ctx` with:
 
 - `params`: query parameters excluding names beginning with `__`.
+- `paramValues`: every value for repeated query parameters, excluding reserved names.
 - `method`: the incoming HTTP method.
 - `headers`: incoming headers with lowercase names.
 - `body`: the request body as a string or `null`.
 - `secrets`: decrypted values keyed by the names supplied during build.
-- `fetch(url, options)`: guarded HTTP fetching that returns `{ status, headers, text }`.
+- `requestId`: an opaque per-execution correlation ID.
+- `crypto`: SHA-256, HMAC-SHA256, and constant-time HMAC verification helpers.
+
+`ctx.crypto.sha256(message, encoding?)`, `hmacSha256(key, message, encoding?)`, and
+`verifyHmacSha256(key, message, signature, encoding?)` accept strings. Encoding defaults to
+lowercase `hex`; `base64` is also supported. An execution may perform at most 16 cryptographic
+operations, with at most 1 MiB of string input per operation.
+
+Global `fetch(url, options)` accepts a string URL, method, plain headers, and a string body. It
+returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirected`, `headers`,
+`bodyUsed`, `text()`, and `json()`. The response body can be consumed once. Streams, `Request`,
+`Blob`, `FormData`, cloning, custom redirect modes, and guest abort signals are not supported.
 
 Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` for a literal
 response, or `undefined` for the default completion page.
 
 TypeScript is checked in isolation with strict compiler settings and built-in types for `ctx`,
-`ctx.fetch`, and valid script results. Smartlinks does not load a project `tsconfig` or resolve
+global `fetch`, and valid script results. Smartlinks does not load a project `tsconfig` or resolve
 imports. The execution link and decoder contain emitted JavaScript. `--no-type-check` skips
 semantic checking but still transpiles TypeScript; `--no-minify` still transpiles it as well.
 
@@ -79,7 +91,7 @@ Use this as the local dry-run before building a final link.
 - `--header NAME=value`: supply a request header; repeatable.
 - `--method METHOD`: set the request method; defaults to `GET`.
 - `--body TEXT`: set a request body; invalid for `GET` and `HEAD`.
-- `--allow-network`: enable guarded `ctx.fetch`; networking is disabled by default locally.
+- `--allow-network`: enable guarded `fetch`; networking is disabled by default locally.
 - `--json`: emit the mapped response as machine-readable output.
 - `--no-type-check`: skip strict semantic checking for TypeScript; syntax must still transpile.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
@@ -111,7 +123,7 @@ revocable credentials. Avoid inline `NAME=value` secrets because shell history c
 - Each request gets a fresh QuickJS runtime with a 16 MiB heap, 512 KiB stack, deterministic
   1,500-interrupt-poll budget, and 15-second host-wait deadline. Interrupt polls are not CPU-time
   measurements.
-- `ctx.fetch` permits HTTP(S), blocks local hostnames and private/local/reserved IP literals,
+- `fetch` permits HTTP(S), blocks local hostnames and private/local/reserved IP literals,
   limits same-origin redirects to three, total requests to five, request and response bodies to
   1 MiB, and each fetch to ten seconds. Cross-origin redirects are rejected. Local
   `smartlinks run --allow-network` additionally resolves and pins DNS connections to validated
