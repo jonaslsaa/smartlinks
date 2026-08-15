@@ -16,8 +16,9 @@ import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
 import { createSmartlink } from "./build.js";
 import { parseExpiry } from "./expiry.js";
-import { createSyntheticRequest, executeLocalRequest } from "./run.js";
+import { createSyntheticRequest, executeLocalRequest, LocalScriptError } from "./run.js";
 import { serveLocalScript } from "./serve.js";
+import { formatSimulationReport, type SimulationReport } from "./simulation.js";
 import { readScriptSource } from "./source.js";
 import { fail, startUi } from "./ui.js";
 import { collect, normalizeServiceUrl, resolveSecrets, splitAssignment } from "./values.js";
@@ -44,6 +45,7 @@ type BuildOptions = {
 
 type RunOptions = {
   allowNetwork?: boolean;
+  simulate?: boolean;
   param: string[];
   secret: string[];
   header: string[];
@@ -93,6 +95,25 @@ function buildReceipt(stats: string, options: Pick<BuildOptions, "copy" | "out">
   ]
     .filter((part): part is string => part !== undefined)
     .join(" · ");
+}
+
+function printSimulationReport(
+  report: SimulationReport,
+  options: Pick<RunOptions, "json">,
+  interactive: boolean,
+): void {
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  const formatted = formatSimulationReport(report);
+  if (interactive) {
+    p.note(formatted, "Network simulation");
+    p.outro("One deterministic path · no network requests were sent");
+  } else {
+    console.log(formatted);
+    console.error("One deterministic path · no network requests were sent");
+  }
 }
 
 async function assertOutputDoesNotOverwriteInput(input: string, output: string): Promise<void> {
@@ -260,12 +281,13 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
   const executionOptions = {
     allowNetwork: options.allowNetwork === true,
     blockedHostnames:
-      options.allowNetwork === true
+      options.allowNetwork === true || options.simulate === true
         ? [new URL(normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL)).hostname]
         : [],
     file,
     minify: options.minify,
     secrets: await resolveSecrets(options.secret, { prompt: interactive }),
+    simulate: options.simulate === true,
     typeCheck: options.typeCheck,
   };
 
@@ -294,7 +316,22 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     method: options.method,
     parameters,
   });
-  const { binary, response } = await executeLocalRequest(request, executionOptions);
+  let execution: Awaited<ReturnType<typeof executeLocalRequest>>;
+  try {
+    execution = await executeLocalRequest(request, executionOptions);
+  } catch (error) {
+    if (options.simulate && error instanceof LocalScriptError && error.simulation) {
+      printSimulationReport(error.simulation, options, interactive);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
+  const { binary, response } = execution;
+  if (execution.simulation) {
+    printSimulationReport(execution.simulation, options, interactive);
+    return;
+  }
   const binaryBody = binary ? Buffer.from(await response.arrayBuffer()) : undefined;
   const responseHeaders = Object.fromEntries(response.headers);
 
@@ -452,7 +489,15 @@ program
     new Option("-X, --method <method>", "request method").default("GET").conflicts("serve"),
   )
   .addOption(new Option("--body <text>", "request body").conflicts("serve"))
-  .option("--allow-network", "allow guarded outbound fetch calls")
+  .addOption(
+    new Option("--allow-network", "allow guarded outbound fetch calls").conflicts("simulate"),
+  )
+  .addOption(
+    new Option("--simulate", "trace fetch calls without sending network requests").conflicts([
+      "allowNetwork",
+      "serve",
+    ]),
+  )
   .option("--serve", "serve the script on a loopback HTTP server")
   .addOption(
     new Option("--port <number>", "serve port; use 0 to choose an available port")

@@ -19,6 +19,7 @@ import {
 } from "../shared/seal.js";
 import { encodePayloadForCli } from "./encode.js";
 import { createNodeFetch } from "./node-fetch.js";
+import type { LocalSimulation } from "./simulation.js";
 
 const LOCAL_SERVICE_URL = "https://smartlinks.local";
 const MAX_COMPILE_REDIRECTS = 10;
@@ -29,6 +30,7 @@ type LocalProgram = {
   context: SandboxContext;
   allowNetwork: boolean;
   blockedHostnames: readonly string[];
+  simulation?: LocalSimulation;
 };
 
 async function decryptSecrets(
@@ -92,15 +94,20 @@ function compiledUrl(result: ScriptResult): URL | undefined {
 }
 
 export async function runLocalProgram(program: LocalProgram): Promise<ScriptResult> {
+  if (program.allowNetwork && program.simulation) {
+    throw new Error("Network access and network simulation cannot be enabled together.");
+  }
   const nodeFetch = program.allowNetwork ? createNodeFetch() : undefined;
   const createGuestFetch = (): GuestFetch =>
-    nodeFetch
-      ? createGuardedFetch({ fetchImpl: nodeFetch, blockedHostnames: program.blockedHostnames })
-      : async () => {
-          throw new Error(
-            "Network access is disabled. Re-run with --allow-network to enable fetch.",
-          );
-        };
+    program.simulation
+      ? program.simulation.createGuestFetch(program.blockedHostnames)
+      : nodeFetch
+        ? createGuardedFetch({ fetchImpl: nodeFetch, blockedHostnames: program.blockedHostnames })
+        : async () => {
+            throw new Error(
+              "Network access is disabled. Re-run with --allow-network to enable fetch.",
+            );
+          };
   let localKey: Promise<GeneratedKeyPair> | undefined;
   const getLocalKey = () => {
     localKey ??= generateKeyPair(1);
@@ -126,11 +133,14 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
         `Local execution followed more than ${MAX_COMPILE_REDIRECTS} compiled Smartlinks.`,
       );
     }
-    decoded = decodePayload(payloadFromInput(url.href));
+    const payload = payloadFromInput(url.href);
+    decoded = decodePayload(payload);
+    program.simulation?.recordCompile(decoded, payload.length, followed + 1);
     if (isExpired(decoded.envelope.notAfter)) {
       throw new Error("The compiled local Smartlink has expired.");
     }
     const secrets = await decryptSecrets(decoded, getLocalKey);
+    program.simulation?.addSecrets(secrets);
     context = {
       params: userParams(url.searchParams),
       paramValues: userParamValues(url.searchParams),
