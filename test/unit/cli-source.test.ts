@@ -103,7 +103,7 @@ describe("CLI script input", () => {
     ).resolves.toContain("const name = ctx.params.name;");
 
     await expect(transpileScriptSource("return 123;", "invalid-return.ts")).rejects.toThrow(
-      "Type 'number' is not assignable to type '__SmartlinksResult'.",
+      "Type 'number' is not assignable to type 'SmartlinksResult'.",
     );
   });
 
@@ -123,6 +123,24 @@ describe("CLI script input", () => {
         "compile.ts",
       ),
     ).resolves.toContain('ctx.compile(child, ["Jonas", 2]');
+
+    await expect(
+      transpileScriptSource(
+        `
+          const retry = (ctx: SmartlinksContext, count: number) => child(ctx, count - 1);
+          const child = async (
+            ctx: SmartlinksContext,
+            count: number,
+          ): Promise<SmartlinksResult> => {
+            if (count <= 0) return { body: "done" };
+            if (count === 1) return retry(ctx, count);
+            return ctx.compile(child, [count - 1]);
+          };
+          return ctx.compile(child, [3]);
+        `,
+        "compile-recursive-result.ts",
+      ),
+    ).resolves.toContain("return ctx.compile(child, [count - 1])");
 
     await expect(
       transpileScriptSource(

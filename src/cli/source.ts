@@ -80,7 +80,7 @@ type __SmartlinksLiteralResponse = {
   bodyBase64?: string;
   text?: never;
 } & ({ bodyBase64?: never } | { body?: never; bodyBase64: string });
-type __SmartlinksResult = string | __SmartlinksLiteralResponse | void;
+type SmartlinksResult = string | __SmartlinksLiteralResponse | void;
 type __SmartlinksJson =
   | string
   | number
@@ -98,11 +98,11 @@ type __SmartlinksCompile = <const Args extends readonly __SmartlinksJson[]>(
   closure: (
     childContext: SmartlinksContext,
     ...args: Args
-  ) => __SmartlinksResult | Promise<__SmartlinksResult>,
+  ) => SmartlinksResult | Promise<SmartlinksResult>,
   args: Args,
   options?: __SmartlinksCompileOptions,
 ) => Promise<string>;
-async function __smartlinks_entry(ctx: SmartlinksContext): Promise<__SmartlinksResult> {
+async function __smartlinks_entry(ctx: SmartlinksContext): Promise<SmartlinksResult> {
 `;
 
 function diagnosticLocation(diagnostic: Diagnostic): string {

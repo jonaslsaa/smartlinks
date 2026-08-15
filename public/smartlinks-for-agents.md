@@ -137,8 +137,10 @@ parameter is the child execution context, supplied by the runtime — annotate i
 `SmartlinksContext` on a named TypeScript closure; inline closures are contextually typed.
 `typeof ctx` also works when the parameter has another name. `args` is a positional JSON tuple
 whose TypeScript types must match the remaining closure parameters. The closure must be inline or
-a top-level `const`/function declaration. It may call transitively packaged top-level helpers and
-read immutable primitive constants. Eligible constants are strings, numbers, bigints, booleans,
+a top-level `const`/function declaration. When a self-recursive closure and packaged helper form a
+TypeScript inference cycle, annotate the closure's return type as `Promise<SmartlinksResult>`. It
+may call transitively packaged top-level helpers and read immutable primitive constants. Eligible
+constants are strings, numbers, bigints, booleans,
 `null`, or template literals without expressions. Eligible helpers are unmodified function
 declarations, `const` arrows, or anonymous `const` function expressions; they may use parameters,
 locals, supported globals, and other eligible declarations, but never the parent's `ctx`.
