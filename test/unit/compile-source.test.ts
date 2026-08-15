@@ -47,6 +47,17 @@ describe("compile closure extraction", () => {
     ).rejects.toThrow("cannot capture outer variables: secret");
   });
 
+  it("rejects parent bindings that shadow supported child globals", async () => {
+    await expect(
+      extractCompileClosures(`
+        const Math = { max: () => 123 };
+        const fetch = async () => ({ ok: true });
+        const child = async () => ({ body: String(Math.max()) + String((await fetch()).ok) });
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow("cannot capture outer variables: Math, fetch");
+  });
+
   it("allows values declared inside the compile closure", async () => {
     const extracted = await extractCompileClosures(`
       const child = async (name) => {

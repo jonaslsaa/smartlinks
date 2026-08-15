@@ -46,7 +46,6 @@ const ALLOWED_GLOBALS = new Set([
   "Uint8Array",
   "WeakMap",
   "WeakSet",
-  "ctx",
   "decodeURI",
   "decodeURIComponent",
   "encodeURI",
@@ -195,11 +194,15 @@ function wrapperFunction(program: Program): WrapperFunction {
   return expression.expression as WrapperFunction;
 }
 
-function contextReferences(program: Program, scopes: ScopeManager): ReadonlySet<object> {
+function contextBinding(program: Program, scopes: ScopeManager): Variable {
   const context = wrapperScope(program, scopes).set.get("ctx");
   if (!context) {
     throw new Error("Could not analyze the Smartlinks context binding.");
   }
+  return context;
+}
+
+function contextReferences(context: Variable): ReadonlySet<object> {
   return new Set(context.references.map((reference) => reference.identifier));
 }
 
@@ -275,6 +278,7 @@ function assertNoCapturedVariables(
   closure: CompileClosure,
   replacements: readonly Replacement[],
   scopes: ScopeManager,
+  context: Variable,
 ): void {
   const scope = scopes.acquire(closure, true);
   if (!scope) {
@@ -282,9 +286,13 @@ function assertNoCapturedVariables(
   }
   const captures = new Set<string>();
   for (const reference of scope.through) {
+    const allowedGlobal =
+      reference.resolved === null && ALLOWED_GLOBALS.has(reference.identifier.name);
+    const childContext = reference.resolved === context;
     if (
       !insideReplacement(reference.identifier.range, replacements) &&
-      !ALLOWED_GLOBALS.has(reference.identifier.name)
+      !allowedGlobal &&
+      !childContext
     ) {
       captures.add(reference.identifier.name);
     }
@@ -332,7 +340,8 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     optimistic: false,
     ignoreEval: false,
   });
-  const contexts = contextReferences(program, scopes);
+  const context = contextBinding(program, scopes);
+  const contexts = contextReferences(context);
   const references = resolvedReferences(scopes);
   const available = namedClosures(program, scopes);
   const closures: CompileClosure[] = [];
@@ -362,7 +371,7 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
   });
 
   for (const closure of closures) {
-    assertNoCapturedVariables(closure, replacements, scopes);
+    assertNoCapturedVariables(closure, replacements, scopes, context);
   }
 
   const bodyStart = WRAPPER_PREFIX.length;
