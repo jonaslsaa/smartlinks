@@ -10,6 +10,26 @@ Most things are documented in the agent guide at
 the `ctx` API, limits, and patterns. Read it before writing Smartlink scripts or changing runtime
 behavior, and update it when the contract changes.
 
+## How it is built
+
+TypeScript throughout. The CLI ships as an npm package bundled with tsup; the runtime is a
+Cloudflare Worker deployed with Wrangler; the website in `public/` is static files on Vercel.
+
+Building a link: the CLI type-checks the script against the runtime contract with the bundled
+TypeScript compiler, parses with acorn (`eslint-scope` resolves closure captures for
+`ctx.compile`, astring re-emits), optionally minifies with terser, validates the exact stored
+wrapper in QuickJS, seals secrets with HPKE (X25519 / HKDF-SHA256 / AES-128-GCM via `@hpke/core`)
+bound to the whole artifact, deflates with fflate, and base64url-encodes the result into the URL.
+
+Executing one: the Worker reverses the codec, decrypts secrets with its private key, and runs the
+script in a fresh QuickJS sandbox (`quickjs-emscripten-core` on a WASM build) with budgeted,
+SSRF-guarded fetch. The return value maps to the HTTP response. Everything security-relevant —
+codec, sealing, sandbox setup, guarded fetch — lives in `src/shared` so `smartlinks run`
+executes exactly what production executes.
+
+Tests: Vitest for unit and Worker suites (the latter on `@cloudflare/vitest-pool-workers`, real
+workerd), `node --test` for CLI end-to-end. Biome formats and lints.
+
 ## Design philosophy
 
 The pieces form a stateless actor system addressable by URL: sealed secrets are a link's private
