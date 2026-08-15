@@ -32,6 +32,15 @@ The rules that do the actual work:
 5. **Patterns graduate on evidence.** A documented pattern that shows up in every third script can
    be promoted to sugar over the same primitive — designed from observed usage, not speculation.
 
+This places the project in the object-capability tradition (Hewitt's actors → the E language →
+ocap systems), and that literature is the right prior art when reasoning about additions: a link
+is an unforgeable capability URL, rule 3 is capability discipline, `compile` is attenuating
+delegation, the fetch-gated kill-switch pattern is Redell's caretaker, the parked `sealFor` is
+E's sealer/unsealer pairs, and the author-identity problem is Zooko's triangle — its badge design
+follows petname-system discipline. Where the actor analogy strains — no mailboxes, no supervision,
+every message carried by a client moving a URL — is the point: anything that needs the *service*
+to hold a message is smuggling in a mailbox.
+
 When writing docs, follow the guide's style contract: readers are capable models, so explain the
 mechanism once and hint per rule. Be explicit only about names, formats, limits, and negative
 space — what deliberately does not exist, so it does not get invented.
