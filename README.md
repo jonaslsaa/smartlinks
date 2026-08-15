@@ -163,6 +163,11 @@ npm run check
 `npm run check` covers formatting, strict TypeScript, unit tests, Workers-runtime tests,
 end-to-end tests of the built CLI, generated bindings, and a Wrangler production dry-run.
 
+Pull requests run the full check. Merging a current, green PR to protected `main` deploys the
+Worker and smoke-tests the live runtime; the same pre-merge checks are not repeated after merge.
+For a package release, bump the version in a PR, merge it, then run the **Release npm package**
+workflow. A manual `npx wrangler deploy` remains available for production recovery.
+
 ## Self-hosting
 
 For local Worker development:

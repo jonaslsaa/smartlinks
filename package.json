@@ -40,6 +40,7 @@
     "test:worker": "vitest run --config vitest.worker.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.worker.json",
     "worker:dry-run": "wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "worker:smoke": "node scripts/smoke-worker.mjs",
     "worker:startup": "wrangler check startup",
     "worker:types": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false wrangler types",
     "worker:types:check": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false wrangler types --check"
