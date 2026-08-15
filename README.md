@@ -126,9 +126,9 @@ evolves. Payloads are capped at 7,800 characters to remain comfortably below com
 ## Know the boundary
 
 Smartlinks are immutable bearer links. There are no accounts, stored scripts, revocation lists,
-or per-link analytics. Anyone with an execution URL can invoke it repeatedly, and source code is
-intentionally decodable. Use an interstitial for human-triggered side effects and scoped secrets
-for authenticated actions.
+or per-link analytics. The hosted runtime allows 60 executions per minute per client IP at each
+Cloudflare location; excess executions return HTTP 429. Source code is intentionally decodable.
+Use an interstitial for human-triggered side effects and scoped secrets for authenticated actions.
 
 The runtime blocks local hostname suffixes, private/local/reserved IP literals, cross-origin
 redirects, and oversized bodies. Local `run --allow-network` is stricter: it also resolves and
