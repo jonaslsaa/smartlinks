@@ -313,9 +313,8 @@ section before putting authority into one.
 - **The runtime is bounded on purpose.** Fresh sandbox per request; guarded `fetch` blocks the
   runtime's own hostnames, local hostnames, private/local/reserved IP literals, cross-origin
   redirects, and oversized bodies (a Smartlink cannot invoke the runtime by HTTP — that is what
-  `ctx.compile` is for). The hosted runtime allows 60 executions per minute per client IP at each
-  Cloudflare location; excess executions return HTTP 429. It is a carefully constrained personal
-  service, run with production CI, deploy smoke tests, and no uptime SLA — and because the
+  `ctx.compile` is for). The hosted runtime might be rated limited; excess executions return HTTP 429.
+  It is a carefully constrained service, run with production CI, deploy smoke tests, and no uptime SLA — and because the
   runtime is open and self-hostable, your links do not have to die with it.
 
 ## Self-hosting
