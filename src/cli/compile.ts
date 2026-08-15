@@ -216,6 +216,46 @@ function resolvedReferences(scopes: ScopeManager): ReadonlyMap<object, Variable 
   return references;
 }
 
+function assertNoDirectEvalWithCompile(
+  program: Program,
+  context: Variable,
+  references: ReadonlyMap<object, Variable | null>,
+): void {
+  let directEval = false;
+  let compile = false;
+  walk(program, (node) => {
+    if (node.type !== "CallExpression") {
+      return undefined;
+    }
+    const call = node as CallExpression;
+    if (
+      isIdentifier(call.callee) &&
+      call.callee.name === "eval" &&
+      references.get(call.callee) === null
+    ) {
+      directEval = true;
+    }
+    if (
+      call.callee.type === "MemberExpression" &&
+      !call.callee.computed &&
+      isIdentifier(call.callee.object) &&
+      call.callee.object.name === "ctx" &&
+      (references.get(call.callee.object) === context ||
+        references.get(call.callee.object) === null) &&
+      isIdentifier(call.callee.property) &&
+      call.callee.property.name === "compile"
+    ) {
+      compile = true;
+    }
+    return undefined;
+  });
+  if (directEval && compile) {
+    throw new Error(
+      "Scripts containing eval(...) calls cannot use ctx.compile because eval prevents static closure analysis.",
+    );
+  }
+}
+
 function compileCall(node: Node, contexts: ReadonlySet<object>): node is CallExpression {
   if (node.type !== "CallExpression") {
     return false;
@@ -341,8 +381,9 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     ignoreEval: false,
   });
   const context = contextBinding(program, scopes);
-  const contexts = contextReferences(context);
   const references = resolvedReferences(scopes);
+  assertNoDirectEvalWithCompile(program, context, references);
+  const contexts = contextReferences(context);
   const available = namedClosures(program, scopes);
   const closures: CompileClosure[] = [];
   const indexes = new Map<CompileClosure, number>();

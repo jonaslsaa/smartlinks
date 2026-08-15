@@ -56,6 +56,15 @@ JavaScript globals, but it cannot capture other outer variables. Pass runtime va
 the tuple. The CLI extracts and type-checks every closure before minification, replaces the guest
 reference with an internal table index, and packages the finite closure table in the link.
 
+Inside the packaged closure, `ctx` is the child's execution context, not the parent context in
+which `ctx.compile` was called. Pass parent values through the argument tuple; use `ctx` for the
+child request's parameters, headers, body, and secrets.
+
+Compile arguments are data. Never evaluate them, pass them to `Function`, interpolate them into
+executable source, or otherwise interpret attacker-controlled arguments inside a child carrying
+sealed authority. Static closure extraction authenticates the authored interpreter; it cannot make
+that interpreter safe to feed untrusted code.
+
 Options are:
 
 - `ttlSeconds?: number`: optional positive integer seconds. The child deadline is
@@ -70,7 +79,9 @@ One `ctx.compile` attempt is allowed per execution, including failed attempts. T
 canonical JSON with a 64 KB encoded limit, 32-level depth limit, 10,000-value limit, and no
 `__proto__` keys. The runtime rejects any decrypted parent-secret bytes found in child source,
 packaged closures, or tuple data; move intentional delegation through `seal`. Each sealed value
-also consumes one of the execution's 16 shared cryptographic operations.
+also consumes one of the execution's 16 shared cryptographic operations. This exact-byte scan is
+an accidental-leak guardrail, not information-flow analysis: transformed, encoded, or split secret
+values cannot be identified reliably.
 
 A child carrying another build-time-approved closure may mint another ordinary Smartlink. There
 is no stored ancestry, generation counter, or depth policy. Each execution independently reapplies

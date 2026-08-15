@@ -58,6 +58,28 @@ describe("compile closure extraction", () => {
     ).rejects.toThrow("cannot capture outer variables: Math, fetch");
   });
 
+  it("explains why direct eval cannot be combined with runtime compilation", async () => {
+    await expect(
+      extractCompileClosures(`
+        eval("1 + 1");
+        const child = async () => ({ body: "ok" });
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow("eval(...) calls cannot use ctx.compile");
+
+    await expect(
+      extractCompileClosures(`
+        const eval = (value) => value;
+        eval("data");
+        const child = async () => ({ body: "ok" });
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow("eval(...) calls cannot use ctx.compile");
+
+    const evalOnly = await extractCompileClosures(`return { body: String(eval("1 + 1")) };`);
+    expect(evalOnly.closures).toEqual([]);
+  });
+
   it("allows values declared inside the compile closure", async () => {
     const extracted = await extractCompileClosures(`
       const child = async (name) => {

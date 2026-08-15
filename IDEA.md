@@ -26,10 +26,12 @@ be fixed, anyone with a link can run it, etc.).
 1. **Platform**: Cloudflare Worker for link execution, free tier. One worker,
    no storage bindings. The public landing page is a static site hosted on
    Vercel.
-2. **No `eval`**: Workers forbid it, and we don't want user code in our isolate
-   anyway. Execute scripts in a **QuickJS-in-WASM interpreter** (use
+2. **No host `eval`**: the Worker never evaluates payload source in its own
+   isolate. Execute scripts in a **QuickJS-in-WASM interpreter** (use
    `quickjs-emscripten`, or `@sebastianwessel/quickjs` if it keeps things
-   simpler). Fresh interpreter runtime per request, torn down after.
+   simpler). Fresh interpreter runtime per request, torn down after. Guest code
+   can still interpret strings inside QuickJS; doing so with attacker-controlled
+   data is an authoring decision, not a capability boundary Smartlinks can prove.
 3. **No database.** The URL is the only artifact. (A denylist KV may be added
    later; not in v1.)
 4. **Runtime contract**: the script gets the incoming request context and may
@@ -83,6 +85,8 @@ be fixed, anyone with a link can run it, etc.).
     with compact table indexes. Args are a typed positional JSON tuple. Children
     are ordinary links and may carry their own approved compile closures; there
     is no stored tree, generation field, or depth rule.
+    `ctx` inside the extracted closure is rebound to the child execution context.
+    Compile arguments are data and must not be interpreted as executable code.
 
 ## URL and envelope format
 
