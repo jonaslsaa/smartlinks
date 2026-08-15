@@ -529,7 +529,7 @@ export async function runScriptWithModule(
     vm.setProp(vm.global, "__smartlinks_host_fetch", fetchHandle);
 
     const cryptoBudget = options.cryptoBudget ?? createCryptoOperationBudget();
-    const guestCrypto = options.crypto ?? createGuestCrypto(crypto, cryptoBudget);
+    const guestCrypto = options.crypto ?? createGuestCrypto({ crypto, budget: cryptoBudget });
     const cryptoHandle = vm.newObject();
     const randomHandle = asyncHostFunction("random", async (byteCount, encoding) => {
       if (typeof byteCount !== "number") {

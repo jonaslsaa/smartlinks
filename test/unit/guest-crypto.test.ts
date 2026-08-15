@@ -11,7 +11,11 @@ describe("guest cryptographic primitives", () => {
     const randomBytes = vi.fn((byteCount: number) =>
       Uint8Array.from({ length: byteCount }, () => nextByte++),
     );
-    const guest = createGuestCrypto(crypto, createCryptoOperationBudget(), undefined, randomBytes);
+    const guest = createGuestCrypto({
+      crypto,
+      budget: createCryptoOperationBudget(),
+      randomBytes,
+    });
 
     await expect(guest.random(4)).resolves.toBe("00010203");
     await expect(guest.random(3, "base64")).resolves.toBe("BAUG");
@@ -27,12 +31,11 @@ describe("guest cryptographic primitives", () => {
       `at most ${MAX_RANDOM_BYTES} bytes`,
     );
     await expect(
-      createGuestCrypto(
+      createGuestCrypto({
         crypto,
-        createCryptoOperationBudget(),
-        undefined,
-        () => new Uint8Array(),
-      ).random(1),
+        budget: createCryptoOperationBudget(),
+        randomBytes: () => new Uint8Array(),
+      }).random(1),
     ).rejects.toThrow("invalid number of random bytes");
 
     await expect(createGuestCrypto().random(1, "base64url" as never)).rejects.toThrow(
@@ -56,12 +59,11 @@ describe("guest cryptographic primitives", () => {
       randomUUID: () => crypto.randomUUID(),
     } satisfies Crypto;
     const injectedRandom = vi.fn((byteCount: number) => new Uint8Array(byteCount).fill(255));
-    const guest = createGuestCrypto(
-      cryptoImpl,
-      createCryptoOperationBudget(),
-      undefined,
-      injectedRandom,
-    );
+    const guest = createGuestCrypto({
+      crypto: cryptoImpl,
+      budget: createCryptoOperationBudget(),
+      randomBytes: injectedRandom,
+    });
 
     await expect(guest.random(4)).resolves.toBe("ffffffff");
     expect(injectedRandom).toHaveBeenCalledOnce();
@@ -76,7 +78,7 @@ describe("guest cryptographic primitives", () => {
   });
 
   it("shares the existing cryptographic operation budget", async () => {
-    const guest = createGuestCrypto(crypto, createCryptoOperationBudget(2));
+    const guest = createGuestCrypto({ crypto, budget: createCryptoOperationBudget(2) });
 
     await expect(guest.random(1)).resolves.toMatch(/^[0-9a-f]{2}$/u);
     await expect(guest.sha256("message")).resolves.toMatch(/^[0-9a-f]{64}$/u);

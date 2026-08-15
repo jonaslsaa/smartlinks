@@ -142,9 +142,11 @@ describe("QuickJS sandbox", () => {
         `),
         context,
         fetch: createGuardedFetch(),
-        crypto: createGuestCrypto(crypto, cryptoBudget, undefined, (byteCount) =>
-          Uint8Array.from({ length: byteCount }, () => nextByte++),
-        ),
+        crypto: createGuestCrypto({
+          crypto,
+          budget: cryptoBudget,
+          randomBytes: (byteCount) => Uint8Array.from({ length: byteCount }, () => nextByte++),
+        }),
         cryptoBudget,
       }),
     ).resolves.toEqual({ body: "00010203:BAUG" });
@@ -178,9 +180,13 @@ describe("QuickJS sandbox", () => {
         `),
         context,
         fetch: createGuardedFetch(),
-        crypto: createGuestCrypto(crypto, cryptoBudget, {
-          masterSecret: "sandbox-master",
-          artifactIdentity: "sandbox-artifact",
+        crypto: createGuestCrypto({
+          crypto,
+          budget: cryptoBudget,
+          tokenKeySource: {
+            masterSecret: "sandbox-master",
+            artifactIdentity: "sandbox-artifact",
+          },
         }),
         cryptoBudget,
       }),

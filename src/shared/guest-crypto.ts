@@ -46,6 +46,13 @@ export type CryptoOperationBudget = {
 
 export type GuestRandomBytes = (byteCount: number) => Uint8Array;
 
+export type GuestCryptoOptions = {
+  crypto?: Crypto;
+  budget?: CryptoOperationBudget;
+  tokenKeySource?: GuestTokenKeySource;
+  randomBytes?: GuestRandomBytes;
+};
+
 const encoder = new TextEncoder();
 
 function parseEncoding(value: unknown): GuestCryptoEncoding {
@@ -154,13 +161,12 @@ function parseTokenOptions(rawOptions: unknown): GuestTokenOptions {
   return parsed.data;
 }
 
-export function createGuestCrypto(
-  cryptoImpl: Crypto = crypto,
-  budget: CryptoOperationBudget = createCryptoOperationBudget(),
-  tokenKeySource?: GuestTokenKeySource,
-  randomBytes: GuestRandomBytes = (byteCount) =>
-    cryptoImpl.getRandomValues(new Uint8Array(byteCount)),
-): GuestCrypto {
+export function createGuestCrypto(configuration: GuestCryptoOptions = {}): GuestCrypto {
+  const cryptoImpl = configuration.crypto ?? crypto;
+  const budget = configuration.budget ?? createCryptoOperationBudget();
+  const randomBytes =
+    configuration.randomBytes ??
+    ((byteCount: number) => cryptoImpl.getRandomValues(new Uint8Array(byteCount)));
   const guard = (...values: string[]) => {
     budget.consume();
     const bytes = values.reduce((total, value) => total + encoder.encode(value).byteLength, 0);
@@ -178,12 +184,12 @@ export function createGuestCrypto(
       }
       return deriveTokenKey(cryptoImpl, keyBytes, new Uint8Array(0), EXPLICIT_KEY_INFO);
     }
-    if (tokenKeySource?.masterSecret === undefined) {
+    if (configuration.tokenKeySource?.masterSecret === undefined) {
       throw new Error(
         "The transparent token key is not configured in this runtime. Set the TOKEN_MASTER_SECRET Worker secret, or pass an explicit key.",
       );
     }
-    const { masterSecret, artifactIdentity } = tokenKeySource;
+    const { masterSecret, artifactIdentity } = configuration.tokenKeySource;
     transparentKey ??= (async () =>
       deriveTokenKey(
         cryptoImpl,
