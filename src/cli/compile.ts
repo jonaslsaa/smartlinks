@@ -1,19 +1,28 @@
 import {
   type ArrowFunctionExpression,
+  type AssignmentExpression,
+  type AssignmentPattern,
   type BlockStatement,
   type CallExpression,
   type Expression,
   type FunctionDeclaration,
   type FunctionExpression,
   type Identifier,
+  type Literal,
+  type MemberExpression,
   type Node,
+  type ObjectPattern,
   type Program,
   parse,
+  type TemplateLiteral,
+  type VariableDeclarator,
 } from "acorn";
 import { analyze, type Scope, type ScopeManager, type Variable } from "eslint-scope";
 
 const WRAPPER_PREFIX = "async ctx=>{";
 const WRAPPER_SUFFIX = "\n}";
+const INDIRECT_COMPILE_ERROR =
+  "Call ctx.compile(...) directly; the compile method cannot be aliased, destructured, or passed as a value.";
 
 const ALLOWED_GLOBALS = new Set([
   "Array",
@@ -101,12 +110,16 @@ function childNodes(node: Node): Node[] {
   return children;
 }
 
-function walk(node: Node, visit: (node: Node) => boolean | undefined): void {
-  if (visit(node) === false) {
+function walk(
+  node: Node,
+  visit: (node: Node, parent: Node | undefined) => boolean | undefined,
+  parent?: Node,
+): void {
+  if (visit(node, parent) === false) {
     return;
   }
   for (const child of childNodes(node)) {
-    walk(child, visit);
+    walk(child, visit, node);
   }
 }
 
@@ -252,6 +265,38 @@ function assertNoDirectEvalWithCompile(
   }
 }
 
+function compileMember(
+  node: Node,
+  context: Variable,
+  references: ReadonlyMap<object, Variable | null>,
+): node is MemberExpression {
+  if (node.type !== "MemberExpression") {
+    return false;
+  }
+  const member = node as MemberExpression;
+  const objectBinding = isIdentifier(member.object) ? references.get(member.object) : undefined;
+  return (
+    objectBinding === context && staticPropertyName(member.property, member.computed) === "compile"
+  );
+}
+
+function staticPropertyName(node: Node, computed: boolean): string | undefined {
+  if (!computed && isIdentifier(node)) {
+    return node.name;
+  }
+  if (node.type === "Literal") {
+    const value = (node as Literal).value;
+    return typeof value === "string" ? value : undefined;
+  }
+  if (node.type === "TemplateLiteral") {
+    const template = node as TemplateLiteral;
+    return template.expressions.length === 0 && template.quasis.length === 1
+      ? (template.quasis[0]?.value.cooked ?? undefined)
+      : undefined;
+  }
+  return undefined;
+}
+
 function compileCall(
   node: Node,
   context: Variable,
@@ -261,18 +306,62 @@ function compileCall(
     return false;
   }
   const call = node as CallExpression;
-  if (call.callee.type !== "MemberExpression") {
+  return compileMember(call.callee, context, references) && !call.callee.computed;
+}
+
+function destructuresCompile(node: Node): boolean {
+  if (node.type === "AssignmentPattern") {
+    return destructuresCompile((node as AssignmentPattern).left);
+  }
+  if (node.type !== "ObjectPattern") {
     return false;
   }
-  const objectBinding = isIdentifier(call.callee.object)
-    ? references.get(call.callee.object)
-    : undefined;
-  return (
-    !call.callee.computed &&
-    objectBinding === context &&
-    isIdentifier(call.callee.property) &&
-    call.callee.property.name === "compile"
+  const pattern = node as ObjectPattern;
+  return pattern.properties.some(
+    (property) =>
+      property.type === "Property" &&
+      staticPropertyName(property.key, property.computed) === "compile",
   );
+}
+
+function destructuresContextCompile(
+  node: Node,
+  context: Variable,
+  references: ReadonlyMap<object, Variable | null>,
+): boolean {
+  if (node.type === "VariableDeclarator") {
+    const declaration = node as VariableDeclarator;
+    return (
+      isIdentifier(declaration.init) &&
+      references.get(declaration.init) === context &&
+      destructuresCompile(declaration.id)
+    );
+  }
+  if (node.type === "AssignmentExpression") {
+    const assignment = node as AssignmentExpression;
+    return (
+      isIdentifier(assignment.right) &&
+      references.get(assignment.right) === context &&
+      destructuresCompile(assignment.left)
+    );
+  }
+  return false;
+}
+
+function assertDirectCompileAccess(
+  node: Node,
+  parent: Node | undefined,
+  context: Variable,
+  references: ReadonlyMap<object, Variable | null>,
+): void {
+  const member = compileMember(node, context, references) ? node : undefined;
+  const call = parent?.type === "CallExpression" ? (parent as CallExpression) : undefined;
+  const directCall = member && call?.callee === member && !member.computed;
+  const destructuresContext = destructuresContextCompile(node, context, references);
+
+  if ((member && !directCall) || destructuresContext) {
+    throw new Error(INDIRECT_COMPILE_ERROR);
+  }
 }
 
 function closureContextBinding(
@@ -283,11 +372,16 @@ function closureContextBinding(
   if (!parameter) {
     throw new Error("Compile closures must accept the child context as their first parameter.");
   }
-  if (!isIdentifier(parameter)) {
+  if (destructuresCompile(parameter)) {
+    throw new Error(INDIRECT_COMPILE_ERROR);
+  }
+  const identifier =
+    parameter.type === "AssignmentPattern" ? (parameter as AssignmentPattern).left : parameter;
+  if (!isIdentifier(identifier)) {
     return undefined;
   }
   const scope = scopes.acquire(closure, true);
-  const binding = scope?.set.get(parameter.name);
+  const binding = scope?.set.get(identifier.name);
   if (!binding) {
     throw new Error("Could not analyze a compile closure's child context binding.");
   }
@@ -430,8 +524,8 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     indexes.set(closure, index);
     const childContext = closureContextBinding(closure, scopes);
     if (childContext) {
-      walk(closure, (node) => {
-        processCompileCall(node, childContext);
+      walk(closure, (node, parent) => {
+        processCompileNode(node, parent, childContext);
         return undefined;
       });
     }
@@ -457,8 +551,17 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     });
   }
 
-  walk(program, (node) => {
-    processCompileCall(node, context);
+  function processCompileNode(
+    node: Node,
+    parent: Node | undefined,
+    currentContext: Variable,
+  ): void {
+    assertDirectCompileAccess(node, parent, currentContext, references);
+    processCompileCall(node, currentContext);
+  }
+
+  walk(program, (node, parent) => {
+    processCompileNode(node, parent, context);
     return undefined;
   });
 

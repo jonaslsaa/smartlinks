@@ -20,7 +20,8 @@ decoding, previewing, and executing signed links make no GitHub request.
 ## Authoring contract
 
 Input files contain an async function body — not a module or complete function. Top-level `await`
-and `return` are valid. Imports and Node APIs are unavailable inside QuickJS.
+and `return` are valid. Imports, Node APIs, timers, `TextEncoder`, and `Intl` are unavailable
+inside QuickJS; `Date.now()` works.
 
 The script receives `ctx` with:
 
@@ -50,8 +51,9 @@ Browser-compatible globals `btoa(value)` and `atob(value)` encode and decode Lat
 strings — the standard Base64 that `bodyBase64` accepts.
 
 Global `fetch(url, options)` accepts a string URL, method, plain headers, and a string body, and
-returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirected`, `headers`,
-`bodyUsed`, `text()`, and `json()`; the body can be consumed once. Streams, `Request`, `Blob`,
+returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirected`, `headers`
+(read via `.get(name)`, unlike the plain-object request headers), `bodyUsed`, `text()`, and
+`json()`; the body can be consumed once. Streams, `Request`, `Blob`,
 `FormData`, cloning, custom redirect modes, and guest abort signals are not supported.
 
 Return an absolute HTTP(S) URL for a 302 redirect (return `{ status, headers }` with a `location`
@@ -70,6 +72,8 @@ to guest code. The preview marker is runtime-owned so an executed response canno
 A response can be a complete HTML document. The script cannot read its own URL, but relative
 references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the
 same link with new parameters; add `cache-control: no-store` when each execution should differ.
+To display or hand out an absolute working URL instead, mint a child with `ctx.compile` — the only
+URL an execution can obtain — at the cost of its single mint.
 The runtime policy permits inline styles and same-origin forms while blocking scripts and external
 subresources. Escape every interpolated value — query parameters and fetched data are
 attacker-controlled.
@@ -136,7 +140,8 @@ inline or a top-level `const`/function declaration and may use its parameters, `
 supported JavaScript globals, but cannot capture outer variables, including the parent's `ctx` —
 pass parent values explicitly in the tuple. The CLI extracts and type-checks every closure before
 minification, replaces the guest reference with a table index, and packages the finite closure
-table in the link.
+table in the link. Call `ctx.compile(...)` directly so the build can identify the call site; the
+method cannot be aliased, destructured, or passed as a value.
 
 Compile arguments are data. Never evaluate them, pass them to `Function`, or interpolate them
 into executable source: static closure extraction authenticates the authored interpreter; it
@@ -161,12 +166,16 @@ or tuple data — move intentional delegation through `seal`, where each value a
 cryptographic operation. This exact-byte scan is an accidental-leak guardrail, not
 information-flow analysis; transformed, encoded, or split secret values cannot be identified.
 
-There is no stored ancestry, generation counter, or depth policy: a child carrying another
-build-time-approved closure may mint again, and each execution independently reapplies the same
-budgets, validation, expiry resolution, sealing, and payload limits.
+Self-continuing chains are supported, unbounded by design: a packaged closure may compile another
+closure or itself — closure-table references are not outer captures — and each hop is an ordinary
+execution that independently reapplies the same one-mint budget, validation, expiry resolution,
+sealing, and payload limits. There is no built-in stored ancestry, generation counter, or depth policy.
 
 A parent whose mint branch is reachable by anyone holding its URL is an unauthenticated admin
-endpoint. Keep parent links private or verify a signed request before compiling.
+endpoint. Keep parent links private or verify a signed request before compiling. The verification
+is built from what is already here: seal an HMAC key, deliver it to intended callers out-of-band,
+and require `verifyHmacSha256` over the parameters plus a timestamp — freshness is a window
+check, and replay inside the window is the client's job, as with tokens.
 
 ## CLI discovery
 
