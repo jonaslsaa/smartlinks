@@ -17,6 +17,16 @@
     "ACTIVE_KEY_ID": "1",
     "LANDING_URL": "https://sl.jonaslsa.com/"
   },
+  "ratelimits": [
+    {
+      "name": "EXECUTION_RATE_LIMITER",
+      "namespace_id": "20260815",
+      "simple": {
+        "limit": 60,
+        "period": 60
+      }
+    }
+  ],
   "observability": {
     "enabled": true,
     "logs": {

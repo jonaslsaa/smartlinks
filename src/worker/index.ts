@@ -65,6 +65,16 @@ async function decryptSecrets(
   return Object.fromEntries(entries);
 }
 
+async function enforceExecutionRateLimit(request: Request, env: Env): Promise<void> {
+  const key = request.headers.get("cf-connecting-ip") ?? "unknown-client";
+  const { success } = await env.EXECUTION_RATE_LIMITER.limit({ key });
+  if (!success) {
+    throw new HttpError(429, "Too many Smartlink executions. Try again shortly.", {
+      headers: { "retry-after": "60" },
+    });
+  }
+}
+
 async function runRoute(request: Request, env: Env, payload: string): Promise<Response> {
   if (isPreviewRequest(request)) {
     return previewPage(request.method === "HEAD");
@@ -91,6 +101,7 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
     }
   }
 
+  await enforceExecutionRateLimit(request, env);
   const secrets = await decryptSecrets(decoded.envelope.k, decoded.envelope.s, env);
   let result: ScriptResult;
   try {
@@ -185,7 +196,11 @@ export default {
           }),
         );
       }
-      return json({ error: message }, { status });
+      const responseInit: ResponseInit = { status };
+      if (error instanceof HttpError) {
+        responseInit.headers = error.headers;
+      }
+      return json({ error: message }, responseInit);
     }
   },
 } satisfies ExportedHandler<Env>;

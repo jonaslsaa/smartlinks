@@ -104,8 +104,8 @@ revocable credentials. Avoid inline `NAME=value` secrets because shell history c
 
 ## Runtime and link limits
 
-- Execution links are immutable and have no authentication, revocation list, rate limiting, or
-  per-link analytics.
+- Execution links are immutable and have no authentication, revocation list, or per-link
+  analytics. The hosted runtime is rate-limited for fair-use of this service; excess executions return HTTP 429.
 - Encoded payloads are limited to 7,800 characters. Raw and emitted source have a one-million-
   character wrong-file safety guard; minification and compression determine whether the URL fits.
 - Each request gets a fresh QuickJS runtime with a 16 MiB heap, 512 KiB stack, deterministic
