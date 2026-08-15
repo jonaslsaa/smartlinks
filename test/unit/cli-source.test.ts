@@ -54,7 +54,7 @@ describe("CLI script input", () => {
   it("checks the Smartlink context and response contract", async () => {
     await expect(
       transpileScriptSource("return { body: ctx.missing };", "context.ts"),
-    ).rejects.toThrow("Property 'missing' does not exist on type '__SmartlinksContext'.");
+    ).rejects.toThrow("Property 'missing' does not exist on type 'SmartlinksContext'.");
 
     await expect(transpileScriptSource("return { body: 123 };", "response.ts")).rejects.toThrow(
       "Type 'number' is not assignable to type 'string'.",
@@ -111,8 +111,8 @@ describe("CLI script input", () => {
     await expect(
       transpileScriptSource(
         `
-          const child = async (childCtx: typeof ctx, name: string, count: number) => ({
-            body: childCtx.requestId + name.repeat(count),
+          const child = async (ctx: SmartlinksContext, name: string, count: number) => ({
+            body: ctx.requestId + name.repeat(count),
           });
           return ctx.compile(child, ["Jonas", 2], {
             ttlSeconds: 3600,
@@ -123,6 +123,16 @@ describe("CLI script input", () => {
         "compile.ts",
       ),
     ).resolves.toContain('ctx.compile(child, ["Jonas", 2]');
+
+    await expect(
+      transpileScriptSource(
+        `
+          const child = async (ctx: SmartlinksContext) => ({ body: ctx.missing });
+          return ctx.compile(child, []);
+        `,
+        "compile-context.ts",
+      ),
+    ).rejects.toThrow("Property 'missing' does not exist on type 'SmartlinksContext'");
 
     await expect(
       transpileScriptSource(
@@ -161,7 +171,7 @@ describe("CLI script input", () => {
         `,
         "compile-old-signature.ts",
       ),
-    ).rejects.toThrow("not assignable to parameter of type '(childContext: __SmartlinksContext)");
+    ).rejects.toThrow("not assignable to parameter of type '(childContext: SmartlinksContext)");
   });
 
   it("can explicitly skip semantic type checking", async () => {

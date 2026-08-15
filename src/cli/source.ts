@@ -40,7 +40,7 @@ declare function fetch(
   url: string,
   options?: __SmartlinksFetchOptions,
 ): Promise<__SmartlinksFetchResponse>;
-type __SmartlinksContext = {
+type SmartlinksContext = {
   params: __SmartlinksStringMap;
   paramValues: { [name: string]: string[] | undefined };
   method: string;
@@ -96,13 +96,13 @@ type __SmartlinksCompileOptions = {
 };
 type __SmartlinksCompile = <const Args extends readonly __SmartlinksJson[]>(
   closure: (
-    childContext: __SmartlinksContext,
+    childContext: SmartlinksContext,
     ...args: Args
   ) => __SmartlinksResult | Promise<__SmartlinksResult>,
   args: Args,
   options?: __SmartlinksCompileOptions,
 ) => Promise<string>;
-async function __smartlinks_entry(ctx: __SmartlinksContext): Promise<__SmartlinksResult> {
+async function __smartlinks_entry(ctx: SmartlinksContext): Promise<__SmartlinksResult> {
 `;
 
 function diagnosticLocation(diagnostic: Diagnostic): string {

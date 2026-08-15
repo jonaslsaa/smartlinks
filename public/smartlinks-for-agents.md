@@ -133,9 +133,10 @@ const claim = await ctx.crypto.open(ctx.params.v!, { key: ctx.secrets.VOUCHER_KE
 ### Runtime compilation
 
 `ctx.compile(closure, args, options?)` returns a child execution URL. The closure's first
-parameter is the child execution context, supplied by the runtime — annotate it `typeof ctx` on a
-named TypeScript closure; inline closures are contextually typed. `args` is a positional JSON
-tuple whose TypeScript types must match the remaining closure parameters. The closure must be
+parameter is the child execution context, supplied by the runtime — annotate it
+`SmartlinksContext` on a named TypeScript closure; inline closures are contextually typed.
+`typeof ctx` also works when the parameter has another name. `args` is a positional JSON tuple
+whose TypeScript types must match the remaining closure parameters. The closure must be
 inline or a top-level `const`/function declaration and may use its parameters, `fetch`, and
 supported JavaScript globals, but cannot capture outer variables, including the parent's `ctx` —
 pass parent values explicitly in the tuple. The CLI extracts and type-checks every closure before
