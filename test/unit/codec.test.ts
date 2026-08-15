@@ -1,8 +1,11 @@
+import { deflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
+import { encodePayloadForCli } from "../../src/cli/encode.js";
 import {
   CURRENT_PAYLOAD_VERSION,
   decodePayload,
   encodePayload,
+  encodePayloadWith,
   MAX_SCRIPT_LENGTH,
   payloadFromInput,
 } from "../../src/shared/codec.js";
@@ -24,6 +27,44 @@ describe("payload codec", () => {
       version: "1",
       envelope: { s: "return 'https://example.com'" },
     });
+  });
+
+  it("decodes Node raw-DEFLATE and chooses the shortest authoring output", () => {
+    const envelope = { s: 'return { body: "native zlib" }' };
+
+    for (const version of ["1", "2"] as const) {
+      const nativePayload = encodePayloadWith(
+        envelope,
+        [(serialized) => deflateRawSync(serialized, { level: 9 })],
+        version,
+      );
+      const fflatePayload = encodePayload(envelope, version);
+      const authoredPayload = encodePayloadForCli(envelope, version);
+
+      expect(authoredPayload.length).toBe(Math.min(nativePayload.length, fflatePayload.length));
+      expect(decodePayload(nativePayload)).toEqual({ version, envelope });
+      expect(decodePayload(authoredPayload)).toEqual({
+        version,
+        envelope,
+      });
+    }
+  });
+
+  it("keeps an fflate payload when native DEFLATE crosses the URL limit", () => {
+    const cases = Array.from(
+      { length: 1_200 },
+      (_, index) => `case"action${index}":return{body:"result${index}"};`,
+    ).join("");
+    const envelope = {
+      s: `async a=>{switch(a.params.x){${cases}default:return{status:404}}}`,
+    };
+    const fflatePayload = encodePayload(envelope);
+
+    expect(fflatePayload.length).toBeLessThan(7_800);
+    expect(() =>
+      encodePayloadWith(envelope, [(serialized) => deflateRawSync(serialized, { level: 9 })]),
+    ).toThrow("limit is 7,800");
+    expect(encodePayloadForCli(envelope)).toBe(fflatePayload);
   });
 
   it("extracts payloads from runner and decoder URLs", () => {

@@ -83,15 +83,14 @@ function inflateWithLimit(compressed) {
   }
   return result;
 }
-function encodePayload(input, version = CURRENT_PAYLOAD_VERSION) {
+function encodePayloadWith(input, deflates, version = CURRENT_PAYLOAD_VERSION) {
   const envelope = envelopeSchema.parse(input);
   const json = JSON.stringify(envelope);
   const serialized = utf8(json);
   if (serialized.byteLength > MAX_DECOMPRESSED_LENGTH) {
     throw new Error("The serialized payload is too large.");
   }
-  const compressed = deflateSync(serialized, { level: 9 });
-  const payload = `${version}${toBase64Url(compressed)}`;
+  const payload = deflates.map((deflate) => `${version}${toBase64Url(deflate(serialized))}`).reduce((shortest, candidate) => candidate.length < shortest.length ? candidate : shortest);
   if (payload.length > MAX_PAYLOAD_LENGTH) {
     throw new Error(
       `The encoded payload is ${payload.length.toLocaleString()} characters; the limit is ${MAX_PAYLOAD_LENGTH.toLocaleString()}.`
@@ -99,7 +98,7 @@ function encodePayload(input, version = CURRENT_PAYLOAD_VERSION) {
   }
   return payload;
 }
-function decodePayload(payload) {
+function readPayloadVersion(payload) {
   if (payload.length < 2 || payload.length > MAX_PAYLOAD_LENGTH) {
     throw new Error("The payload length is invalid.");
   }
@@ -107,15 +106,26 @@ function decodePayload(payload) {
   if (version !== "1" && version !== "2") {
     throw new Error(`Unsupported payload version: ${version ?? "missing"}.`);
   }
+  return version;
+}
+function readCompressedPayload(payload) {
+  return fromBase64Url(payload.slice(1));
+}
+function parseDecompressedPayload(version, decompressed) {
+  return {
+    version,
+    envelope: envelopeSchema.parse(JSON.parse(text(decompressed)))
+  };
+}
+function invalidPayload(error) {
+  return new Error("The smartlink payload is invalid or corrupted.", { cause: error });
+}
+function decodePayload(payload) {
+  const version = readPayloadVersion(payload);
   try {
-    const compressed = fromBase64Url(payload.slice(1));
-    const json = text(inflateWithLimit(compressed));
-    return { version, envelope: envelopeSchema.parse(JSON.parse(json)) };
+    return parseDecompressedPayload(version, inflateWithLimit(readCompressedPayload(payload)));
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Unsupported payload version")) {
-      throw error;
-    }
-    throw new Error("The smartlink payload is invalid or corrupted.", { cause: error });
+    throw invalidPayload(error);
   }
 }
 function payloadFromInput(input) {
@@ -660,6 +670,20 @@ async function sealSecret(plaintext, script, recipient) {
   );
 }
 
+// src/cli/encode.ts
+import { deflateRawSync } from "zlib";
+import { deflateSync as deflateSync2 } from "fflate";
+function encodePayloadForCli(input, version = CURRENT_PAYLOAD_VERSION) {
+  return encodePayloadWith(
+    input,
+    [
+      (serialized) => deflateRawSync(serialized, { level: 9 }),
+      (serialized) => deflateSync2(serialized, { level: 9 })
+    ],
+    version
+  );
+}
+
 // src/cli/build.ts
 async function createSmartlink(options) {
   const source = options.minify === false ? wrapScriptBody(options.source) : await minifyScriptBody(options.source);
@@ -674,7 +698,7 @@ async function createSmartlink(options) {
       async ([name, value]) => [name, await sealSecret(value, source, publicKey)]
     )
   ) : [];
-  const payload = encodePayload({
+  const payload = encodePayloadForCli({
     s: source,
     ...options.interstitial ? { i: true } : {},
     ...sealedEntries.length ? { k: Object.fromEntries(sealedEntries) } : {}

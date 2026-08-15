@@ -7,7 +7,7 @@ export const MAX_PAYLOAD_LENGTH = 7_800;
 export const MAX_SCRIPT_LENGTH = 1_000_000;
 // A single JavaScript code unit can occupy six UTF-8 bytes after JSON escaping
 // (for example, a lone surrogate). Keep extra room for envelope metadata and secrets.
-const MAX_DECOMPRESSED_LENGTH = MAX_SCRIPT_LENGTH * 6 + 64_000;
+export const MAX_DECOMPRESSED_LENGTH = MAX_SCRIPT_LENGTH * 6 + 64_000;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
 
 const sealedSecretSchema = z.record(
@@ -30,6 +30,9 @@ export type DecodedPayload = {
   version: PayloadVersion;
   envelope: Envelope;
 };
+
+export type RawDeflate = (input: Uint8Array) => Uint8Array;
+export type RawDeflates = readonly [RawDeflate, ...RawDeflate[]];
 
 function inflateWithLimit(compressed: Uint8Array): Uint8Array {
   const chunks: Uint8Array[] = [];
@@ -56,8 +59,9 @@ function inflateWithLimit(compressed: Uint8Array): Uint8Array {
   return result;
 }
 
-export function encodePayload(
+export function encodePayloadWith(
   input: Envelope,
+  deflates: RawDeflates,
   version: PayloadVersion = CURRENT_PAYLOAD_VERSION,
 ): string {
   const envelope = envelopeSchema.parse(input);
@@ -66,8 +70,9 @@ export function encodePayload(
   if (serialized.byteLength > MAX_DECOMPRESSED_LENGTH) {
     throw new Error("The serialized payload is too large.");
   }
-  const compressed = deflateSync(serialized, { level: 9 });
-  const payload = `${version}${toBase64Url(compressed)}`;
+  const payload = deflates
+    .map((deflate) => `${version}${toBase64Url(deflate(serialized))}`)
+    .reduce((shortest, candidate) => (candidate.length < shortest.length ? candidate : shortest));
 
   if (payload.length > MAX_PAYLOAD_LENGTH) {
     throw new Error(
@@ -78,7 +83,14 @@ export function encodePayload(
   return payload;
 }
 
-export function decodePayload(payload: string): DecodedPayload {
+export function encodePayload(
+  input: Envelope,
+  version: PayloadVersion = CURRENT_PAYLOAD_VERSION,
+): string {
+  return encodePayloadWith(input, [(serialized) => deflateSync(serialized, { level: 9 })], version);
+}
+
+export function readPayloadVersion(payload: string): PayloadVersion {
   if (payload.length < 2 || payload.length > MAX_PAYLOAD_LENGTH) {
     throw new Error("The payload length is invalid.");
   }
@@ -87,16 +99,34 @@ export function decodePayload(payload: string): DecodedPayload {
   if (version !== "1" && version !== "2") {
     throw new Error(`Unsupported payload version: ${version ?? "missing"}.`);
   }
+  return version;
+}
+
+export function readCompressedPayload(payload: string): Uint8Array {
+  return fromBase64Url(payload.slice(1));
+}
+
+export function parseDecompressedPayload(
+  version: PayloadVersion,
+  decompressed: Uint8Array,
+): DecodedPayload {
+  return {
+    version,
+    envelope: envelopeSchema.parse(JSON.parse(text(decompressed))),
+  };
+}
+
+export function invalidPayload(error: unknown): Error {
+  return new Error("The smartlink payload is invalid or corrupted.", { cause: error });
+}
+
+export function decodePayload(payload: string): DecodedPayload {
+  const version = readPayloadVersion(payload);
 
   try {
-    const compressed = fromBase64Url(payload.slice(1));
-    const json = text(inflateWithLimit(compressed));
-    return { version, envelope: envelopeSchema.parse(JSON.parse(json)) };
+    return parseDecompressedPayload(version, inflateWithLimit(readCompressedPayload(payload)));
   } catch (error) {
-    if (error instanceof Error && error.message.startsWith("Unsupported payload version")) {
-      throw error;
-    }
-    throw new Error("The smartlink payload is invalid or corrupted.", { cause: error });
+    throw invalidPayload(error);
   }
 }
 

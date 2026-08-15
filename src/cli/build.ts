@@ -1,7 +1,7 @@
-import { encodePayload } from "../shared/codec.js";
 import { validateScript } from "../shared/sandbox.js";
 import { minifyScriptBody, wrapScriptBody } from "../shared/script.js";
 import { type PublicKey, sealSecret } from "../shared/seal.js";
+import { encodePayloadForCli } from "./encode.js";
 
 export type CreateSmartlinkOptions = {
   source: string;
@@ -39,7 +39,7 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
         ),
       )
     : [];
-  const payload = encodePayload({
+  const payload = encodePayloadForCli({
     s: source,
     ...(options.interstitial ? { i: true as const } : {}),
     ...(sealedEntries.length ? { k: Object.fromEntries(sealedEntries) } : {}),

@@ -1,7 +1,11 @@
+import { deflateRawSync } from "node:zlib";
+import { deflateSync } from "fflate";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createSmartlink } from "../../src/cli/build.js";
-import { encodePayload } from "../../src/shared/codec.js";
+import { toBase64Url } from "../../src/shared/bytes.js";
+import { encodePayload, MAX_DECOMPRESSED_LENGTH } from "../../src/shared/codec.js";
 import { generateKeyPair, sealSecret } from "../../src/shared/seal.js";
+import { decodeWorkerPayload, inflateRawWithLimit } from "../../src/worker/codec.js";
 import worker from "../../src/worker/index.js";
 import { validateWorkerScript } from "../../src/worker/sandbox.js";
 
@@ -139,5 +143,35 @@ describe("Worker routes", () => {
 
     const missing = await worker.fetch(new Request(`${origin}/unknown`), testEnv());
     expect(missing.status).toBe(404);
+  });
+});
+
+describe("Worker payload decoder", () => {
+  it("cross-decodes current fflate payloads for both versions", async () => {
+    const envelope = { s: 'return { body: "native stream" }', i: true as const };
+
+    for (const version of ["1", "2"] as const) {
+      await expect(decodeWorkerPayload(encodePayload(envelope, version))).resolves.toEqual({
+        version,
+        envelope,
+      });
+    }
+  });
+
+  it("cancels highly compressible output above its configured ceiling", async () => {
+    const compressed = deflateSync(new Uint8Array(128_000), { level: 9 });
+
+    await expect(inflateRawWithLimit(compressed, 32_000)).rejects.toThrow(
+      "decoded payload is too large",
+    );
+  });
+
+  it("safely rejects a near-maximum URL that expands to six megabytes", async () => {
+    const compressed = deflateRawSync(new Uint8Array(6_000_000), { level: 9 });
+    const payload = `2${toBase64Url(compressed)}`;
+
+    expect(payload.length).toBeLessThan(7_800);
+    expect(6_000_000).toBeLessThan(MAX_DECOMPRESSED_LENGTH);
+    await expect(decodeWorkerPayload(payload)).rejects.toThrow("invalid or corrupted");
   });
 });

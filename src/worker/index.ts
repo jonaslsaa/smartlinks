@@ -1,10 +1,11 @@
 import { ZodError } from "zod";
 import { isPreviewRequest } from "../shared/bots.js";
-import { type DecodedPayload, decodePayload } from "../shared/codec.js";
+import type { DecodedPayload } from "../shared/codec.js";
 import { createGuardedFetch } from "../shared/guarded-fetch.js";
 import { lowercaseHeaders, userParams } from "../shared/request-context.js";
 import { mapScriptResult, type ScriptResult } from "../shared/result.js";
 import { openSecret, publicKeyFromPrivateSecret, sealedSecretKeyId } from "../shared/seal.js";
+import { decodeWorkerPayload } from "./codec.js";
 import { HttpError, json, readBoundedBody } from "./http.js";
 import { decoderPage, interstitialPage, previewPage } from "./pages.js";
 import { runWorkerScript } from "./sandbox.js";
@@ -71,7 +72,7 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
 
   let decoded: DecodedPayload;
   try {
-    decoded = decodePayload(payload);
+    decoded = await decodeWorkerPayload(payload);
   } catch (error) {
     throw new HttpError(400, error instanceof Error ? error.message : "Invalid smartlink.", {
       cause: error,
@@ -153,7 +154,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     }
     let decoded: DecodedPayload;
     try {
-      decoded = decodePayload(decoderPayload);
+      decoded = await decodeWorkerPayload(decoderPayload);
     } catch (error) {
       throw new HttpError(400, error instanceof Error ? error.message : "Invalid smartlink.", {
         cause: error,
