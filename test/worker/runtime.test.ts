@@ -656,7 +656,10 @@ describe("Worker routes", () => {
     const payload = encodePayload({
       s: 'async ctx=>({body:"</code><script>entry</script>"})',
       i: true,
-      c: ["async(ctx,name)=>({body:name})", 'async()=>({body:"</code><script>closure</script>"})'],
+      c: [
+        'async(ctx,name)=>({body:"first-sentinel:"+name})',
+        'async()=>({body:"second-sentinel:</code><script>closure</script>"})',
+      ],
       k: { RELEASE_TOKEN: "encrypted-value-must-not-render" },
       notAfter,
       interstitialNote: 'Explains <script>alert("x")</script>',
@@ -677,9 +680,13 @@ describe("Worker routes", () => {
     expect(decodedHtml).toContain("<dt>Compile closures</dt><dd>2</dd>");
     const closureZero = decodedHtml.indexOf("<h3>Closure 0</h3>");
     const closureOne = decodedHtml.indexOf("<h3>Closure 1</h3>");
+    const firstClosure = decodedHtml.indexOf("first-sentinel:");
+    const secondClosure = decodedHtml.indexOf("second-sentinel:");
     expect(closureZero).toBeGreaterThan(-1);
     expect(closureOne).toBeGreaterThan(closureZero);
-    expect(decodedHtml).toContain("async (ctx, name) =&gt;");
+    expect(firstClosure).toBeGreaterThan(closureZero);
+    expect(firstClosure).toBeLessThan(closureOne);
+    expect(secondClosure).toBeGreaterThan(closureOne);
     expect(decodedHtml).toContain("&lt;/code&gt;&lt;script&gt;entry&lt;/script&gt;");
     expect(decodedHtml).toContain("&lt;/code&gt;&lt;script&gt;closure&lt;/script&gt;");
     expect(decodedHtml).not.toContain("<script>entry</script>");
@@ -695,6 +702,8 @@ describe("Worker routes", () => {
     expect(expiredHtml).toContain("(expired)");
     expect(expiredHtml).toContain("<dt>Confirmation required</dt><dd>No</dd>");
     expect(expiredHtml).toContain("<dt>Compile closures</dt><dd>0</dd>");
+    expect(expiredHtml).not.toContain("<h2>Compile closures</h2>");
+    expect(expiredHtml).not.toContain("<h3>Closure");
   });
 
   it("rejects a sealed blob copied to another script", async () => {

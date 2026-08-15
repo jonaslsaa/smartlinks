@@ -751,8 +751,10 @@ test("build output round-trips through decode as a URL and raw payload", async (
   try {
     await withTemporaryScript(
       "js",
-      `const child = async (childCtx, label) => ({ body: label + ":" + (childCtx.params.name ?? "") });
-if (ctx.params.child === "1") return ctx.compile(child, ["fixed"]);
+      `const firstChild = async (childCtx, label) => ({ body: "first-sentinel:" + label + ":" + (childCtx.params.name ?? "") });
+const secondChild = async (_childCtx, label) => ({ body: "second-sentinel:" + label });
+if (ctx.params.child === "1") return ctx.compile(firstChild, ["fixed"]);
+if (ctx.params.child === "2") return ctx.compile(secondChild, ["fixed"]);
 const name = ctx.params.name ?? "world";
 return "https://example.com/" + name;
 `,
@@ -800,10 +802,10 @@ return "https://example.com/" + name;
         const decodedFromUrl = JSON.parse((await runCli(["decode", built.link, "--json"])).stdout);
         assert.equal(decodedFromUrl.payloadVersion, 2);
         assert.equal(decodedFromUrl.interstitial, true);
-        assert.equal(decodedFromUrl.compileClosures, 1);
-        assert.equal(decodedFromUrl.closures.length, 1);
-        assert.match(decodedFromUrl.closures[0], /childCtx/u);
-        assert.match(decodedFromUrl.closures[0], /label/u);
+        assert.equal(decodedFromUrl.compileClosures, 2);
+        assert.equal(decodedFromUrl.closures.length, 2);
+        assert.match(decodedFromUrl.closures[0], /first-sentinel/u);
+        assert.match(decodedFromUrl.closures[1], /second-sentinel/u);
         assert.deepEqual(decodedFromUrl.sealedSecrets, ["E2E_TOKEN"]);
         assert.equal(decodedFromUrl.notAfter, built.notAfter);
         assert.equal(decodedFromUrl.expiresAt, built.expiresAt);
