@@ -98,6 +98,34 @@ return ctx.compile(child, [], {
   });
 });
 
+test("run simulation traces a compiled child that is handed out without being followed", async () => {
+  const source = `
+const page = (_childCtx: typeof ctx, name: string) => ({ body: "hello " + name });
+const child = await ctx.compile(page, ["Ada"], { ttlSeconds: 3600 });
+return {
+  headers: { "content-type": "text/html" },
+  body: '<a href="' + child + '">go</a>',
+};
+`;
+
+  await withTemporaryScript("ts", source, async (script) => {
+    const result = await runCli(["run", script, "--simulate", "--json"]);
+    const report = JSON.parse(result.stdout);
+
+    assert.equal(report.events.length, 1);
+    assert.equal(report.events[0].type, "compile");
+    assert.equal(report.events[0].hop, 1);
+    assert.equal(report.events[0].artifact.payloadVersion, 2);
+    assert.equal(report.events[0].artifact.interstitial, false);
+    assert.equal(report.events[0].artifact.compileClosures, 1);
+    assert.deepEqual(report.events[0].artifact.sealedSecrets, []);
+    assert.ok(report.events[0].artifact.payloadCharacters > 0);
+    assert.ok(report.events[0].artifact.notAfter > Math.floor(Date.now() / 1000));
+    assert.match(report.response.body, /<a href="https:\/\/smartlinks\.local\/r\//u);
+    assert.equal(result.stderr, "");
+  });
+});
+
 test("run simulation redacts an exact secret used as a binary response", async () => {
   const source = "return { bodyBase64: ctx.secrets.TOKEN };\n";
 

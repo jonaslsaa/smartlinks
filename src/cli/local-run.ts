@@ -66,6 +66,7 @@ type LocalExecutionEnvironment = {
   createGuestFetch: () => GuestFetch;
   getLocalKey: () => Promise<GeneratedKeyPair>;
   randomBytes: GuestRandomBytes | undefined;
+  simulation?: LocalSimulation;
   token: LocalTokenConfiguration;
 };
 
@@ -95,8 +96,11 @@ async function execute(
   decoded: DecodedPayload,
   context: SandboxContext,
   environment: LocalExecutionEnvironment,
+  compileHop: number,
 ): Promise<ScriptResult> {
   const cryptoBudget = createCryptoOperationBudget();
+  const simulation = environment.simulation;
+
   return runScript({
     version: decoded.version,
     source: decoded.envelope.s,
@@ -119,7 +123,11 @@ async function execute(
       parentSecrets: context.secrets,
       service: LOCAL_SERVICE_URL,
       getPublicKey: environment.getLocalKey,
-      encode: async (envelope, version) => encodePayloadForCli(envelope, version),
+      encode: async (envelope, version) => {
+        const payload = await encodePayloadForCli(envelope, version);
+        simulation?.recordCompile({ version, envelope }, payload.length, compileHop);
+        return payload;
+      },
       validate: async (version, childSource) => validateScript(version, childSource),
       cryptoBudget,
     }),
@@ -166,6 +174,7 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     createGuestFetch,
     getLocalKey,
     randomBytes,
+    ...(simulation ? { simulation } : {}),
     token: localTokenConfiguration(),
   };
   let decoded: DecodedPayload = {
@@ -176,7 +185,7 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     },
   };
   let context = program.context;
-  let result = await execute(decoded, context, environment);
+  let result = await execute(decoded, context, environment, 1);
 
   for (let followed = 0; ; followed += 1) {
     const url = compiledUrl(result);
@@ -190,7 +199,6 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     }
     const payload = payloadFromInput(url.href);
     decoded = decodePayload(payload);
-    program.simulation?.recordCompile(decoded, payload.length, followed + 1);
     if (isExpired(decoded.envelope.notAfter)) {
       throw new Error("The compiled local Smartlink has expired.");
     }
@@ -205,6 +213,6 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
       secrets,
       requestId: createRequestId(),
     };
-    result = await execute(decoded, context, environment);
+    result = await execute(decoded, context, environment, followed + 2);
   }
 }
