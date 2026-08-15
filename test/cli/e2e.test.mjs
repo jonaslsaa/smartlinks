@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -62,6 +62,8 @@ test("the built CLI exposes its version and public subcommands", async () => {
   const buildHelp = await runCli(["help", "build"]);
   assert.doesNotMatch(buildHelp.stdout, /--service\b/u);
   assert.match(buildHelp.stdout, /--no-type-check\b/u);
+  assert.match(buildHelp.stdout, /--copy\s+copy the link without printing it/u);
+  assert.match(buildHelp.stdout, /--out <file>\s+write the link privately without printing it/u);
 
   const runHelp = await runCli(["help", "run"]);
   assert.match(runHelp.stdout, /--no-type-check\b/u);
@@ -186,9 +188,12 @@ test("build output round-trips through decode as a URL and raw payload", async (
         );
 
         assert.match(built.link, new RegExp(`^${service}/r/2`));
-        assert.match(built.decoder, new RegExp(`^${service}/d/2`));
+        assert.equal("decoder" in built, false);
         assert.equal(built.payloadVersion, 2);
         assert.equal(built.characters, built.link.length);
+        assert.equal(built.fits, true);
+        assert.equal(typeof built.payloadCharacters, "number");
+        assert.equal(typeof built.budgetPercent, "number");
         assert.equal(publicKeyRequests, 1);
 
         const decodedFromUrl = JSON.parse((await runCli(["decode", built.link, "--json"])).stdout);
@@ -205,6 +210,86 @@ test("build output round-trips through decode as a URL and raw payload", async (
   } finally {
     await close(server);
   }
+});
+
+test("build writes the link as an artifact without repeating it", async () => {
+  await withTemporaryScript(
+    "ts",
+    'const name = ctx.params.name ?? "world";\nreturn { body: name };\n',
+    async (script) => {
+      const source = await readFile(script, "utf8");
+      await assert.rejects(runCli(["build", script, "--out", script]), (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /must not overwrite the input script/u);
+        return true;
+      });
+      assert.equal(await readFile(script, "utf8"), source);
+
+      const output = join(dirname(script), "link.txt");
+      const result = await runCli(["build", script, "--out", output]);
+      const link = (await readFile(output, "utf8")).trim();
+
+      assert.match(link, /^https:\/\/s\.jonaslsa\.com\/r\/2/u);
+      assert.doesNotMatch(result.stdout, /https:\/\//u);
+      assert.match(
+        result.stdout,
+        new RegExp(
+          `^${link.length.toLocaleString()} characters · payload v2 · fits \\(\\d+% of budget\\) · written to `,
+          "u",
+        ),
+      );
+      assert.equal(result.stderr, "");
+
+      if (process.platform !== "win32") {
+        await chmod(output, 0o644);
+      }
+      const jsonResult = await runCli(["build", script, "--out", output, "--json"]);
+      assert.equal(jsonResult.stderr, "");
+      assert.doesNotMatch(jsonResult.stdout, /https:\/\//u);
+      const json = JSON.parse(jsonResult.stdout);
+      assert.equal("link" in json, false);
+      assert.equal("decoder" in json, false);
+      assert.equal(json.out, output);
+      assert.equal(json.fits, true);
+      assert.equal(json.characters, link.length);
+      if (process.platform !== "win32") {
+        assert.equal((await stat(output)).mode & 0o777, 0o600);
+      }
+    },
+  );
+});
+
+test("build copies the link without printing it", {
+  skip: process.platform === "win32",
+}, async () => {
+  await withTemporaryScript("js", 'return "https://example.com";\n', async (script) => {
+    const directory = dirname(script);
+    const clipboardFile = join(directory, "clipboard.txt");
+    const clipboardCommand = join(directory, process.platform === "darwin" ? "pbcopy" : "xsel");
+    await writeFile(clipboardCommand, '#!/bin/sh\ncat > "$SMARTLINKS_CLIPBOARD_FILE"\n', {
+      mode: 0o700,
+    });
+
+    const result = await runCli(["build", script, "--copy"], {
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH ?? ""}`,
+        SMARTLINKS_CLIPBOARD_FILE: clipboardFile,
+      },
+    });
+    const link = await readFile(clipboardFile, "utf8");
+
+    assert.match(link, /^https:\/\/s\.jonaslsa\.com\/r\/2/u);
+    assert.equal(result.stderr, "");
+    assert.doesNotMatch(result.stdout, /https:\/\//u);
+    assert.match(
+      result.stdout,
+      new RegExp(
+        `^Copied to clipboard · ${link.length.toLocaleString()} characters · payload v2 · fits \\(\\d+% of budget\\)`,
+        "u",
+      ),
+    );
+  });
 });
 
 test("TypeScript is checked by default and can be explicitly transpiled without checking", async () => {

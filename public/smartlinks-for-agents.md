@@ -73,14 +73,28 @@ execution and validation path.
 
 - `--interstitial`: require a browser confirmation before execution.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline values.
-- `--copy`: copy the execution URL.
+- `--copy`: copy the execution URL and print only a compact size receipt.
+- `--out FILE`: write the execution URL to a file and print only a compact size receipt. New and
+  existing output files are set to owner-only permissions on POSIX systems.
 - `--json`: emit machine-readable output only.
 - `--no-type-check`: skip strict semantic checking for TypeScript; syntax must still transpile.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
 
-The command produces an execution URL; `--json` also includes its non-executing decoder URL. Pass
-either URL or the raw payload to `smartlinks decode` for inspection. `build` validates with
-QuickJS's compile-only mode and never runs the script.
+The command produces an execution URL. Plain `--json` includes that URL once and omits the
+equivalent decoder URL. Pass the execution URL or raw payload to `smartlinks decode` for
+inspection. If a browser decoder URL is specifically needed, replace the execution URL's first
+`/r/` path segment with `/d/`. `build` validates with QuickJS's compile-only mode and never runs
+the script.
+
+### Treat the generated link as a compiled artifact
+
+The execution URL is token-heavy, opaque, and carries bearer authority. Treat it like a compiled
+binary rather than prose: do not repeat it to the user or copy it into reasoning, plans, or other
+working context. Use `run` while iterating, then prefer `build --out link.txt` when an agent needs
+to compile and check the encoded size. Keep that file out of version control. Use `--copy` when
+the user should receive the final link directly; if clipboard access is unavailable, ask the user
+to run the final command rather than printing the URL. Both modes suppress the URL and report its
+character count, payload version, and budget usage instead.
 
 ## `smartlinks run <script.js|script.ts>`
 
@@ -132,5 +146,5 @@ revocable credentials. Avoid inline `NAME=value` secrets because shell history c
   intentionally best-effort.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 
-Keep the script small, explicit, and least-privileged. Use `run` first, inspect the decoder output,
-then use `build` for the final immutable link.
+Keep the script small, explicit, and least-privileged. Use `run` first, inspect with `decode`, then
+use `build --out link.txt` or `build --copy` for the final immutable link.
