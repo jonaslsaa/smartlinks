@@ -24,7 +24,11 @@ function guest(source?: GuestTokenKeySource, maxOperations?: number) {
 }
 
 function link(script = "return 1", extras: Record<string, unknown> = {}, master = MASTER) {
-  return guest({ masterSecret: master, artifactIdentity: identity(script, extras) });
+  return guest({
+    masterSecret: master,
+    artifactIdentity: identity(script, extras),
+    domain: "production",
+  });
 }
 
 describe("guest token seal/open", () => {
@@ -52,6 +56,24 @@ describe("guest token seal/open", () => {
     await expect(link("return 1", {}, "other-master").open(token)).rejects.toThrow(
       "could not be opened",
     );
+  });
+
+  it("separates local tokens from production even when the master secret is reused", async () => {
+    const artifactIdentity = identity("return 1");
+    const production = guest({
+      masterSecret: MASTER,
+      artifactIdentity,
+      domain: "production",
+    });
+    const local = guest({ masterSecret: MASTER, artifactIdentity, domain: "local" });
+    const productionToken = await production.seal("state");
+    const localToken = await local.seal("state");
+
+    await expect(local.open(productionToken)).rejects.toThrow("could not be opened");
+    await expect(production.open(localToken)).rejects.toThrow("could not be opened");
+
+    const portableToken = await production.seal("portable", { key: EXPLICIT_KEY });
+    await expect(local.open(portableToken, { key: EXPLICIT_KEY })).resolves.toBe("portable");
   });
 
   it("round-trips explicit-key tokens between different links", async () => {
@@ -93,6 +115,26 @@ describe("guest token seal/open", () => {
     await expect(link().open(toBase64Url(versioned))).rejects.toThrow("unsupported version");
   });
 
+  it("adds an optional runtime hint only to transparent-token authentication failures", async () => {
+    const token = await link().seal("state");
+    const hinted = createGuestCrypto({
+      crypto,
+      tokenKeySource: {
+        masterSecret: "different-master-secret",
+        artifactIdentity: identity("return 1"),
+        domain: "production",
+      },
+      tokenOpenFailureHint: "Reuse the local token key.",
+    });
+
+    await expect(hinted.open(token)).rejects.toThrow(
+      "different key or context. Reuse the local token key.",
+    );
+    await expect(hinted.open(token, { key: EXPLICIT_KEY })).rejects.not.toThrow(
+      "Reuse the local token key.",
+    );
+  });
+
   it("requires a configured transparent key only for transparent tokens", async () => {
     await expect(guest().seal("value")).rejects.toThrow("not configured");
     await expect(guest().seal("value", { key: EXPLICIT_KEY })).resolves.toBeDefined();
@@ -109,7 +151,11 @@ describe("guest token seal/open", () => {
 
   it("pins the artifact canonicalization and token construction", async () => {
     expect(identity("return 1")).toBe('["2","return 1",[],null,false]');
-    const golden = guest({ masterSecret: "golden-master", artifactIdentity: identity("return 1") });
+    const golden = guest({
+      masterSecret: "golden-master",
+      artifactIdentity: identity("return 1"),
+      domain: "production",
+    });
     await expect(
       golden.open("AazT-6Pw89AnnibljgzCknYUhTH3zZr-PPkPE3lQSlSf64HV85-fu19lERq7QBEaNf4", {
         context: "golden",
@@ -118,7 +164,11 @@ describe("guest token seal/open", () => {
   });
 
   it("charges the crypto budget and enforces the input cap", async () => {
-    const source = { masterSecret: MASTER, artifactIdentity: identity("return 1") };
+    const source = {
+      masterSecret: MASTER,
+      artifactIdentity: identity("return 1"),
+      domain: "production" as const,
+    };
 
     const twoOperations = guest(source, 2);
     const token = await twoOperations.seal("state");

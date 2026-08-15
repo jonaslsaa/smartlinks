@@ -11,6 +11,7 @@ const TOKEN_VERSION = 1;
 const TOKEN_NONCE_BYTES = 12;
 const TOKEN_TAG_BYTES = 16;
 const TRANSPARENT_KEY_INFO = "smartlinks/guest-aead/v1";
+const LOCAL_TRANSPARENT_KEY_INFO = "smartlinks/guest-aead/local/v1";
 const EXPLICIT_KEY_INFO = "smartlinks/guest-aead/explicit/v1";
 
 const tokenOptionsSchema = z
@@ -24,6 +25,7 @@ export type GuestTokenOptions = z.infer<typeof tokenOptionsSchema>;
 export type GuestTokenKeySource = {
   masterSecret: string | undefined;
   artifactIdentity: string;
+  domain: "production" | "local";
 };
 
 export type GuestCrypto = {
@@ -50,6 +52,7 @@ export type GuestCryptoOptions = {
   crypto?: Crypto;
   budget?: CryptoOperationBudget;
   tokenKeySource?: GuestTokenKeySource;
+  tokenOpenFailureHint?: string;
   randomBytes?: GuestRandomBytes;
 };
 
@@ -189,7 +192,7 @@ export function createGuestCrypto(configuration: GuestCryptoOptions = {}): Guest
         "The transparent token key is not configured in this runtime. Set the TOKEN_MASTER_SECRET Worker secret, or pass an explicit key.",
       );
     }
-    const { masterSecret, artifactIdentity } = configuration.tokenKeySource;
+    const { masterSecret, artifactIdentity, domain } = configuration.tokenKeySource;
     transparentKey ??= (async () =>
       deriveTokenKey(
         cryptoImpl,
@@ -197,7 +200,7 @@ export function createGuestCrypto(configuration: GuestCryptoOptions = {}): Guest
         new Uint8Array(
           await cryptoImpl.subtle.digest("SHA-256", bufferSource(utf8(artifactIdentity))),
         ),
-        TRANSPARENT_KEY_INFO,
+        domain === "local" ? LOCAL_TRANSPARENT_KEY_INFO : TRANSPARENT_KEY_INFO,
       ))();
     return transparentKey;
   };
@@ -297,8 +300,9 @@ export function createGuestCrypto(configuration: GuestCryptoOptions = {}): Guest
           bufferSource(bytes.subarray(ciphertextStart)),
         );
       } catch {
+        const hint = options?.key === undefined ? configuration.tokenOpenFailureHint : undefined;
         throw new Error(
-          "The token could not be opened. It was tampered with, sealed by a different link, or sealed with a different key or context.",
+          `The token could not be opened. It was tampered with, sealed by a different link, or sealed with a different key or context.${hint ? ` ${hint}` : ""}`,
         );
       }
       return JSON.parse(text(plaintext)) as unknown;

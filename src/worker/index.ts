@@ -209,6 +209,7 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
         tokenKeySource: {
           masterSecret: readStringBinding(env, "TOKEN_MASTER_SECRET"),
           artifactIdentity: payloadArtifactIdentity(decoded),
+          domain: "production",
         },
       }),
       cryptoBudget,

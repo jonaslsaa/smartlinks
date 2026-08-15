@@ -1,4 +1,4 @@
-import { toBase64Url } from "../shared/bytes.js";
+import { toBase64Url, utf8 } from "../shared/bytes.js";
 import {
   type DecodedPayload,
   decodePayload,
@@ -10,6 +10,7 @@ import {
   createCryptoOperationBudget,
   createGuestCrypto,
   type GuestRandomBytes,
+  MIN_TOKEN_KEY_BYTES,
 } from "../shared/guest-crypto.js";
 import { createSmartlinkCompiler } from "../shared/mint.js";
 import { createRequestId, userParams, userParamValues } from "../shared/request-context.js";
@@ -30,7 +31,27 @@ import type { LocalSimulation } from "./simulation.js";
 const LOCAL_SERVICE_URL = "https://smartlinks.local";
 const MAX_COMPILE_REDIRECTS = 10;
 // Process-wide so tokens survive across the requests of one `run --serve` session.
-const masterSecret = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+const ephemeralMasterSecret = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+const LOCAL_TOKEN_KEY_ENV = "SMARTLINKS_LOCAL_TOKEN_KEY";
+const LOCAL_TOKEN_HINT =
+  `Local tokens from another smartlinks run invocation require the same ${LOCAL_TOKEN_KEY_ENV}; ` +
+  "also check that the script and token context are unchanged.";
+
+type LocalTokenConfiguration = {
+  masterSecret: string;
+  openFailureHint: string;
+};
+
+function localTokenConfiguration(): LocalTokenConfiguration {
+  const configured = process.env[LOCAL_TOKEN_KEY_ENV];
+  if (configured === undefined) {
+    return { masterSecret: ephemeralMasterSecret, openFailureHint: LOCAL_TOKEN_HINT };
+  }
+  if (utf8(configured).byteLength < MIN_TOKEN_KEY_BYTES) {
+    throw new Error(`${LOCAL_TOKEN_KEY_ENV} must contain at least ${MIN_TOKEN_KEY_BYTES} bytes.`);
+  }
+  return { masterSecret: configured, openFailureHint: LOCAL_TOKEN_HINT };
+}
 
 type LocalProgram = {
   source: string;
@@ -45,6 +66,7 @@ type LocalExecutionEnvironment = {
   createGuestFetch: () => GuestFetch;
   getLocalKey: () => Promise<GeneratedKeyPair>;
   randomBytes: GuestRandomBytes | undefined;
+  token: LocalTokenConfiguration;
 };
 
 async function decryptSecrets(
@@ -84,9 +106,11 @@ async function execute(
       crypto,
       budget: cryptoBudget,
       tokenKeySource: {
-        masterSecret,
+        masterSecret: environment.token.masterSecret,
         artifactIdentity: payloadArtifactIdentity(decoded),
+        domain: "local",
       },
+      tokenOpenFailureHint: environment.token.openFailureHint,
       ...(environment.randomBytes ? { randomBytes: environment.randomBytes } : {}),
     }),
     cryptoBudget,
@@ -142,6 +166,7 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     createGuestFetch,
     getLocalKey,
     randomBytes,
+    token: localTokenConfiguration(),
   };
   let decoded: DecodedPayload = {
     version: "2",
