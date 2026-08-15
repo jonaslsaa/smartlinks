@@ -777,6 +777,23 @@ test("TypeScript is checked by default and can be explicitly transpiled without 
   });
 });
 
+test("build rejects indirect compile method references", async () => {
+  const source = `
+const child = async (childContext: typeof ctx) => ({ body: childContext.requestId });
+const compile = ctx.compile;
+return compile(child, []);
+`;
+
+  await withTemporaryScript("ts", source, async (script) => {
+    await assert.rejects(runCli(["build", script, "--json"]), (error) => {
+      assert.equal(error.stdout, "");
+      assert.match(error.stderr, /Call ctx\.compile\(\.\.\.\) directly/u);
+      assert.doesNotMatch(error.stderr, /requires a packaged closure/u);
+      return true;
+    });
+  });
+});
+
 test("run rejects a missing non-interactive secret", async () => {
   const environment = { ...process.env };
   delete environment.SMARTLINKS_E2E_MISSING;

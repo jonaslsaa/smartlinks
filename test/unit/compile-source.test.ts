@@ -118,12 +118,128 @@ describe("compile closure extraction", () => {
 
   it("ignores compile-like calls on a shadowed context", async () => {
     const extracted = await extractCompileClosures(`
-      const invoke = (ctx) => ctx.compile("ordinary method");
+      const invoke = (ctx) => {
+        const method = ctx.compile;
+        return method("ordinary method");
+      };
       return { body: String(invoke({ compile: (value) => value })) };
     `);
 
     expect(extracted.closures).toEqual([]);
-    expect(extracted.source).toContain('ctx.compile("ordinary method")');
+    expect(extracted.source).toContain("const method = ctx.compile");
+  });
+
+  it("allows dynamic context keys whose variable happens to be named compile", async () => {
+    const extracted = await extractCompileClosures(`
+      const compile = "params";
+      const name = ctx[compile].name;
+      const { [compile]: params } = ctx;
+      return { body: name + params.name };
+    `);
+
+    expect(extracted.closures).toEqual([]);
+    expect(extracted.source).toContain("ctx[compile].name");
+    expect(extracted.source).toContain("{ [compile]: params }");
+  });
+
+  it.each([
+    [
+      "an aliased method",
+      `
+        const child = async (childCtx) => ({ body: childCtx.requestId });
+        const compile = ctx.compile;
+        return compile(child, []);
+      `,
+    ],
+    [
+      "a destructured method",
+      `
+        const child = async (childCtx) => ({ body: childCtx.requestId });
+        const { "compile": compile } = ctx;
+        return compile(child, []);
+      `,
+    ],
+    [
+      "a destructuring assignment",
+      `
+        const child = async (childCtx) => ({ body: childCtx.requestId });
+        let compile;
+        ({ compile } = ctx);
+        return compile(child, []);
+      `,
+    ],
+    [
+      "a method passed as a value",
+      `
+        const child = async (childCtx) => ({ body: childCtx.requestId });
+        const invoke = (compile) => compile(child, []);
+        return invoke(ctx.compile);
+      `,
+    ],
+    [
+      "computed property access",
+      `
+        const child = async (childCtx) => ({ body: childCtx.requestId });
+        return ctx["compile"](child, []);
+      `,
+    ],
+    [
+      "template-literal property access",
+      `
+        const child = async (childCtx) => ({ body: childCtx.requestId });
+        return ctx[\`compile\`](child, []);
+      `,
+    ],
+    [
+      "an aliased child-context method",
+      `
+        const leaf = async (leafCtx) => ({ body: leafCtx.requestId });
+        const child = async (childCtx) => {
+          const compile = childCtx.compile;
+          return compile(leaf, []);
+        };
+        return ctx.compile(child, []);
+      `,
+    ],
+    [
+      "a destructured child-context method",
+      `
+        const leaf = async (leafCtx) => ({ body: leafCtx.requestId });
+        const child = async ({ compile }) => compile(leaf, []);
+        return ctx.compile(child, []);
+      `,
+    ],
+    [
+      "a computed destructured child-context method",
+      `
+        const leaf = async (leafCtx) => ({ body: leafCtx.requestId });
+        const child = async ({ [\`compile\`]: mint }) => mint(leaf, []);
+        return ctx.compile(child, []);
+      `,
+    ],
+    [
+      "a defaulted destructured child-context method",
+      `
+        const leaf = async (leafCtx) => ({ body: leafCtx.requestId });
+        const child = async ({ compile } = {}) => compile(leaf, []);
+        return ctx.compile(child, []);
+      `,
+    ],
+    [
+      "an aliased defaulted child context",
+      `
+        const leaf = async (leafCtx) => ({ body: leafCtx.requestId });
+        const child = async (childCtx = {}) => {
+          const compile = childCtx.compile;
+          return compile(leaf, []);
+        };
+        return ctx.compile(child, []);
+      `,
+    ],
+  ])("rejects indirect compile access through %s", async (_name, source) => {
+    await expect(extractCompileClosures(source)).rejects.toThrow(
+      "Call ctx.compile(...) directly; the compile method cannot be aliased, destructured, or passed as a value.",
+    );
   });
 
   it("rejects dynamic and mutable closure references", async () => {
