@@ -316,10 +316,8 @@ a Worker secret.
 Author notes are public, attributed text — not verified identity. Anyone can recover them with
 `decode`; never put credentials or private data in a note.
 
-Encryption hides values from URL inspection; it does not make the execution URL private. Anyone
-with the complete URL can invoke the script with its sealed authority until `notAfter`, when
-present. Prefer narrowly scoped, revocable credentials; avoid inline `NAME=value` secrets because
-shell history retains them; if there is a frontend, do not leak secrets to the client.
+Encryption hides values from URL inspection; it does not make the execution URL private. Anyone with the complete URL can invoke the script with its sealed authority until `notAfter`, when present. Prefer narrowly scoped, revocable credentials, but a script that reads no request input into its outbound calls and returns nothing derived from a secret is a closed capability: the link grants exactly the operation the author wrote.
+Avoid inline `NAME=value` secrets because shell history retains them; if there is a frontend, do not leak secrets to the client. 
 
 Sealing is the only way to keep a value out of the decoded artifact, but the running script stays
 an oracle: anything its output is a function of can be recovered by exercising the link. Seal what
