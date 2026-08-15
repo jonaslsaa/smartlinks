@@ -441,9 +441,8 @@ describe("Worker routes", () => {
 
   it("returns byte-identical calendar and PNG responses", async () => {
     const calendar = new TextEncoder().encode("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
-    const calendarBase64 = btoa(String.fromCharCode(...calendar));
     const calendarLink = await createSmartlink({
-      source: `return { headers: { "content-type": "text/calendar" }, bodyBase64: ${JSON.stringify(calendarBase64)} }`,
+      source: `return { headers: { "content-type": "text/calendar" }, bodyBase64: btoa("BEGIN:VCALENDAR\\r\\nEND:VCALENDAR\\r\\n") }`,
       service: origin,
       validate: validateWorkerScript,
     });
@@ -453,9 +452,8 @@ describe("Worker routes", () => {
     expect(new Uint8Array(await calendarResponse.arrayBuffer())).toEqual(calendar);
 
     const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
-    const pngBase64 = btoa(String.fromCharCode(...png));
     const pngLink = await createSmartlink({
-      source: `return { bodyBase64: ${JSON.stringify(pngBase64)} }`,
+      source: `return { bodyBase64: btoa("\\x89PNG\\r\\n\\x1a\\n") }`,
       service: origin,
       validate: validateWorkerScript,
     });
@@ -539,6 +537,23 @@ describe("Worker routes", () => {
     );
 
     await expect(response.text()).resolves.toBe("one,two:ray-123:true");
+  });
+
+  it("supplies host entropy in production", async () => {
+    const created = await createSmartlink({
+      source: `
+        const first = await ctx.crypto.random(16);
+        const second = await ctx.crypto.random(16, "base64");
+        return { body: first + ":" + second };
+      `,
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+    const [hex, base64] = (await response.text()).split(":");
+
+    expect(hex).toMatch(/^[0-9a-f]{32}$/u);
+    expect(base64).toMatch(/^[A-Za-z0-9+/]{22}==$/u);
   });
 
   it("supports legacy version 1 links", async () => {

@@ -90,16 +90,22 @@ Smartlink scripts receive one small `ctx` object:
 | `ctx.body` | Request body as a string, or `null` |
 | `ctx.secrets` | Decrypted plaintext values, keyed by secret name |
 | `ctx.requestId` | Opaque ID for correlating one execution |
-| `ctx.crypto` | Hashing, HMAC, and sealed-token helpers backed by Web Crypto |
+| `ctx.crypto` | Host entropy, hashing, HMAC, and sealed-token helpers backed by Web Crypto |
 | `ctx.compile` | Mint one immutable child Smartlink from build-time-approved code |
 
 Scripts also have a global, guarded `fetch(url, options)`. It accepts familiar string URL,
 method, header, and string-body options and returns a Response-like value with `status`, `ok`,
-`url`, `redirected`, `headers`, `text()`, and `json()`.
+`url`, `redirected`, `headers`, `text()`, and `json()`. Browser-compatible `btoa` and `atob`
+encode and decode Latin-1 binary strings for `bodyBase64` responses.
 
-`ctx.crypto` provides `sha256`, `hmacSha256`, and `verifyHmacSha256`. They operate on strings,
-use lowercase hex by default, and can use Base64 when passed `"base64"`. It also provides
-`seal` and `open` for encrypted state tokens — see below.
+`ctx.crypto` provides `random`, `sha256`, `hmacSha256`, and `verifyHmacSha256`. `random`, `sha256`,
+and `hmacSha256` return lowercase hex by default and can return Base64 when passed `"base64"`;
+hashing and HMAC operate on strings. `verifyHmacSha256` returns a boolean, with its encoding
+argument describing the supplied signature. `random` draws up to 256 bytes of host entropy and is
+one of the 16 cryptographic operations available to an execution. Prefer HMAC with a sealed key,
+`ctx.requestId`, and a counter when deriving values from existing authority; use `random` when a
+link must originate a fresh key or nonce. `Math.random` is not cryptographically secure.
+`ctx.crypto` also provides `seal` and `open` for encrypted state tokens — see below.
 
 Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? }` for a text
 response, return `{ status?, headers?, bodyBase64 }` for bytes, or return nothing for a small

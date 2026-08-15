@@ -37,6 +37,61 @@ describe("QuickJS sandbox", () => {
     ).resolves.toEqual({ body: "undefined,undefined,undefined" });
   });
 
+  it("provides browser-compatible Latin-1 base64 globals", async () => {
+    await expect(
+      run(`
+        const encode = btoa;
+        const decode = atob;
+        String.fromCharCode = () => "tampered";
+        String.prototype.charCodeAt = () => 0;
+        String.prototype.indexOf = () => -1;
+        let encodeError = "";
+        let decodeError = "";
+        let omittedEncodeError = "";
+        let omittedDecodeError = "";
+        let symbolEncodeError = "";
+        let symbolDecodeError = "";
+        try { encode("€"); } catch (error) { encodeError = error.name; }
+        try { decode("not base64!"); } catch (error) { decodeError = error.name; }
+        try { encode(); } catch (error) { omittedEncodeError = error.name; }
+        try { decode(); } catch (error) { omittedDecodeError = error.name; }
+        try { encode(Symbol("value")); } catch (error) { symbolEncodeError = error.name; }
+        try { decode(Symbol("value")); } catch (error) { symbolDecodeError = error.name; }
+        return {
+          body: JSON.stringify({
+            names: [encode.name, decode.name],
+            encoded: encode("hello"),
+            binary: encode("\\x00\\xff"),
+            decoded: decode("aGVsbG8"),
+            whitespace: decode("Y Q=="),
+            permissiveBits: decode("AB==").charCodeAt(0),
+            encodeError,
+            decodeError,
+            omittedEncodeError,
+            omittedDecodeError,
+            symbolEncodeError,
+            symbolDecodeError,
+          }),
+        };
+      `),
+    ).resolves.toEqual({
+      body: JSON.stringify({
+        names: ["btoa", "atob"],
+        encoded: "aGVsbG8=",
+        binary: "AP8=",
+        decoded: "hello",
+        whitespace: "a",
+        permissiveBits: 0,
+        encodeError: "InvalidCharacterError",
+        decodeError: "InvalidCharacterError",
+        omittedEncodeError: "TypeError",
+        omittedDecodeError: "TypeError",
+        symbolEncodeError: "TypeError",
+        symbolDecodeError: "TypeError",
+      }),
+    });
+  });
+
   it("provides a guarded Web-like global fetch", async () => {
     const fetchImpl: typeof globalThis.fetch = vi.fn(async () =>
       Response.json({ answer: 42 }, { headers: { "x-test": "yes" } }),
@@ -74,6 +129,35 @@ describe("QuickJS sandbox", () => {
     });
   });
 
+  it("bridges host entropy into the shared crypto budget", async () => {
+    let nextByte = 0;
+    const cryptoBudget = createCryptoOperationBudget();
+    await expect(
+      runScript({
+        version: "2",
+        source: await minifyScriptBody(`
+          const first = await ctx.crypto.random(4);
+          const second = await ctx.crypto.random(3, "base64");
+          return { body: first + ":" + second };
+        `),
+        context,
+        fetch: createGuardedFetch(),
+        crypto: createGuestCrypto({
+          crypto,
+          budget: cryptoBudget,
+          randomBytes: (byteCount) => Uint8Array.from({ length: byteCount }, () => nextByte++),
+        }),
+        cryptoBudget,
+      }),
+    ).resolves.toEqual({ body: "00010203:BAUG" });
+  });
+
+  it("reports invalid crypto encodings as API errors", async () => {
+    await expect(run(`await ctx.crypto.random(1, "base64url")`)).rejects.toThrow(
+      'Encoding must be "hex" or "base64".',
+    );
+  });
+
   it("bounds guest cryptographic work", async () => {
     await expect(
       run(
@@ -96,9 +180,13 @@ describe("QuickJS sandbox", () => {
         `),
         context,
         fetch: createGuardedFetch(),
-        crypto: createGuestCrypto(crypto, cryptoBudget, {
-          masterSecret: "sandbox-master",
-          artifactIdentity: "sandbox-artifact",
+        crypto: createGuestCrypto({
+          crypto,
+          budget: cryptoBudget,
+          tokenKeySource: {
+            masterSecret: "sandbox-master",
+            artifactIdentity: "sandbox-artifact",
+          },
         }),
         cryptoBudget,
       }),

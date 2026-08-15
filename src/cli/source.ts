@@ -34,6 +34,8 @@ type __SmartlinksFetchResponse = {
   text(): Promise<string>;
   json<T = unknown>(): Promise<T>;
 };
+declare function btoa(value: string): string;
+declare function atob(value: string): string;
 declare function fetch(
   url: string,
   options?: __SmartlinksFetchOptions,
@@ -47,6 +49,7 @@ type __SmartlinksContext = {
   secrets: __SmartlinksStringMap;
   requestId: string;
   crypto: {
+    random(byteCount: number, encoding?: "hex" | "base64"): Promise<string>;
     sha256(message: string, encoding?: "hex" | "base64"): Promise<string>;
     hmacSha256(
       key: string,

@@ -203,9 +203,13 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
       fetch: createGuardedFetch({
         blockedHostnames: [url.hostname, ...env.RUNTIME_HOSTNAMES],
       }),
-      crypto: createGuestCrypto(crypto, cryptoBudget, {
-        masterSecret: readStringBinding(env, "TOKEN_MASTER_SECRET"),
-        artifactIdentity: payloadArtifactIdentity(decoded),
+      crypto: createGuestCrypto({
+        crypto,
+        budget: cryptoBudget,
+        tokenKeySource: {
+          masterSecret: readStringBinding(env, "TOKEN_MASTER_SECRET"),
+          artifactIdentity: payloadArtifactIdentity(decoded),
+        },
       }),
       cryptoBudget,
       compile,

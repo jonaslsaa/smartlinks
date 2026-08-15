@@ -16,7 +16,11 @@ function identity(script: string, extras: Record<string, unknown> = {}): string 
 }
 
 function guest(source?: GuestTokenKeySource, maxOperations?: number) {
-  return createGuestCrypto(crypto, createCryptoOperationBudget(maxOperations), source);
+  return createGuestCrypto({
+    crypto,
+    budget: createCryptoOperationBudget(maxOperations),
+    ...(source ? { tokenKeySource: source } : {}),
+  });
 }
 
 function link(script = "return 1", extras: Record<string, unknown> = {}, master = MASTER) {

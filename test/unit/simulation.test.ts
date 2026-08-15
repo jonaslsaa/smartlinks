@@ -6,6 +6,18 @@ import {
 } from "../../src/cli/simulation.js";
 
 describe("local network simulation", () => {
+  it("provides one reproducible byte stream with distinct successive values", () => {
+    const first = new LocalSimulation({ method: "GET", params: {}, headers: {}, body: null }, {});
+    const replay = new LocalSimulation({ method: "GET", params: {}, headers: {}, body: null }, {});
+
+    const firstValue = first.randomBytes(32);
+    const secondValue = first.randomBytes(32);
+
+    expect(firstValue).toEqual(replay.randomBytes(32));
+    expect(secondValue).toEqual(replay.randomBytes(32));
+    expect(secondValue).not.toEqual(firstValue);
+  });
+
   it("uses the guarded fetch policy and redacts exact secrets from the report", async () => {
     const secret = 'a"b c';
     const simulation = new LocalSimulation(
