@@ -4,6 +4,8 @@
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-08-14",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "routes": [{ "pattern": "s.jonaslsa.com", "custom_domain": true }],
   "rules": [
     {
       "type": "CompiledWasm",

@@ -31,7 +31,7 @@ if (!globalThis.crypto) {
   Object.defineProperty(globalThis, "crypto", { value: webcrypto });
 }
 
-const DEFAULT_SERVICE_URL = "https://smartlinks-runtime.jonasvox-2014.workers.dev";
+const DEFAULT_SERVICE_URL = "https://s.jonaslsa.com";
 const publicKeySchema = z.object({
   keyId: z.number().int().min(1).max(255),
   publicKey: z.string().min(1),
@@ -40,7 +40,6 @@ const publicKeySchema = z.object({
 type BuildOptions = {
   interstitial?: boolean;
   secret: string[];
-  service?: string;
   minify: boolean;
   copy?: boolean;
   json?: boolean;
@@ -57,15 +56,19 @@ type RunOptions = {
   json?: boolean;
 };
 
+function fitsInteractiveNote(value: string): boolean {
+  const availableColumns = Math.max((process.stdout.columns ?? 80) - 6, 20);
+  return value.length <= availableColumns;
+}
+
 async function fetchPublicKey(service: string): Promise<z.infer<typeof publicKeySchema>> {
   let response: Response;
   try {
     response = await fetch(`${service}/pk`, { signal: AbortSignal.timeout(10_000) });
   } catch (error) {
-    throw new Error(
-      `Could not reach ${service}/pk. Set --service or SMARTLINKS_URL to your deployed runtime.`,
-      { cause: error },
-    );
+    throw new Error(`Could not reach ${service}/pk. Set SMARTLINKS_URL to your deployed runtime.`, {
+      cause: error,
+    });
   }
   if (!response.ok) {
     throw new Error(`The service returned HTTP ${response.status} from /pk.`);
@@ -77,9 +80,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   const interactive = startUi("smartlinks build", options.json === true);
   const originalSource = await readScriptSource(file);
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
-  const service = normalizeServiceUrl(
-    options.service ?? process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL,
-  );
+  const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
 
   let publicKey: z.infer<typeof publicKeySchema> | undefined;
   if (Object.keys(secrets).length > 0) {
@@ -118,8 +119,18 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     return;
   }
   if (interactive) {
-    p.note(created.link, options.copy ? "Smartlink (copied)" : "Smartlink");
-    p.log.info(`Audit: ${created.decoder}`);
+    if (fitsInteractiveNote(created.link)) {
+      p.note(created.link, options.copy ? "Smartlink (copied)" : "Smartlink");
+      p.log.info(`Audit: ${created.decoder}`);
+    } else {
+      p.log.success(options.copy ? "Smartlink copied to clipboard" : "Smartlink ready");
+      if (!options.copy) {
+        p.log.message(created.link);
+      }
+      p.log.info(
+        `Audit: run smartlinks decode with ${options.copy ? "the copied link" : "the link above"}`,
+      );
+    }
     p.outro(`${created.link.length.toLocaleString()} characters · payload v2`);
   } else {
     console.log(created.link);
@@ -286,7 +297,6 @@ program
   .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to encode")
   .option("-i, --interstitial", "require browser confirmation before execution")
   .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
-  .option("--service <url>", "runtime base URL")
   .option("--copy", "copy the finished link to the clipboard")
   .option("--json", "print machine-readable output")
   .addOption(new Option("--no-minify", "skip JavaScript minification"))
@@ -314,7 +324,7 @@ program
   .action(runCommand);
 
 program
-  .command("keygen")
+  .command("keygen", { hidden: true })
   .description("Generate an X25519 HPKE key pair for the Worker.")
   .option("--key-id <number>", "one-byte rotation key ID", "1")
   .option("--set-worker", "store the private key using Wrangler instead of printing it")

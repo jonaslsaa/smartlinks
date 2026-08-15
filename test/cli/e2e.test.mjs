@@ -49,14 +49,18 @@ async function close(server) {
   });
 }
 
-test("the built CLI exposes its version and every subcommand", async () => {
+test("the built CLI exposes its version and public subcommands", async () => {
   const version = await runCli(["--version"]);
   assert.equal(version.stdout.trim(), packageJson.version);
 
   const help = await runCli(["--help"]);
-  for (const command of ["build", "decode", "run", "keygen"]) {
+  for (const command of ["build", "decode", "run"]) {
     assert.match(help.stdout, new RegExp(`\\b${command}\\b`));
   }
+  assert.doesNotMatch(help.stdout, /\bkeygen\b/u);
+
+  const buildHelp = await runCli(["help", "build"]);
+  assert.doesNotMatch(buildHelp.stdout, /--service\b/u);
 });
 
 test("keygen emits a usable key pair for the requested key ID", async () => {
@@ -140,25 +144,27 @@ test("build output round-trips through decode as a URL and raw payload", async (
       "js",
       'const name = ctx.params.name ?? "world";\nreturn "https://example.com/" + name;\n',
       async (script) => {
-        const defaultBuild = JSON.parse((await runCli(["build", script, "--json"])).stdout);
-        assert.match(
-          defaultBuild.link,
-          /^https:\/\/smartlinks-runtime\.jonasvox-2014\.workers\.dev\/r\/2/u,
+        const defaultEnvironment = { ...process.env };
+        delete defaultEnvironment.SMARTLINKS_URL;
+        const defaultBuild = JSON.parse(
+          (await runCli(["build", script, "--json"], { env: defaultEnvironment })).stdout,
         );
+        assert.match(defaultBuild.link, /^https:\/\/s\.jonaslsa\.com\/r\/2/u);
 
         const built = JSON.parse(
           (
-            await runCli([
-              "build",
-              script,
-              "--secret",
-              "E2E_TOKEN=value",
-              "--interstitial",
-              "--no-minify",
-              "--service",
-              service,
-              "--json",
-            ])
+            await runCli(
+              [
+                "build",
+                script,
+                "--secret",
+                "E2E_TOKEN=value",
+                "--interstitial",
+                "--no-minify",
+                "--json",
+              ],
+              { env: { ...process.env, SMARTLINKS_URL: service } },
+            )
           ).stdout,
         );
 

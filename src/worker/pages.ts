@@ -37,7 +37,7 @@ export function interstitialPage(decoded: DecodedPayload, action: string): Respo
   return html(
     page(
       "Confirm smartlink",
-      `<h1>Review before running</h1><p class="warning">Anyone with this link can run this immutable script. Only continue if you trust its contents.</p><pre><code>${escapeHtml(script)}</code></pre>${secretText}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
+      `<h1>Review before running</h1><p class="warning">This link will run the script shown below. Continue only if you trust where it came from and understand what it will do.</p><pre><code>${escapeHtml(script)}</code></pre>${secretText}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
     ),
     { headers: { "cache-control": "no-store" } },
   );

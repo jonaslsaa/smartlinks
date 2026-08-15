@@ -133,8 +133,7 @@ repo and **imports the same codec/seal/sandbox modules the worker uses** so
 link formats can never drift. Commands:
 
 ```
-smartlinks build <script.js> [--interstitial] [--secret NAME[=value]]
-                 [--service <base url>]
+smartlinks build <script.js|script.ts> [--interstitial] [--secret NAME[=value]]
     # compress + encode; fetch /pk and HPKE-seal secrets bound to the
     # script's hash; print the finished link + character count.
     # --secret NAME without a value reads $NAME from the environment, or
@@ -143,13 +142,13 @@ smartlinks build <script.js> [--interstitial] [--secret NAME[=value]]
 smartlinks decode <link | payload>
     # print the pretty-printed script + envelope metadata
 
-smartlinks run <script.js> [--param a=1 ...] [--method POST] [--body ...]
+smartlinks run <script.js|script.ts> [--param a=1 ...] [--method POST] [--body ...]
     # execute locally in the same QuickJS sandbox as production, with
     # fake ctx; secrets provided via env. Prints the mapped response.
 ```
 
-Service base URL: `--service` flag, `SMARTLINKS_URL` env var, else the
-baked-in default domain.
+The public CLI uses the baked-in service domain. Runtime operators and
+self-hosters can override it with `SMARTLINKS_URL`.
 
 ## Deliverables checklist
 
@@ -165,8 +164,8 @@ baked-in default domain.
 7. `src/cli/` — the CLI (`build` / `decode` / `run`), sharing `src/shared/`
    codec, seal, and sandbox modules with the worker. Round-trip test: link
    built by the CLI executes correctly in the worker.
-8. Keygen command (`smartlinks keygen` or `scripts/keygen.ts`) that prints a
-   keypair; README instructions for `wrangler secret put PRIVATE_KEY_1`.
+8. Internal keygen command that prints a keypair or provisions
+   `PRIVATE_KEY_<id>` through Wrangler; self-hosting instructions stay in the README.
 9. README: what it is, the honest downsides list, CLI usage, example links
    (redirect, badge, webhook adapter, GitHub workflow_dispatch).
 10. Tests runnable via `vitest` with `@cloudflare/vitest-pool-workers`;
@@ -179,13 +178,9 @@ user, non-JS languages, editing existing links (immutability is the model).
 
 ## Open items (defaults chosen — proceed unless told otherwise)
 
-- **Name/domain**: working name `smartlinks`. The service runs on the
-  author's own domain (Cloudflare custom-domain route on the worker); use a
-  placeholder constant + `*.workers.dev` until the domain is provided, and
-  keep the domain a single config value.
-- **CLI distribution**: not published to npm in v1; installed from this repo
-  (`npm install -g .` or `npx` from a git checkout). Publishing is a later
-  decision.
+- **Name/domain**: `smartlinks`. The public service runs at `https://s.jonaslsa.com`
+  as a Cloudflare Worker Custom Domain, kept as a single CLI default.
+- **CLI distribution**: published on npm as `@jonaslsa/smartlinks`.
 - **Workers CPU allowance**: external latency and local startup samples are not CPU-time
   measurements, and the deterministic QuickJS interrupt count is not calibrated to CPU cycles.
   Validate the deployed runtime with Cloudflare's CPU metrics. If the chosen plan is too tight

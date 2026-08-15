@@ -54,8 +54,8 @@ smartlinks run hello.ts --param name=Jonas
 smartlinks build hello.ts --copy
 ```
 
-Open the copied URL with `?name=Jonas`. The CLI also gives you a decoder URL for auditing the
-exact program without running it.
+Open the copied URL with `?name=Jonas`. Pass the link to `smartlinks decode` to audit the exact
+program without running it.
 
 ## What can a link do?
 
@@ -101,7 +101,6 @@ the program with that credential. Use narrowly scoped, revocable secrets.
 smartlinks build <script.js|script.ts>   Build an immutable execution and audit URL
 smartlinks run <script.js|script.ts>     Run locally with the production sandbox
 smartlinks decode <link-or-payload>      Inspect a Smartlink without executing it
-smartlinks keygen                        Create or provision a runtime encryption key
 ```
 
 Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
@@ -139,7 +138,7 @@ hostile-code platform.
 
 ## Build with an agent
 
-The landing page's **Coffee for agents** button copies a ready-made prompt. You can also point
+The landing page's **Copy for agents** button copies a ready-made prompt. You can also point
 your coding agent directly at the concise [Smartlinks agent guide](public/smartlinks-for-agents.md),
 which describes the format, CLI, runtime contract, and limitations.
 
@@ -155,6 +154,8 @@ npm run check
 `npm run check` covers formatting, strict TypeScript, unit tests, Workers-runtime tests,
 end-to-end tests of the built CLI, generated bindings, and a Wrangler production dry-run.
 
+## Self-hosting
+
 For local Worker development:
 
 ```sh
@@ -165,9 +166,9 @@ node dist/index.js keygen --key-id 1
 npm run dev
 ```
 
-To deploy your own runtime, run `npx wrangler deploy`, then provision its key with
-`smartlinks keygen --key-id 1 --set-worker`. Set `SMARTLINKS_URL` to the new Worker URL, or pass
-`--service URL` when building links. Never commit `.dev.vars`.
+To deploy your own runtime, run `npx wrangler deploy`, then provision its key with the internal
+`node dist/index.js keygen --key-id 1 --set-worker` command. Set `SMARTLINKS_URL` to the new
+Worker URL when building links. Never commit `.dev.vars`.
 
 ---
 

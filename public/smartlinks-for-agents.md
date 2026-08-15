@@ -7,8 +7,8 @@ Use this document as the operational contract when helping someone create a Smar
 [Smartlinks](https://github.com/jonaslsaa/smartlinks) turns a JavaScript or TypeScript function body into a self-contained executable URL.
 The CLI transpiles TypeScript when the input filename ends in `.ts`, optionally minifies the
 emitted JavaScript, validates the exact stored wrapper with QuickJS, seals requested secrets,
-compresses the payload, and returns execution and decoder URLs. No script or per-link record is
-stored by the service.
+compresses the payload, and returns an execution URL. No script or per-link record is stored by
+the service.
 
 The execution URL carries the script and encrypted secret blobs. A Cloudflare Worker decodes the
 payload, decrypts secrets, creates a fresh QuickJS runtime, supplies a small request context, and
@@ -50,7 +50,6 @@ Treat installed CLI help as authoritative:
 - `smartlinks help build`
 - `smartlinks help run`
 - `smartlinks help decode`
-- `smartlinks help keygen`
 
 There is no separate `compile` command. `build` performs transpilation, minification, compile-only
 QuickJS validation, secret sealing, compression, and link creation without executing the guest
@@ -60,13 +59,13 @@ script. There is no command named `dry-run`; `run` is the local execution and va
 
 - `--interstitial`: require a browser confirmation before execution.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline values.
-- `--service URL`: override the runtime used for public-key lookup and generated URLs.
 - `--copy`: copy the execution URL.
 - `--json`: emit machine-readable output only.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
 
-The command prints an execution URL and a non-executing decoder URL. It validates with QuickJS's
-compile-only mode and never runs the script.
+The command produces an execution URL; `--json` also includes its non-executing decoder URL. Pass
+either URL or the raw payload to `smartlinks decode` for inspection. `build` validates with
+QuickJS's compile-only mode and never runs the script.
 
 ## `smartlinks run <script.js|script.ts>`
 
@@ -88,12 +87,6 @@ URL/method/header/body/count/redirect policy, and response mapping as production
 
 `smartlinks decode <link-or-payload> [--json]` inspects the emitted script and metadata without
 executing it or decrypting secrets.
-
-`smartlinks keygen [--key-id ID] [--set-worker] [--json]` creates an X25519 HPKE key pair.
-`--set-worker` sends the private bundle to `wrangler secret put` through stdin rather than printing
-it. Existing private-key IDs must remain deployed while links still reference them.
-
-Set `SMARTLINKS_URL` to change the default runtime without repeating `--service`.
 
 ## Secrets and authority
 
