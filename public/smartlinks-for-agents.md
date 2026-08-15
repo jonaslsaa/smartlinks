@@ -138,7 +138,8 @@ inline or a top-level `const`/function declaration and may use its parameters, `
 supported JavaScript globals, but cannot capture outer variables, including the parent's `ctx` —
 pass parent values explicitly in the tuple. The CLI extracts and type-checks every closure before
 minification, replaces the guest reference with a table index, and packages the finite closure
-table in the link.
+table in the link. Call `ctx.compile(...)` directly so the build can identify the call site; the
+method cannot be aliased, destructured, or passed as a value.
 
 Compile arguments are data. Never evaluate them, pass them to `Function`, or interpolate them
 into executable source: static closure extraction authenticates the authored interpreter; it
