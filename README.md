@@ -171,8 +171,10 @@ end-to-end tests of the built CLI, generated bindings, and a Wrangler production
 
 Pull requests run the full check. Merging a current, green PR to protected `main` deploys the
 Worker and smoke-tests the live runtime; the same pre-merge checks are not repeated after merge.
-For a package release, bump the version in a PR, merge it, then run the **Release npm package**
-workflow. A manual `npx wrangler deploy` remains available for production recovery.
+For a package release, run the **Release npm package** workflow and choose patch, minor, or major.
+Open the release PR linked in the run summary, then merge it after CI passes. The merge publishes
+that version to npm and creates its tag and GitHub release. A manual `npx wrangler deploy` remains
+available for production recovery.
 
 ## Self-hosting
 
