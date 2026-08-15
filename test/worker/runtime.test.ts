@@ -92,9 +92,9 @@ describe("Worker routes", () => {
     const parentNotAfter = Math.floor(Date.now() / 1_000) + 60 * 60;
     const created = await createSmartlink({
       source: `
-        const child = async (name) => ({
+        const child = async (childCtx, name) => ({
           headers: { "x-smartlinks-child": "yes" },
-          body: name + ":" + ctx.secrets.CHILD_TOKEN,
+          body: name + ":" + childCtx.params.channel + ":" + childCtx.secrets.CHILD_TOKEN,
         });
         return ctx.compile(child, [ctx.params.name ?? "world"], {
           seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN },
@@ -127,17 +127,19 @@ describe("Worker routes", () => {
     expect(decodedChild.envelope.a).toBe(1);
     expect(decodedChild.envelope.c).toHaveLength(1);
 
-    const child = await worker.fetch(new Request(childUrl), testEnv());
+    const childRequestUrl = new URL(childUrl);
+    childRequestUrl.searchParams.set("channel", "child-request");
+    const child = await worker.fetch(new Request(childRequestUrl), testEnv());
     expect(child.status).toBe(200);
     expect(child.headers.get("x-smartlinks-child")).toBe("yes");
-    await expect(child.text()).resolves.toBe("Jonas:delegated-value");
+    await expect(child.text()).resolves.toBe("Jonas:child-request:delegated-value");
   });
 
   it("allows a child to mint another ordinary smartlink without generation metadata", async () => {
     const created = await createSmartlink({
       source: `
-        const leaf = async (name) => ({ body: "leaf:" + name });
-        const child = async (name) => ctx.compile(leaf, [name]);
+        const leaf = async (_leafCtx, name) => ({ body: "leaf:" + name });
+        const child = async (childCtx, name) => childCtx.compile(leaf, [name]);
         return ctx.compile(child, ["Jonas"]);
       `,
       service: origin,
@@ -158,10 +160,34 @@ describe("Worker routes", () => {
     expect(Object.keys(decodedLeaf.envelope)).not.toContain("generation");
   });
 
+  it("executes nested inline compile closures", async () => {
+    const created = await createSmartlink({
+      source: `
+        return ctx.compile(
+          async (childCtx, name) => childCtx.compile(
+            async (leafCtx, value) => ({ body: leafCtx.params.prefix + value }),
+            [name],
+          ),
+          ["Jonas"],
+        );
+      `,
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const parent = await worker.fetch(new Request(created.link), testEnv());
+    const child = await worker.fetch(new Request(parent.headers.get("location") ?? ""), testEnv());
+    const leafUrl = new URL(child.headers.get("location") ?? "");
+    leafUrl.searchParams.set("prefix", "inline:");
+    const leaf = await worker.fetch(new Request(leafUrl), testEnv());
+
+    expect(leaf.status).toBe(200);
+    await expect(leaf.text()).resolves.toBe("inline:Jonas");
+  });
+
   it("charges the single mint budget before failed compile work", async () => {
     const created = await createSmartlink({
       source: `
-        const child = async () => ({ body: "unused" });
+        const child = async (_childCtx) => ({ body: "unused" });
         try { await ctx.compile(child, [], { bogus: true }); } catch {}
         return ctx.compile(child, []);
       `,
@@ -177,7 +203,7 @@ describe("Worker routes", () => {
   it("rejects parent secret plaintext in child arguments", async () => {
     const created = await createSmartlink({
       source: `
-        const child = async (value) => ({ body: value });
+        const child = async (_childCtx, value) => ({ body: value });
         return ctx.compile(child, [ctx.secrets.PARENT_TOKEN]);
       `,
       service: origin,
@@ -494,7 +520,7 @@ describe("Worker routes", () => {
   it("rejects compile-capable seals after closure or secret-name tampering", async () => {
     const created = await createSmartlink({
       source: `
-        const child = async () => ({ body: ctx.secrets.CHILD_TOKEN });
+        const child = async (childCtx) => ({ body: childCtx.secrets.CHILD_TOKEN });
         return ctx.compile(child, [], { seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN } });
       `,
       service: origin,

@@ -11,7 +11,7 @@ async function compiler(overrides: Partial<Parameters<typeof createSmartlinkComp
       version: "2",
       envelope: {
         s: "async ctx=>ctx.compile(0,[])",
-        c: ["async value=>({body:String(value)})"],
+        c: ["async (_ctx,value)=>({body:String(value)})"],
       },
     },
     parentSecrets: {},
@@ -33,7 +33,7 @@ describe("smartlink minting", () => {
         version: "2",
         envelope: {
           s: "async ctx=>ctx.compile(0,[])",
-          c: ["async value=>({body:JSON.stringify(value)})"],
+          c: ["async (_ctx,value)=>({body:JSON.stringify(value)})"],
           i: true,
           notAfter: 1_100,
         },
@@ -56,7 +56,7 @@ describe("smartlink minting", () => {
         version: "2",
         envelope: {
           s: "async ctx=>ctx.compile(0,[])",
-          c: ["async()=>({body:'ok'})"],
+          c: ["async _ctx=>({body:'ok'})"],
           i: true,
           notAfter: 2_000,
         },

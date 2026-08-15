@@ -101,8 +101,8 @@ extracts the child closure at build time; runtime values enter only through a ty
 tuple:
 
 ```ts
-const release = async (version: string) => ({
-  body: `${version}:${ctx.secrets.RELEASE_TOKEN}`,
+const release = async (childCtx: typeof ctx, version: string) => ({
+  body: `${version}:${childCtx.secrets.RELEASE_TOKEN}`,
 });
 
 return ctx.compile(release, [ctx.params.version ?? "latest"], {
@@ -111,17 +111,22 @@ return ctx.compile(release, [ctx.params.version ?? "latest"], {
 });
 ```
 
-Compile closures must be inline or top-level `const`/function declarations and cannot capture
-outer variables; pass those values in the tuple instead. A child can carry its own statically
-approved closures and mint another ordinary Smartlink—there is no stored link tree or generation
-metadata.
+The first closure parameter is the child execution context, supplied automatically by the runtime;
+the tuple maps to the remaining parameters. Compile closures must be inline or top-level
+`const`/function declarations and cannot capture outer variables, including the parent's `ctx`.
+Pass parent values through the tuple instead. A child can carry its own statically approved
+closures and mint another ordinary Smartlink—there is no stored link tree or generation metadata.
+Treat tuple values as data and never interpret attacker-controlled values as code inside a child
+carrying sealed authority.
 
 `ttlSeconds` is optional and can never extend an existing parent expiry. `interstitial` may be
 explicitly enabled or disabled; omission inherits the parent. `note` adds a child-specific
 author note and implies an interstitial; notes never inherit from the parent. `seal` accepts strings
 deliberately chosen by the parent, whether directly delegated, derived, or generated. Parent links
 that expose a mint path are unauthenticated administrative endpoints unless their own code verifies
-a request, so keep them private or gate that branch cryptographically.
+a request, so keep them private or gate that branch cryptographically. The runtime's exact-byte parent-secret
+scan prevents accidental plaintext copying; it cannot recognize transformed or split values and is
+not an information-flow security boundary.
 
 ## Sealed secrets
 

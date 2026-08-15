@@ -69,7 +69,7 @@ const script = join(directory, "global-fetch.js");
 try {
   await writeFile(
     script,
-    `const child = async (landing) => {
+    `const child = async (childCtx, landing) => {
   const response = await fetch(landing);
   const html = await response.text();
   if (!response.ok || !html.includes("<title>Smartlinks</title>")) {
@@ -77,7 +77,7 @@ try {
   }
   return {
     headers: { "x-smartlinks-smoke": "compiled-child" },
-    body: \`compile-ok:\${ctx.secrets.CHILD_SECRET}\`,
+    body: \`compile-ok:\${childCtx.secrets.CHILD_SECRET}\`,
   };
 };
 return ctx.compile(child, [${JSON.stringify(landingUrl.href)}], {
