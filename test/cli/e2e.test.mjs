@@ -248,11 +248,11 @@ try {
 
 test("run locally executes a sealed child with typed tuple arguments", async () => {
   const source = `
-const leaf = async (name: string) => ({
-  body: name + ":" + ctx.secrets.CHILD_TOKEN,
+const leaf = async (leafCtx: typeof ctx, name: string) => ({
+  body: name + ":" + leafCtx.secrets.CHILD_TOKEN,
 });
-const child = async (name: string) => ctx.compile(leaf, [name], {
-  seal: { CHILD_TOKEN: ctx.secrets.CHILD_TOKEN! },
+const child = async (childCtx: typeof ctx, name: string) => childCtx.compile(leaf, [name], {
+  seal: { CHILD_TOKEN: childCtx.secrets.CHILD_TOKEN! },
 });
 return ctx.compile(child, [ctx.params.name ?? "world"], {
   seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN! },
@@ -431,7 +431,7 @@ return {
 
       await writeFile(
         script,
-        'const child = async (name: string) => ({ body: "compiled:" + name });\nreturn ctx.compile(child, [ctx.params.name ?? "world"]);\n',
+        'const child = async (_childCtx: typeof ctx, name: string) => ({ body: "compiled:" + name });\nreturn ctx.compile(child, [ctx.params.name ?? "world"]);\n',
       );
       const compiled = await fetch(`${server.origin}/?name=Browser`);
       assert.equal(compiled.status, 200);
