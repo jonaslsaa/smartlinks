@@ -2,28 +2,47 @@ import { deflateRawSync } from "node:zlib";
 import { deflateSync } from "fflate";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { createSmartlink } from "../../src/cli/build.js";
+import {
+  generateAuthorKeyPair,
+  issueAuthorCertificate,
+  signEnvelope,
+  verifyAuthorProof,
+} from "../../src/shared/author.js";
 import { toBase64Url } from "../../src/shared/bytes.js";
 import { encodePayload, MAX_DECOMPRESSED_LENGTH } from "../../src/shared/codec.js";
 import { generateKeyPair, sealSecret } from "../../src/shared/seal.js";
 import { decodeWorkerPayload, inflateRawWithLimit } from "../../src/worker/codec.js";
+import { exchangeGithubIdentity } from "../../src/worker/identity.js";
 import worker from "../../src/worker/index.js";
 import { validateWorkerScript } from "../../src/worker/sandbox.js";
 
 const origin = "https://runtime.example";
 let pair: Awaited<ReturnType<typeof generateKeyPair>>;
+let authorIssuer: Awaited<ReturnType<typeof generateAuthorKeyPair>>;
+let authorKey: Awaited<ReturnType<typeof generateAuthorKeyPair>>;
 
 beforeAll(async () => {
   pair = await generateKeyPair(1);
+  authorIssuer = await generateAuthorKeyPair();
+  authorKey = await generateAuthorKeyPair();
 });
 
 function testEnv(
   executionRateLimiter: RateLimit = {
     limit: async () => ({ success: true }),
   },
-): Env & { PRIVATE_KEY_1: string; TOKEN_MASTER_SECRET: string } {
+): Env & {
+  AUTHOR_CA_PRIVATE_KEY_1: string;
+  PRIVATE_KEY_1: string;
+  TOKEN_MASTER_SECRET: string;
+} {
   return {
     ACTIVE_KEY_ID: "1",
+    AUTHOR_CA_KEY_ID: "1",
+    AUTHOR_CA_PRIVATE_KEY_1: authorIssuer.privateKey,
+    AUTHOR_CA_PUBLIC_KEY_1: authorIssuer.publicKey as Env["AUTHOR_CA_PUBLIC_KEY_1"],
     EXECUTION_RATE_LIMITER: executionRateLimiter,
+    IDENTITY_RATE_LIMITER: { limit: async () => ({ success: true }) },
     LANDING_URL: "https://smartlinks.jonaslsa.com/",
     RUNTIME_HOSTNAMES: ["s.jonaslsa.com"],
     PRIVATE_KEY_1: pair.privateKeySecret,
@@ -108,6 +127,163 @@ describe("Worker routes", () => {
     const { TOKEN_MASTER_SECRET: _unset, ...env } = testEnv();
     const response = await worker.fetch(new Request(created.link), env as Env);
     expect(response.status).toBe(422);
+  });
+
+  it("executes a link with a locally verified GitHub author certificate", async () => {
+    const now = Math.floor(Date.now() / 1_000);
+    const certificate = await issueAuthorCertificate({
+      authorPublicKey: authorKey.publicKey,
+      identity: { githubId: 123456, githubLogin: "jonaslsaa" },
+      issuerKeyId: 1,
+      issuerPrivateKey: authorIssuer.privateKey,
+      issuedAt: now,
+      expiresAt: now + 3_600,
+    });
+    const created = await createSmartlink({
+      source: 'return { body: "signed:" + ctx.secrets.SIGNED_TOKEN }',
+      service: origin,
+      interstitial: true,
+      secrets: { SIGNED_TOKEN: "sealed-authority" },
+      publicKey: pair,
+      author: { certificate, key: authorKey },
+      validate: validateWorkerScript,
+    });
+
+    const interstitial = await worker.fetch(new Request(created.link), testEnv());
+    expect(interstitial.status).toBe(200);
+    await expect(interstitial.text()).resolves.toContain("github.com/jonaslsaa");
+
+    const preview = await worker.fetch(
+      new Request(created.link, { headers: { "user-agent": "Slackbot-LinkExpanding" } }),
+      testEnv(),
+    );
+    expect(preview.status).toBe(200);
+    await expect(preview.text()).resolves.toContain("github.com/jonaslsaa");
+
+    const run = await worker.fetch(
+      new Request(`${created.link}?__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    expect(run.status).toBe(200);
+    await expect(run.text()).resolves.toBe("signed:sealed-authority");
+
+    const decoded = await decodeWorkerPayload(created.payload);
+    const { u: _proof, ...withoutProof } = decoded.envelope;
+    const downgradedPayload = encodePayload({ ...withoutProof, a: 1 });
+    const downgraded = await worker.fetch(
+      new Request(`${origin}/r/${downgradedPayload}?__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    expect(downgraded.status).toBe(400);
+
+    if (!decoded.envelope.u) {
+      throw new Error("Expected a signed payload.");
+    }
+    const [issuedCertificate, signature] = decoded.envelope.u;
+    const tamperedSignature = `${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`;
+    const invalidPayload = encodePayload({
+      ...decoded.envelope,
+      u: [issuedCertificate, tamperedSignature],
+    });
+    const invalidPreview = await worker.fetch(
+      new Request(`${origin}/r/${invalidPayload}`, {
+        headers: { "user-agent": "Slackbot-LinkExpanding" },
+      }),
+      testEnv(),
+    );
+    expect(invalidPreview.status).toBe(400);
+  });
+
+  it("exchanges an authorized device code without returning the GitHub token", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ access_token: "temporary-github-token" }))
+      .mockResolvedValueOnce(Response.json({ id: 123456, login: "jonaslsaa" }));
+
+    const result = await exchangeGithubIdentity({
+      authorPublicKey: authorKey.publicKey,
+      deviceCode: "device-code-with-enough-entropy",
+      issuerKeyId: 1,
+      issuerPrivateKey: authorIssuer.privateKey,
+      issuerPublicKey: authorIssuer.publicKey,
+      fetchImpl,
+      nowSeconds: 2_000_000_000,
+    });
+
+    expect(result.status).toBe("issued");
+    expect(JSON.stringify(result)).not.toContain("temporary-github-token");
+    if (result.status !== "issued") {
+      throw new Error("Expected an issued author certificate.");
+    }
+    await expect(
+      verifyAuthorProof(
+        {
+          version: "2",
+          envelope: await signEnvelope(
+            "2",
+            { s: 'async ctx=>({body:"signed"})' },
+            result.certificate,
+            authorKey,
+            2_000_000_000,
+          ),
+        },
+        { issuerPublicKeys: { 1: authorIssuer.publicKey }, nowSeconds: 2_000_000_001 },
+      ),
+    ).resolves.toMatchObject({ status: "valid", githubLogin: "jonaslsaa" });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/user",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer temporary-github-token" }),
+      }),
+    );
+  });
+
+  it("preserves GitHub's device polling interval without issuing a certificate", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ error: "authorization_pending", interval: 7 }));
+    await expect(
+      exchangeGithubIdentity({
+        authorPublicKey: authorKey.publicKey,
+        deviceCode: "device-code-with-enough-entropy",
+        issuerKeyId: 1,
+        issuerPrivateKey: authorIssuer.privateKey,
+        issuerPublicKey: authorIssuer.publicKey,
+        fetchImpl,
+      }),
+    ).resolves.toEqual({ status: "pending", interval: 7 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves GitHub's slow-down signal for cumulative client backoff", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ error: "slow_down" }));
+    await expect(
+      exchangeGithubIdentity({
+        authorPublicKey: authorKey.publicKey,
+        deviceCode: "device-code-with-enough-entropy",
+        issuerKeyId: 1,
+        issuerPrivateKey: authorIssuer.privateKey,
+        issuerPublicKey: authorIssuer.publicKey,
+        fetchImpl,
+      }),
+    ).resolves.toEqual({ status: "slow_down" });
+  });
+
+  it("rate-limits certificate polling before parsing or contacting GitHub", async () => {
+    const env = testEnv({ limit: async () => ({ success: true }) });
+    env.IDENTITY_RATE_LIMITER = { limit: async () => ({ success: false }) };
+    const response = await worker.fetch(
+      new Request(`${origin}/auth/github/certificate`, {
+        method: "POST",
+        body: "not-json",
+      }),
+      env,
+    );
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
   });
 
   it("blocks guest fetches to the active runtime and configured aliases", async () => {
@@ -399,9 +575,7 @@ describe("Worker routes", () => {
     expect(review.headers.get("content-type")).toContain("text/html");
     const reviewHtml = await review.text();
     expect(reviewHtml).toContain("Review before running");
-    expect(reviewHtml).toContain("This link runs a program");
     expect(reviewHtml).toContain("Author-provided note");
-    expect(reviewHtml).toContain('aria-labelledby="system-warning-heading"');
     expect(reviewHtml).toContain('aria-labelledby="author-note-heading"');
     expect(reviewHtml).toContain('aria-labelledby="facts-heading"');
     expect(reviewHtml).toContain(
@@ -478,19 +652,45 @@ describe("Worker routes", () => {
   });
 
   it("provides a non-executing decoder page", async () => {
-    const created = await createSmartlink({
-      source: 'return { body: "decoded" }',
-      service: origin,
-      interstitialNote: "Explains the decoded action",
-      validate: validateWorkerScript,
+    const notAfter = Math.floor(Date.now() / 1_000) + 60 * 60;
+    const payload = encodePayload({
+      s: 'async ctx=>({body:"</code><script>entry</script>"})',
+      i: true,
+      c: [
+        'async(ctx,name)=>({body:"first-sentinel:"+name})',
+        'async()=>({body:"second-sentinel:</code><script>closure</script>"})',
+      ],
+      k: { RELEASE_TOKEN: "encrypted-value-must-not-render" },
+      notAfter,
+      interstitialNote: 'Explains <script>alert("x")</script>',
     });
-    const response = await worker.fetch(new Request(created.decoder), testEnv());
+    const response = await worker.fetch(new Request(`${origin}/d/${payload}`), testEnv());
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const decodedHtml = await response.text();
     expect(decodedHtml).toContain("Decoded smartlink");
     expect(decodedHtml).toContain("Author-provided note");
-    expect(decodedHtml).toContain("Explains the decoded action");
+    expect(decodedHtml).toContain("Explains &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
     expect(decodedHtml).toContain("Smartlink facts");
+    expect(decodedHtml).toContain("<dt>Payload version</dt><dd>2</dd>");
+    expect(decodedHtml).toContain("<dt>Confirmation required</dt><dd>Yes</dd>");
+    expect(decodedHtml).toContain(new Date(notAfter * 1_000).toISOString());
+    expect(decodedHtml).toContain("<dt>Sealed secrets</dt><dd>1: RELEASE_TOKEN</dd>");
+    expect(decodedHtml).not.toContain("encrypted-value-must-not-render");
+    expect(decodedHtml).toContain("<dt>Compile closures</dt><dd>2</dd>");
+    const closureZero = decodedHtml.indexOf("<h3>Closure 0</h3>");
+    const closureOne = decodedHtml.indexOf("<h3>Closure 1</h3>");
+    const firstClosure = decodedHtml.indexOf("first-sentinel:");
+    const secondClosure = decodedHtml.indexOf("second-sentinel:");
+    expect(closureZero).toBeGreaterThan(-1);
+    expect(closureOne).toBeGreaterThan(closureZero);
+    expect(firstClosure).toBeGreaterThan(closureZero);
+    expect(firstClosure).toBeLessThan(closureOne);
+    expect(secondClosure).toBeGreaterThan(closureOne);
+    expect(decodedHtml).toContain("&lt;/code&gt;&lt;script&gt;entry&lt;/script&gt;");
+    expect(decodedHtml).toContain("&lt;/code&gt;&lt;script&gt;closure&lt;/script&gt;");
+    expect(decodedHtml).not.toContain("<script>entry</script>");
+    expect(decodedHtml).not.toContain("<script>closure</script>");
 
     const expiredPayload = encodePayload({
       s: 'return { body: "expired" }',
@@ -498,7 +698,12 @@ describe("Worker routes", () => {
     });
     const expired = await worker.fetch(new Request(`${origin}/d/${expiredPayload}`), testEnv());
     expect(expired.headers.get("cache-control")).toBe("no-store");
-    await expect(expired.text()).resolves.toContain("(expired)");
+    const expiredHtml = await expired.text();
+    expect(expiredHtml).toContain("(expired)");
+    expect(expiredHtml).toContain("<dt>Confirmation required</dt><dd>No</dd>");
+    expect(expiredHtml).toContain("<dt>Compile closures</dt><dd>0</dd>");
+    expect(expiredHtml).not.toContain("<h2>Compile closures</h2>");
+    expect(expiredHtml).not.toContain("<h3>Closure");
   });
 
   it("rejects a sealed blob copied to another script", async () => {

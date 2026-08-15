@@ -1,5 +1,6 @@
 import { deflateSync, Inflate } from "fflate";
 import { z } from "zod";
+import { authorProofSchema } from "./author.js";
 import { fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
 
 export const CURRENT_PAYLOAD_VERSION = "2" as const;
@@ -50,11 +51,12 @@ const envelopeObjectSchema = z
   .object({
     s: z.string().min(1).max(MAX_SCRIPT_LENGTH),
     i: z.literal(true).optional(),
-    a: z.literal(1).optional(),
+    a: z.union([z.literal(1), z.literal(2)]).optional(),
     c: z.array(z.string().min(1).max(MAX_SCRIPT_LENGTH)).max(MAX_COMPILE_CLOSURES).optional(),
     k: sealedSecretSchema.optional(),
     notAfter: notAfterSchema.optional(),
     interstitialNote: interstitialNoteSchema.optional(),
+    u: authorProofSchema.optional(),
   })
   .strict();
 
@@ -63,6 +65,12 @@ export const envelopeSchema = envelopeObjectSchema.superRefine((envelope, contex
     context.addIssue({
       code: "custom",
       message: "An interstitial note requires an interstitial.",
+    });
+  }
+  if (envelope.a === 2 && envelope.u === undefined) {
+    context.addIssue({
+      code: "custom",
+      message: "Signed sealed secrets require an author proof.",
     });
   }
 });
@@ -86,6 +94,12 @@ const wireEnvelopeSchema = envelopeObjectSchema
       context.addIssue({
         code: "custom",
         message: "An interstitial note requires an interstitial.",
+      });
+    }
+    if (envelope.a === 2 && envelope.u === undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "Signed sealed secrets require an author proof.",
       });
     }
   });

@@ -1,3 +1,4 @@
+import { type AuthorCertificate, type AuthorKeyPair, signEnvelope } from "../shared/author.js";
 import { interstitialNoteSchema } from "../shared/codec.js";
 import { compiledChildSource } from "../shared/mint.js";
 import { validateScript } from "../shared/sandbox.js";
@@ -16,6 +17,10 @@ export type CreateSmartlinkOptions = {
   publicKey?: PublicKey;
   minify?: boolean;
   validate?: (version: "2", source: string) => Promise<void>;
+  author?: {
+    certificate: AuthorCertificate;
+    key: AuthorKeyPair;
+  };
 };
 
 export type CreatedSmartlink = {
@@ -25,6 +30,7 @@ export type CreatedSmartlink = {
   source: string;
   closures: string[];
   interstitialNote?: string;
+  signingOverhead: number;
 };
 
 export async function prepareSmartlinkProgram(
@@ -69,7 +75,7 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
     s: source,
     ...(interstitial ? { i: true as const } : {}),
     ...(closures.length ? { c: closures } : {}),
-    ...(secretEntries.length ? { a: 1 as const } : {}),
+    ...(secretEntries.length ? { a: options.author ? (2 as const) : (1 as const) } : {}),
     ...(options.notAfter !== undefined ? { notAfter: options.notAfter } : {}),
     ...(interstitialNote === undefined ? {} : { interstitialNote }),
   };
@@ -79,20 +85,34 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
           async ([name, value]) =>
             [
               name,
-              await sealSecret(value, artifactSecretBinding("2", envelope, name), publicKey),
+              await sealSecret(
+                value,
+                artifactSecretBinding("2", envelope, name, options.author?.certificate),
+                publicKey,
+              ),
             ] as const,
         ),
       )
     : [];
-  const payload = encodePayloadForCli({
+  const unsignedEnvelope = {
     ...envelope,
     ...(sealedEntries.length ? { k: Object.fromEntries(sealedEntries) } : {}),
-  });
+  };
+  const unsignedPayload = options.author
+    ? encodePayloadForCli(
+        secretEntries.length ? { ...unsignedEnvelope, a: 1 as const } : unsignedEnvelope,
+      )
+    : undefined;
+  const signedEnvelope = options.author
+    ? await signEnvelope("2", unsignedEnvelope, options.author.certificate, options.author.key)
+    : unsignedEnvelope;
+  const payload = encodePayloadForCli(signedEnvelope);
 
   return {
     payload,
     source,
     closures,
+    signingOverhead: unsignedPayload === undefined ? 0 : payload.length - unsignedPayload.length,
     ...(interstitialNote === undefined ? {} : { interstitialNote }),
     link: `${options.service}/r/${payload}`,
     decoder: `${options.service}/d/${payload}`,

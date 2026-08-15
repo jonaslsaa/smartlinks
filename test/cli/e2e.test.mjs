@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -15,6 +15,44 @@ const cli = fileURLToPath(new URL("../../dist/index.js", import.meta.url));
 const packageJson = JSON.parse(
   await readFile(new URL("../../package.json", import.meta.url), "utf8"),
 );
+
+function toBase64Url(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+async function createTestAuthor(configDirectory) {
+  const [issuer, author] = await Promise.all([
+    crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]),
+    crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]),
+  ]);
+  const [issuerPublic, authorPrivate, authorPublic] = await Promise.all([
+    crypto.subtle.exportKey("raw", issuer.publicKey),
+    crypto.subtle.exportKey("pkcs8", author.privateKey),
+    crypto.subtle.exportKey("raw", author.publicKey),
+  ]);
+  const now = Math.floor(Date.now() / 1_000);
+  const unsigned = [1, 128, 123456, "jonaslsaa", toBase64Url(authorPublic), now, now + 3_600];
+  const certificateSignature = await crypto.subtle.sign(
+    "Ed25519",
+    issuer.privateKey,
+    Buffer.concat([
+      Buffer.from("smartlinks/author-certificate/v1\0"),
+      Buffer.from(JSON.stringify(unsigned)),
+    ]),
+  );
+  await mkdir(configDirectory, { recursive: true, mode: 0o700 });
+  await writeFile(
+    join(configDirectory, "author.json"),
+    `${JSON.stringify({
+      version: 1,
+      privateKey: toBase64Url(authorPrivate),
+      publicKey: toBase64Url(authorPublic),
+      certificate: [...unsigned, toBase64Url(certificateSignature)],
+    })}\n`,
+    { mode: 0o600 },
+  );
+  return toBase64Url(issuerPublic);
+}
 
 async function runCli(args, options = {}) {
   return exec(process.execPath, [cli, ...args], {
@@ -132,16 +170,17 @@ test("the built CLI exposes its version and public subcommands", async () => {
   assert.equal(version.stdout.trim(), packageJson.version);
 
   const help = await runCli(["--help"]);
-  for (const command of ["build", "decode", "run"]) {
+  for (const command of ["build", "decode", "run", "login", "logout"]) {
     assert.match(help.stdout, new RegExp(`\\b${command}\\b`));
   }
-  assert.doesNotMatch(help.stdout, /\bkeygen\b/u);
+  assert.doesNotMatch(help.stdout, /\b(?:author-)?keygen\b/u);
 
   const buildHelp = await runCli(["help", "build"]);
   assert.doesNotMatch(buildHelp.stdout, /--service\b/u);
   assert.match(buildHelp.stdout, /--no-type-check\b/u);
   assert.match(buildHelp.stdout, /--expires <duration-or-date>/u);
   assert.match(buildHelp.stdout, /--interstitial-note <text>/u);
+  assert.match(buildHelp.stdout, /--sign\s+sign with the author identity/u);
   assert.match(buildHelp.stdout, /--copy\s+copy the link without printing it/u);
   assert.match(buildHelp.stdout, /--out <file>\s+write the link privately without printing it/u);
 
@@ -150,6 +189,70 @@ test("the built CLI exposes its version and public subcommands", async () => {
   assert.match(runHelp.stdout, /--serve\b/u);
   assert.match(runHelp.stdout, /--port <number>/u);
   assert.match(runHelp.stdout, /--simulate\b/u);
+});
+
+test("build --sign fails instead of silently producing an unsigned link", async () => {
+  await withTemporaryScript("js", 'return { body: "unsigned" };', async (script) => {
+    const configDirectory = join(dirname(script), "empty-config");
+    await assert.rejects(
+      runCli(["build", script, "--sign", "--json"], {
+        env: { ...process.env, SMARTLINKS_CONFIG_DIR: configDirectory },
+      }),
+      (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /Run smartlinks login first/u);
+        return true;
+      },
+    );
+
+    await assert.rejects(
+      runCli(["build", join(dirname(script), "missing.ts"), "--sign", "--secret", "TOKEN"]),
+      (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /Run smartlinks login first/u);
+        assert.doesNotMatch(error.stderr, /ENOENT|Secret TOKEN/u);
+        return true;
+      },
+    );
+  });
+});
+
+test("build signs with the configured author and decode verifies it offline", async () => {
+  await withTemporaryScript("js", 'return { body: "signed" };', async (script) => {
+    const configDirectory = join(dirname(script), "author-config");
+    const issuerPublicKey = await createTestAuthor(configDirectory);
+    const env = {
+      ...process.env,
+      SMARTLINKS_CONFIG_DIR: configDirectory,
+      SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: issuerPublicKey,
+    };
+    const built = await runCli(["build", script, "--sign", "--json"], { env });
+    const output = JSON.parse(built.stdout);
+    assert.equal(built.stderr, "");
+    assert.equal(output.signed, true);
+    assert.equal(output.author, "jonaslsaa");
+    assert.equal(typeof output.signingOverhead, "number");
+    assert.ok(output.signingOverhead > 0);
+
+    const decoded = await runCli(["decode", output.link, "--json"], { env });
+    assert.equal(decoded.stderr, "");
+    const verifiedAuthor = JSON.parse(decoded.stdout).author;
+    assert.equal(verifiedAuthor.status, "valid");
+    assert.equal(verifiedAuthor.githubId, 123456);
+    assert.equal(verifiedAuthor.githubLogin, "jonaslsaa");
+    assert.equal(typeof verifiedAuthor.issuedAt, "number");
+    assert.equal(typeof verifiedAuthor.expiresAt, "number");
+
+    const outputFile = join(dirname(script), "signed-link.txt");
+    const receipt = await runCli(["build", script, "--sign", "--out", outputFile], { env });
+    assert.match(receipt.stdout, /signed by github\.com\/jonaslsaa · \+[\d,]+ characters/u);
+    assert.doesNotMatch(receipt.stdout, /https:\/\/s\.jonaslsa\.com\/r\//u);
+    assert.match(await readFile(outputFile, "utf8"), /^https:\/\/s\.jonaslsa\.com\/r\//u);
+
+    const plain = await runCli(["build", script, "--sign"], { env });
+    assert.match(plain.stdout, /^https:\/\/s\.jonaslsa\.com\/r\//u);
+    assert.match(plain.stderr, /signed by github\.com\/jonaslsaa · \+[\d,]+ characters/u);
+  });
 });
 
 test("keygen emits a usable key pair for the requested key ID", async () => {
@@ -161,6 +264,16 @@ test("keygen emits a usable key pair for the requested key ID", async () => {
   assert.match(key.privateKeySecret, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
   assert.equal(key.privateKeySecret.split(".")[1], key.publicKey);
   assert.doesNotMatch(result.stderr, /ExperimentalWarning/u);
+});
+
+test("author-keygen emits a usable Ed25519 issuer key pair", async () => {
+  const result = await runCli(["author-keygen", "--key-id", "7", "--json"]);
+  const key = JSON.parse(result.stdout);
+
+  assert.equal(key.keyId, 7);
+  assert.match(key.publicKey, /^[A-Za-z0-9_-]{43}$/u);
+  assert.match(key.privateKey, /^[A-Za-z0-9_-]+$/u);
+  assert.equal(result.stderr, "");
 });
 
 test("run passes request values and secrets through the production sandbox", async () => {
@@ -638,7 +751,13 @@ test("build output round-trips through decode as a URL and raw payload", async (
   try {
     await withTemporaryScript(
       "js",
-      'const name = ctx.params.name ?? "world";\nreturn "https://example.com/" + name;\n',
+      `const firstChild = async (childCtx, label) => ({ body: "first-sentinel:" + label + ":" + (childCtx.params.name ?? "") });
+const secondChild = async (_childCtx, label) => ({ body: "second-sentinel:" + label });
+if (ctx.params.child === "1") return ctx.compile(firstChild, ["fixed"]);
+if (ctx.params.child === "2") return ctx.compile(secondChild, ["fixed"]);
+const name = ctx.params.name ?? "world";
+return "https://example.com/" + name;
+`,
       async (script) => {
         const defaultEnvironment = { ...process.env };
         delete defaultEnvironment.SMARTLINKS_URL;
@@ -683,7 +802,10 @@ test("build output round-trips through decode as a URL and raw payload", async (
         const decodedFromUrl = JSON.parse((await runCli(["decode", built.link, "--json"])).stdout);
         assert.equal(decodedFromUrl.payloadVersion, 2);
         assert.equal(decodedFromUrl.interstitial, true);
-        assert.equal(decodedFromUrl.compileClosures, 0);
+        assert.equal(decodedFromUrl.compileClosures, 2);
+        assert.equal(decodedFromUrl.closures.length, 2);
+        assert.match(decodedFromUrl.closures[0], /first-sentinel/u);
+        assert.match(decodedFromUrl.closures[1], /second-sentinel/u);
         assert.deepEqual(decodedFromUrl.sealedSecrets, ["E2E_TOKEN"]);
         assert.equal(decodedFromUrl.notAfter, built.notAfter);
         assert.equal(decodedFromUrl.expiresAt, built.expiresAt);
