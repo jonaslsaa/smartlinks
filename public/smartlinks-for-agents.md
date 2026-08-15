@@ -304,8 +304,9 @@ fails open or closed.
   to validated public addresses.
 - Known crawler, preview, prefetch, and `HEAD` requests do not execute scripts; they receive a
   non-executing HTTP 200 preview with `x-smartlinks-preview: 1`, even after expiry. Its presence
-  confirms that guest code did not run; absence alone does not prove execution. Detection is
-  intentionally best-effort.
+  confirms that guest code did not run only on the immediate response from the configured
+  Smartlinks runtime: disable redirect following and verify the response origin before trusting it.
+  Absence alone does not prove execution. Detection is intentionally best-effort.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 
 ## Budgeting the payload

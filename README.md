@@ -231,7 +231,9 @@ note and implies `--interstitial`. `--expires` accepts a duration such as `30m`,
 absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
 running the script; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
 Those previews carry `x-smartlinks-preview: 1`. Its presence confirms that the request did not
-execute guest code; absence alone does not prove that execution occurred.
+execute guest code only on the immediate response from the configured Smartlinks runtime: disable
+redirect following and verify the response origin before trusting it. Absence alone does not prove
+that execution occurred.
 Local networking is off by default; opt in with `smartlinks run --allow-network`. To inspect a
 networked script without sending requests, use `smartlinks run script.ts --simulate`. It runs one
 deterministic path with the real fetch guards, records fetches and locally compiled child hops,

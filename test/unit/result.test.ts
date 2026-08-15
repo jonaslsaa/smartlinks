@@ -23,6 +23,7 @@ describe("script result mapping", () => {
     const response = mapScriptResult("https://example.com/path");
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://example.com/path");
+    expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBeNull();
     expectRuntimeSecurityHeaders(response);
   });
 
