@@ -270,7 +270,7 @@ const child = async (childCtx: typeof ctx) => {
   };
 };
 return ctx.compile(child, [], {
-  seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN! },
+  seal: { CHILD_TOKEN: ctx.params.token! },
 });
 `;
 
@@ -283,8 +283,6 @@ return ctx.compile(child, [], {
         "--simulate",
         "--param",
         `token=${secret}`,
-        "--secret",
-        `PARENT_TOKEN=${secret}`,
         "--header",
         `X-Input=${secret}`,
         "--method",
@@ -300,9 +298,9 @@ return ctx.compile(child, [], {
     assert.equal(report.simulated, true);
     assert.deepEqual(report.inputs, {
       method: "POST",
-      params: { token: ["[secret:PARENT_TOKEN]"] },
-      headers: { "x-input": "[secret:PARENT_TOKEN]" },
-      body: "[secret:PARENT_TOKEN]",
+      params: { token: ["[secret:CHILD_TOKEN]"] },
+      headers: { "x-input": "[secret:CHILD_TOKEN]" },
+      body: "[secret:CHILD_TOKEN]",
     });
     assert.equal(report.events[0].type, "compile");
     assert.equal(report.events[0].hop, 1);
@@ -329,6 +327,29 @@ return ctx.compile(child, [], {
     assert.equal(report.response.status, 202);
     assert.equal(report.response.headers["x-token"], "[secret:CHILD_TOKEN]");
     assert.match(report.response.body, /\[secret:CHILD_TOKEN\]/u);
+    assert.doesNotMatch(result.stdout, new RegExp(secret, "u"));
+    assert.equal(result.stderr, "");
+  });
+});
+
+test("run simulation redacts an exact secret used as a binary response", async () => {
+  const source = "return { bodyBase64: ctx.secrets.TOKEN };\n";
+
+  await withTemporaryScript("js", source, async (script) => {
+    const secret = "c2VjcmV0";
+    const result = await runCli([
+      "run",
+      script,
+      "--simulate",
+      "--secret",
+      `TOKEN=${secret}`,
+      "--json",
+    ]);
+    const report = JSON.parse(result.stdout);
+
+    assert.equal(report.response.bodyBytes, 6);
+    assert.equal(report.response.bodyRedacted, "[secret:TOKEN]");
+    assert.equal("bodyBase64" in report.response, false);
     assert.doesNotMatch(result.stdout, new RegExp(secret, "u"));
     assert.equal(result.stderr, "");
   });

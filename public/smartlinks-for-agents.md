@@ -170,7 +170,8 @@ Use this as the local dry-run before building a final link.
 - `--simulate`: run one deterministic path, trace fetches and compiled child hops, and send no
   network requests. Every allowed fetch receives HTTP 200, `content-type: application/json`, and
   `{}`. It cannot be combined with `--allow-network` or `--serve`.
-- `--json`: emit the mapped response as machine-readable output.
+- `--json`: emit the mapped response, or the simulation report with `--simulate`, as
+  machine-readable output.
 - `--no-type-check`: skip strict semantic checking for TypeScript; syntax must still transpile.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
 
@@ -193,6 +194,9 @@ The fixed response covers one control-flow path. Exact supplied local secret val
 with `[secret:NAME]` in recorded URLs, headers, bodies, final responses, and errors, including
 common URL and JSON encodings. Derived or transformed values cannot be recognized, so treat the
 report as potentially sensitive.
+
+Binary final responses include `bodyBytes` and `bodyBase64`. If the Base64 body contains an exact
+supplied secret, `bodyBase64` is replaced by `bodyRedacted`.
 
 Local execution uses the same wrapper, QuickJS engine, request-context normalization, general
 URL/method/header/body/count/redirect policy, response mapping, and compile validation as

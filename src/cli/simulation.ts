@@ -4,10 +4,12 @@ import {
   type FetchImplementation,
   type GuestFetch,
 } from "../shared/guarded-fetch.js";
+import { type PayloadFacts, payloadFacts } from "../shared/payload-facts.js";
 
 const SIMULATED_BODY = "{}";
 const SIMULATED_HEADERS = { "content-type": "application/json" } as const;
 const SIMULATED_STATUS = 200;
+const MAX_HUMAN_FIELD_LENGTH = 240;
 
 export type SimulationInputs = {
   method: string;
@@ -41,28 +43,28 @@ export type SimulationEvent =
   | {
       type: "compile";
       hop: number;
-      artifact: {
-        payloadVersion: number;
-        payloadCharacters: number;
-        interstitial: boolean;
-        sealedSecrets: string[];
-        compileClosures: number;
-        notAfter: number | null;
-      };
+      artifact: PayloadFacts & { payloadCharacters: number };
     };
 
 export type SimulationResponse = {
   status: number;
   headers: Record<string, string>;
-} & ({ body: string } | { bodyBase64: string });
+} & (
+  | { body: string }
+  | { bodyBase64: string; bodyBytes: number }
+  | { bodyRedacted: string; bodyBytes: number }
+);
 
-export type SimulationReport = {
+type SimulationReportBase = {
   simulated: true;
   inputs: SimulationInputs;
   events: SimulationEvent[];
-  response?: SimulationResponse;
-  error?: string;
 };
+
+export type SimulationReport = SimulationReportBase &
+  ({ response: SimulationResponse; error?: never } | { error: string; response?: never });
+
+type SimulationEventSlot = { event?: SimulationEvent };
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown local execution error.";
@@ -85,13 +87,14 @@ function requestMethod(options: unknown): string {
 }
 
 export class LocalSimulation {
-  readonly #events: SimulationEvent[] = [];
+  readonly #events: SimulationEventSlot[] = [];
   readonly #secrets = new Map<string, string>();
   readonly #inputs: SimulationInputs;
+  #fetchQueue: Promise<void> = Promise.resolve();
 
   constructor(inputs: SimulationInputs, secrets: Record<string, string>) {
     this.addSecrets(secrets);
-    this.#inputs = this.#redactInputs(inputs);
+    this.#inputs = inputs;
   }
 
   addSecrets(secrets: Record<string, string>): void {
@@ -153,23 +156,65 @@ export class LocalSimulation {
     };
   }
 
-  createGuestFetch(blockedHostnames: readonly string[]): GuestFetch {
-    const fetchImpl: FetchImplementation = async (url, init) => {
-      const headers = Object.fromEntries(new Headers(init.headers));
-      this.#events.push({
+  #redactEvent(event: SimulationEvent): SimulationEvent {
+    if (event.type === "fetch") {
+      return {
         type: "fetch",
         request: {
-          url: this.redact(url.href),
+          url: this.redact(event.request.url),
+          method: event.request.method,
+          headers: this.#redactRecord(event.request.headers),
+          body: event.request.body === null ? null : this.redact(event.request.body),
+        },
+        response: {
+          status: event.response.status,
+          headers: this.#redactRecord(event.response.headers),
+          body: this.redact(event.response.body),
+        },
+      };
+    }
+    if (event.type === "fetch-blocked") {
+      return {
+        type: "fetch-blocked",
+        request: {
+          url: this.redact(event.request.url),
+          method: event.request.method,
+        },
+        reason: this.redact(event.reason),
+      };
+    }
+    return {
+      type: "compile",
+      hop: event.hop,
+      artifact: { ...event.artifact, sealedSecrets: [...event.artifact.sealedSecrets] },
+    };
+  }
+
+  #reportEvents(): SimulationEvent[] {
+    return this.#events.flatMap(({ event }) => (event ? [this.#redactEvent(event)] : []));
+  }
+
+  createGuestFetch(blockedHostnames: readonly string[]): GuestFetch {
+    let activeSlot: SimulationEventSlot | undefined;
+    const fetchImpl: FetchImplementation = async (url, init) => {
+      const headers = Object.fromEntries(new Headers(init.headers));
+      if (!activeSlot) {
+        throw new Error("Simulation fetch executed without a trace slot.");
+      }
+      activeSlot.event = {
+        type: "fetch",
+        request: {
+          url: url.href,
           method: init.method ?? "GET",
-          headers: this.#redactRecord(headers),
-          body: typeof init.body === "string" ? this.redact(init.body) : null,
+          headers,
+          body: typeof init.body === "string" ? init.body : null,
         },
         response: {
           status: SIMULATED_STATUS,
           headers: { ...SIMULATED_HEADERS },
           body: SIMULATED_BODY,
         },
-      });
+      };
       return new Response(SIMULATED_BODY, {
         status: SIMULATED_STATUS,
         headers: SIMULATED_HEADERS,
@@ -177,57 +222,138 @@ export class LocalSimulation {
     };
     const guardedFetch = createGuardedFetch({ fetchImpl, blockedHostnames });
 
-    return async (url, options) => {
-      try {
-        return await guardedFetch(url, options);
-      } catch (error) {
-        this.#events.push({
-          type: "fetch-blocked",
-          request: {
-            url: this.redact(url),
-            method: requestMethod(options),
-          },
-          reason: this.redact(errorMessage(error)),
-        });
-        throw error;
-      }
+    return (url, options) => {
+      const slot: SimulationEventSlot = {};
+      this.#events.push(slot);
+      const result = this.#fetchQueue.then(async () => {
+        activeSlot = slot;
+        try {
+          return await guardedFetch(url, options);
+        } catch (error) {
+          slot.event = {
+            type: "fetch-blocked",
+            request: { url, method: requestMethod(options) },
+            reason: errorMessage(error),
+          };
+          throw error;
+        } finally {
+          activeSlot = undefined;
+        }
+      });
+      this.#fetchQueue = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
     };
   }
 
   recordCompile(decoded: DecodedPayload, payloadCharacters: number, hop: number): void {
     this.#events.push({
-      type: "compile",
-      hop,
-      artifact: {
-        payloadVersion: Number(decoded.version),
-        payloadCharacters,
-        interstitial: decoded.envelope.i === true,
-        sealedSecrets: Object.keys(decoded.envelope.k ?? {}),
-        compileClosures: decoded.envelope.c?.length ?? 0,
-        notAfter: decoded.envelope.notAfter ?? null,
+      event: {
+        type: "compile",
+        hop,
+        artifact: { ...payloadFacts(decoded), payloadCharacters },
       },
     });
   }
 
   async success(response: Response, binary: boolean): Promise<SimulationReport> {
+    await this.#fetchQueue;
     const headers = this.#redactRecord(Object.fromEntries(response.headers));
-    const body = binary
-      ? { bodyBase64: Buffer.from(await response.arrayBuffer()).toString("base64") }
-      : { body: this.redact(await response.text()) };
+    let body:
+      | { body: string }
+      | { bodyBase64: string; bodyBytes: number }
+      | { bodyRedacted: string; bodyBytes: number };
+    if (binary) {
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const bodyBase64 = bytes.toString("base64");
+      const redacted = this.redact(bodyBase64);
+      body =
+        redacted === bodyBase64
+          ? { bodyBase64, bodyBytes: bytes.byteLength }
+          : { bodyRedacted: redacted, bodyBytes: bytes.byteLength };
+    } else {
+      body = { body: this.redact(await response.text()) };
+    }
     return {
       simulated: true,
-      inputs: this.#inputs,
-      events: [...this.#events],
+      inputs: this.#redactInputs(this.#inputs),
+      events: this.#reportEvents(),
       response: { status: response.status, headers, ...body },
     };
   }
 
-  failure(error: unknown): SimulationReport {
+  async failure(error: unknown): Promise<SimulationReport> {
+    await this.#fetchQueue;
     return {
       simulated: true,
-      inputs: this.#inputs,
-      events: [...this.#events],
+      inputs: this.#redactInputs(this.#inputs),
+      events: this.#reportEvents(),
       error: this.redact(errorMessage(error)),
     };
   }
+}
+
+export function formatSimulationReport(report: SimulationReport): string {
+  let truncated = false;
+  const preview = (value: string) => {
+    if (value.length <= MAX_HUMAN_FIELD_LENGTH) {
+      return value;
+    }
+    truncated = true;
+    return `${value.slice(0, MAX_HUMAN_FIELD_LENGTH)}… (${(value.length - MAX_HUMAN_FIELD_LENGTH).toLocaleString()} characters omitted)`;
+  };
+  const lines = [
+    `Input · ${report.inputs.method}`,
+    ...(Object.keys(report.inputs.params).length
+      ? [`Parameters · ${preview(JSON.stringify(report.inputs.params))}`]
+      : []),
+    ...(Object.keys(report.inputs.headers).length
+      ? [`Headers · ${preview(JSON.stringify(report.inputs.headers))}`]
+      : []),
+    ...(report.inputs.body === null ? [] : [`Body · ${preview(report.inputs.body)}`]),
+  ];
+
+  for (const [index, event] of report.events.entries()) {
+    const step = `Step ${index + 1}`;
+    if (event.type === "fetch") {
+      lines.push(`${step} · Fetch · ${event.request.method} ${preview(event.request.url)}`);
+      if (Object.keys(event.request.headers).length) {
+        lines.push(`  Headers · ${preview(JSON.stringify(event.request.headers))}`);
+      }
+      if (event.request.body !== null) {
+        lines.push(`  Body · ${preview(event.request.body)}`);
+      }
+      lines.push(`  Synthetic response · HTTP ${event.response.status} · ${event.response.body}`);
+    } else if (event.type === "fetch-blocked") {
+      lines.push(
+        `${step} · Fetch blocked · ${event.request.method} ${preview(event.request.url)}`,
+        `  ${preview(event.reason)}`,
+      );
+    } else {
+      const secrets = event.artifact.sealedSecrets.join(", ") || "none";
+      lines.push(
+        `${step} · Compiled child ${event.hop} · payload v${event.artifact.payloadVersion} · ${event.artifact.payloadCharacters.toLocaleString()} characters · sealed secrets: ${secrets}`,
+      );
+    }
+  }
+
+  if (report.response) {
+    lines.push(`Final response · HTTP ${report.response.status}`);
+    if (Object.keys(report.response.headers).length) {
+      lines.push(`  Headers · ${preview(JSON.stringify(report.response.headers))}`);
+    }
+    lines.push(
+      "body" in report.response
+        ? `  Body · ${preview(report.response.body || "(empty)")}`
+        : `  Body · ${report.response.bodyBytes.toLocaleString()} binary bytes`,
+    );
+  } else {
+    lines.push(`Execution error · ${preview(report.error)}`);
+  }
+  if (truncated) {
+    lines.push("Terminal preview truncated · use --json for the complete simulation report");
+  }
+  return lines.join("\n");
 }

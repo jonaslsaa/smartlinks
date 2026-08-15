@@ -168,12 +168,13 @@ networked script without sending requests, use `smartlinks run script.ts --simul
 deterministic path with the real fetch guards, records fetches and locally compiled child hops,
 and supplies every allowed fetch with HTTP 200, `content-type: application/json`, and `{}`. The
 flag cannot be combined with `--allow-network` or `--serve`; `--json` returns the stable simulation
-report.
+report. Binary final responses include their byte count and Base64 body unless that body matches an
+exact supplied secret, in which case the report contains a redaction marker instead.
 Local `ctx.compile` uses an ephemeral in-process key and a clearly non-production
 `https://smartlinks.local/...` artifact. `run` follows compiled local links and executes their
 final response in the same process, so dry-runs verify sealed delegation without publishing a
 bearer link or needing the production private key.
-For binary responses, `run --json` emits `bodyBase64` instead of `body`. Redirected plain `run`
+For binary responses, regular `run --json` emits `bodyBase64` instead of `body`. Redirected plain `run`
 stdout receives the exact bytes; an interactive terminal shows a byte-count receipt.
 
 For browser-based iteration, use `smartlinks run script.ts --serve`. It serves the script on

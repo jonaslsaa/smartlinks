@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { LocalSimulation } from "../../src/cli/simulation.js";
+import {
+  formatSimulationReport,
+  LocalSimulation,
+  type SimulationReport,
+} from "../../src/cli/simulation.js";
 
 describe("local network simulation", () => {
   it("uses the guarded fetch policy and redacts exact secrets from the report", async () => {
@@ -67,5 +71,44 @@ describe("local network simulation", () => {
       headers: { "content-type": "text/plain;charset=UTF-8", "x-result": "[secret:API_TOKEN]" },
       body: '{"token":"[secret:API_TOKEN]"}',
     });
+  });
+
+  it("preserves concurrent fetch invocation order", async () => {
+    const simulation = new LocalSimulation(
+      { method: "GET", params: {}, headers: {}, body: null },
+      {},
+    );
+    const fetch = simulation.createGuestFetch([]);
+
+    await Promise.allSettled([
+      fetch("http://127.0.0.1/private"),
+      fetch("https://example.com/public"),
+    ]);
+    const report = await simulation.success(new Response("done"), false);
+
+    expect(
+      report.events.map((event) => [event.type, "request" in event ? event.request.url : null]),
+    ).toEqual([
+      ["fetch-blocked", "http://127.0.0.1/private"],
+      ["fetch", "https://example.com/public"],
+    ]);
+  });
+
+  it("bounds human previews while leaving the report intact", () => {
+    const body = "x".repeat(500);
+    const report: SimulationReport = {
+      simulated: true,
+      inputs: { method: "POST", params: {}, headers: {}, body },
+      events: [],
+      response: { status: 200, headers: {}, body },
+    };
+
+    const formatted = formatSimulationReport(report);
+
+    expect(formatted).toContain("260 characters omitted");
+    expect(formatted).toContain("use --json for the complete simulation report");
+    expect(formatted).not.toContain(body);
+    expect(report.inputs.body).toBe(body);
+    expect("body" in report.response && report.response.body).toBe(body);
   });
 });

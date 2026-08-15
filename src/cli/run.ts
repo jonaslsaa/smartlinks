@@ -125,7 +125,7 @@ export async function executeLocalRequest(
     }
     throw new LocalScriptError(errorMessage(error), {
       cause: error,
-      ...(simulation ? { simulation: simulation.failure(error) } : {}),
+      ...(simulation ? { simulation: await simulation.failure(error) } : {}),
     });
   }
 }
