@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer, request as httpRequest } from "node:http";
 import { dirname, join } from "node:path";
@@ -29,7 +30,11 @@ function toBase64Url(value) {
   return Buffer.from(value).toString("base64url");
 }
 
-async function createTestAuthor(configDirectory) {
+function fingerprint(value) {
+  return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 12)}`;
+}
+
+async function createTestAuthor(configDirectory, options = {}) {
   const [issuer, author] = await Promise.all([
     crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]),
     crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]),
@@ -40,7 +45,9 @@ async function createTestAuthor(configDirectory) {
     crypto.subtle.exportKey("raw", author.publicKey),
   ]);
   const now = Math.floor(Date.now() / 1_000);
-  const unsigned = [1, 128, 123456, "jonaslsaa", toBase64Url(authorPublic), now, now + 3_600];
+  const issuedAt = options.expired ? now - 3_600 : now;
+  const expiresAt = options.expired ? now - 1 : now + 3_600;
+  const unsigned = [1, 128, 123456, "jonaslsaa", toBase64Url(authorPublic), issuedAt, expiresAt];
   const certificateSignature = await crypto.subtle.sign(
     "Ed25519",
     issuer.privateKey,
@@ -161,7 +168,7 @@ test("the built CLI exposes its version and public subcommands", async () => {
   assert.equal(version.stdout.trim(), packageJson.version);
 
   const help = await runCli(["--help"]);
-  for (const command of ["build", "decode", "run", "login", "logout"]) {
+  for (const command of ["build", "decode", "run", "login", "logout", "whoami"]) {
     assert.match(help.stdout, new RegExp(`\\b${command}\\b`));
   }
   assert.doesNotMatch(help.stdout, /\b(?:author-)?keygen\b/u);
@@ -172,14 +179,107 @@ test("the built CLI exposes its version and public subcommands", async () => {
   assert.match(buildHelp.stdout, /--expires <duration-or-date>/u);
   assert.match(buildHelp.stdout, /--interstitial-note <text>/u);
   assert.match(buildHelp.stdout, /--sign\s+sign with the author identity/u);
-  assert.match(buildHelp.stdout, /--copy\s+copy the link without printing it/u);
-  assert.match(buildHelp.stdout, /--out <file>\s+write the link privately without printing it/u);
+  assert.match(buildHelp.stdout, /--copy\s+copy the link and print a fingerprint receipt/u);
+  assert.match(
+    buildHelp.stdout,
+    /--out <file>\s+write the link privately and print a\s+fingerprint receipt/u,
+  );
 
   const runHelp = await runCli(["help", "run"]);
   assert.match(runHelp.stdout, /--no-type-check\b/u);
   assert.match(runHelp.stdout, /--serve\b/u);
   assert.match(runHelp.stdout, /--port <number>/u);
   assert.match(runHelp.stdout, /--simulate\b/u);
+});
+
+test("whoami reports signing readiness and fails closed for unusable identities", async () => {
+  await withTemporaryScript("js", 'return "unused";\n', async (script) => {
+    const directory = dirname(script);
+    const missingConfig = join(directory, "missing-author");
+    await assert.rejects(
+      runCli(["whoami", "--json"], {
+        env: { ...process.env, SMARTLINKS_CONFIG_DIR: missingConfig },
+      }),
+      (error) => {
+        assert.deepEqual(JSON.parse(error.stdout), { status: "missing" });
+        assert.equal(error.stderr, "");
+        return true;
+      },
+    );
+
+    const validConfig = join(directory, "valid-author");
+    const issuerPublicKey = await createTestAuthor(validConfig);
+    const validEnv = {
+      ...process.env,
+      SMARTLINKS_CONFIG_DIR: validConfig,
+      SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: issuerPublicKey,
+    };
+    const valid = await runCli(["whoami", "--json"], { env: validEnv });
+    const status = JSON.parse(valid.stdout);
+    assert.equal(status.status, "valid");
+    assert.equal(status.githubId, 123456);
+    assert.equal(status.githubLogin, "jonaslsaa");
+    assert.equal(typeof status.issuedAt, "number");
+    assert.equal(typeof status.expiresAt, "number");
+    assert.equal(valid.stderr, "");
+
+    const human = await runCli(["whoami"], { env: validEnv });
+    assert.match(human.stdout, /^github\.com\/jonaslsaa · certificate expires \d{4}-/u);
+    assert.equal(human.stderr, "");
+
+    await assert.rejects(
+      runCli(["whoami", "--json"], {
+        env: { ...process.env, SMARTLINKS_CONFIG_DIR: validConfig },
+      }),
+      (error) => {
+        const invalid = JSON.parse(error.stdout);
+        assert.equal(invalid.status, "invalid");
+        assert.match(invalid.reason, /Unknown certificate issuer/u);
+        assert.equal(error.stderr, "");
+        return true;
+      },
+    );
+
+    const brokenKeyConfig = join(directory, "broken-key-author");
+    const brokenKeyIssuer = await createTestAuthor(brokenKeyConfig);
+    const brokenCredentialPath = join(brokenKeyConfig, "author.json");
+    const brokenCredential = JSON.parse(await readFile(brokenCredentialPath, "utf8"));
+    brokenCredential.privateKey = "not-a-private-key";
+    await writeFile(brokenCredentialPath, `${JSON.stringify(brokenCredential)}\n`, { mode: 0o600 });
+    await assert.rejects(
+      runCli(["whoami", "--json"], {
+        env: {
+          ...process.env,
+          SMARTLINKS_CONFIG_DIR: brokenKeyConfig,
+          SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: brokenKeyIssuer,
+        },
+      }),
+      (error) => {
+        const invalid = JSON.parse(error.stdout);
+        assert.equal(invalid.status, "invalid");
+        assert.doesNotMatch(error.stdout, /not-a-private-key/u);
+        assert.equal(error.stderr, "");
+        return true;
+      },
+    );
+
+    const expiredConfig = join(directory, "expired-author");
+    const expiredIssuer = await createTestAuthor(expiredConfig, { expired: true });
+    await assert.rejects(
+      runCli(["whoami", "--json"], {
+        env: {
+          ...process.env,
+          SMARTLINKS_CONFIG_DIR: expiredConfig,
+          SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: expiredIssuer,
+        },
+      }),
+      (error) => {
+        assert.equal(JSON.parse(error.stdout).status, "expired");
+        assert.equal(error.stderr, "");
+        return true;
+      },
+    );
+  });
 });
 
 test("build --sign fails instead of silently producing an unsigned link", async () => {
@@ -672,6 +772,7 @@ return "https://example.com/" + name;
 
         assert.match(built.link, new RegExp(`^${service}/r/2`));
         assert.equal("decoder" in built, false);
+        assert.equal("fingerprint" in built, false);
         assert.equal(built.payloadVersion, 2);
         assert.equal(built.notAfter, Date.parse("2100-01-01T00:00:00Z") / 1000);
         assert.equal(built.expiresAt, "2100-01-01T00:00:00.000Z");
@@ -730,13 +831,14 @@ test("build writes the link as an artifact without repeating it", async () => {
         output,
       ]);
       const link = (await readFile(output, "utf8")).trim();
+      const expectedFingerprint = fingerprint(link);
 
       assert.match(link, /^https:\/\/s\.jonaslsa\.com\/r\/2/u);
       assert.doesNotMatch(result.stdout, /https:\/\//u);
       assert.match(
         result.stdout,
         new RegExp(
-          `^${link.length.toLocaleString()} characters · payload v2 · fits \\(\\d+% of budget\\) · expires 2100-01-01T00:00:00\\.000Z · written to `,
+          `^${link.length.toLocaleString()} characters · payload v2 · fits \\(\\d+% of budget\\) · expires 2100-01-01T00:00:00\\.000Z · fingerprint ${expectedFingerprint} · written to `,
           "u",
         ),
       );
@@ -760,6 +862,7 @@ test("build writes the link as an artifact without repeating it", async () => {
       assert.equal("link" in json, false);
       assert.equal("decoder" in json, false);
       assert.equal(json.out, output);
+      assert.equal(json.fingerprint, expectedFingerprint);
       assert.equal(json.fits, true);
       assert.equal(json.characters, link.length);
       assert.equal(json.expiresAt, "2100-01-01T00:00:00.000Z");
@@ -828,6 +931,7 @@ test("build copies the link without printing it", {
       },
     });
     const link = await readFile(clipboardFile, "utf8");
+    const expectedFingerprint = fingerprint(link);
 
     assert.match(link, /^https:\/\/s\.jonaslsa\.com\/r\/2/u);
     assert.equal(result.stderr, "");
@@ -835,10 +939,24 @@ test("build copies the link without printing it", {
     assert.match(
       result.stdout,
       new RegExp(
-        `^Copied to clipboard · ${link.length.toLocaleString()} characters · payload v2 · fits \\(\\d+% of budget\\)`,
+        `^Copied to clipboard · ${link.length.toLocaleString()} characters · payload v2 · fits \\(\\d+% of budget\\) · fingerprint ${expectedFingerprint}`,
         "u",
       ),
     );
+
+    const jsonResult = await runCli(["build", script, "--copy", "--json"], {
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH ?? ""}`,
+        SMARTLINKS_CLIPBOARD_FILE: clipboardFile,
+      },
+    });
+    const json = JSON.parse(jsonResult.stdout);
+    assert.equal(json.copied, true);
+    assert.equal(json.fingerprint, expectedFingerprint);
+    assert.equal("link" in json, false);
+    assert.doesNotMatch(jsonResult.stdout, /https:\/\//u);
+    assert.equal(jsonResult.stderr, "");
   });
 });
 

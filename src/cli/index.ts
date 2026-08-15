@@ -1,11 +1,14 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, stat, writeFile } from "node:fs/promises";
 import * as p from "@clack/prompts";
 import clipboard from "clipboardy";
 import { Command, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
 import {
+  type AuthorCertificateVerification,
   generateAuthorKeyPair,
+  signEnvelope,
   verifyAuthorCertificate,
   verifyAuthorProof,
 } from "../shared/author.js";
@@ -77,6 +80,8 @@ type RunOptions = {
   json?: boolean;
 };
 
+type AuthorStatus = { status: "missing" } | AuthorCertificateVerification;
+
 function parsePort(value: string): number {
   const port = Number(value);
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
@@ -106,14 +111,20 @@ function buildStats(linkLength: number, payloadLength: number, notAfter?: number
     .join(" · ");
 }
 
+function linkFingerprint(link: string): string {
+  return `sha256:${createHash("sha256").update(link).digest("hex").slice(0, 12)}`;
+}
+
 function buildReceipt(
   stats: string,
   options: Pick<BuildOptions, "copy" | "out">,
+  fingerprint?: string,
   signing?: { githubLogin: string; overhead: number },
 ): string {
   return [
     options.copy ? "Copied to clipboard" : undefined,
     stats,
+    fingerprint ? `fingerprint ${fingerprint}` : undefined,
     signing
       ? `signed by github.com/${signing.githubLogin} · +${signing.overhead.toLocaleString()} characters`
       : undefined,
@@ -233,6 +244,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   }
 
   const stats = buildStats(created.link.length, created.payload.length, notAfter);
+  const fingerprint = options.copy || options.out ? linkFingerprint(created.link) : undefined;
   const signingReceipt = author
     ? { githubLogin: author.certificate[3], overhead: created.signingOverhead }
     : undefined;
@@ -253,6 +265,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
             : { notAfter, expiresAt: formatNotAfter(notAfter), expired: false }),
           budgetPercent: payloadBudgetPercent(created.payload.length),
           fits: true,
+          ...(fingerprint ? { fingerprint } : {}),
           ...(options.copy ? { copied: true } : {}),
           ...(options.out ? { out: options.out } : {}),
           ...(author ? { signed: true, author: author.certificate[3] } : {}),
@@ -266,7 +279,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   }
   if (interactive) {
     if (options.copy || options.out) {
-      p.outro(buildReceipt(stats, options, signingReceipt));
+      p.outro(buildReceipt(stats, options, fingerprint, signingReceipt));
     } else {
       if (fitsInteractiveNote(created.link)) {
         p.note(created.link, "Smartlink");
@@ -275,14 +288,14 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
         p.log.message(created.link);
       }
       p.log.info("Audit: run smartlinks decode with the link above");
-      p.outro(buildReceipt(stats, options, signingReceipt));
+      p.outro(buildReceipt(stats, options, undefined, signingReceipt));
     }
   } else if (options.copy || options.out) {
-    console.log(buildReceipt(stats, options, signingReceipt));
+    console.log(buildReceipt(stats, options, fingerprint, signingReceipt));
   } else {
     console.log(created.link);
     console.error("Audit: run smartlinks decode with the link above");
-    console.error(buildReceipt(stats, options, signingReceipt));
+    console.error(buildReceipt(stats, options, undefined, signingReceipt));
   }
 }
 
@@ -384,6 +397,66 @@ async function logoutCommand(): Promise<void> {
     p.outro(message);
   } else {
     console.log(message);
+  }
+}
+
+async function configuredAuthorStatus(): Promise<AuthorStatus> {
+  let author: Awaited<ReturnType<typeof readStoredAuthor>>;
+  try {
+    author = await readStoredAuthor();
+  } catch (error) {
+    return {
+      status: "invalid",
+      reason: error instanceof Error ? error.message : "The author credential is invalid.",
+    };
+  }
+  if (!author) {
+    return { status: "missing" };
+  }
+
+  const verification = await verifyAuthorCertificate(author.certificate, {
+    issuerPublicKeys: trustedAuthorIssuerKeys(),
+  });
+  if (verification.status !== "valid") {
+    return verification;
+  }
+  try {
+    await signEnvelope("2", { s: "async()=>{}" }, author.certificate, authorKey(author));
+    return verification;
+  } catch (error) {
+    return {
+      status: "invalid",
+      githubId: verification.githubId,
+      githubLogin: verification.githubLogin,
+      reason: error instanceof Error ? error.message : "The local signing key is invalid.",
+    };
+  }
+}
+
+async function whoamiCommand(options: { json?: boolean }): Promise<void> {
+  const status = await configuredAuthorStatus();
+  if (options.json) {
+    console.log(JSON.stringify(status, null, 2));
+  } else if (status.status === "valid") {
+    const message = `github.com/${status.githubLogin} · certificate expires ${formatNotAfter(status.expiresAt)}`;
+    const interactive = startUi("smartlinks whoami", false);
+    if (interactive) {
+      p.outro(message);
+    } else {
+      console.log(message);
+    }
+  } else if (status.status === "missing") {
+    console.error("No author identity is configured. Run smartlinks login first.");
+  } else if (status.status === "expired") {
+    console.error(
+      `github.com/${status.githubLogin} · certificate expired ${formatNotAfter(status.expiresAt)} · run smartlinks login again`,
+    );
+  } else if ("reason" in status) {
+    console.error(`The local author identity is invalid: ${status.reason}`);
+  }
+
+  if (status.status !== "valid") {
+    process.exitCode = 1;
   }
 }
 
@@ -603,8 +676,8 @@ program
   .option("--interstitial-note <text>", "add an author note and require browser confirmation")
   .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
   .option("--expires <duration-or-date>", "expire after a duration or at an ISO 8601 date")
-  .option("--copy", "copy the link without printing it")
-  .option("--out <file>", "write the link privately without printing it")
+  .option("--copy", "copy the link and print a fingerprint receipt")
+  .option("--out <file>", "write the link privately and print a fingerprint receipt")
   .option("--json", "print machine-readable output")
   .option("--sign", "sign with the author identity configured by smartlinks login")
   .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
@@ -620,6 +693,12 @@ program
   .command("logout")
   .description("Remove the local Smartlinks author signing identity.")
   .action(logoutCommand);
+
+program
+  .command("whoami")
+  .description("Report the configured author signing identity and certificate status.")
+  .option("--json", "print machine-readable output")
+  .action(whoamiCommand);
 
 program
   .command("decode")

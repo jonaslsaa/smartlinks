@@ -186,10 +186,12 @@ performs the same verification without networking. Signing proves provenance, no
 does not grant the script additional capabilities. Invalid signed payloads are rejected. Unsigned
 links remain fully supported.
 
-Certificates expire after 90 days. Existing artifact signatures remain intact afterward, but the
-identity label becomes **author certificate expired** because there is no trusted timestamp proving
-when an immutable link was signed. Run `smartlinks login` again to renew the local identity before
-creating more signed links. Compiled children are separate artifacts and are unsigned.
+Certificates expire after 90 days. `smartlinks whoami` checks that the configured certificate and
+local signing key are ready, and supports `--json` for CI. Existing artifact signatures remain
+intact afterward, but the identity label becomes **author certificate expired** because there is
+no trusted timestamp proving when an immutable link was signed. Run `smartlinks login` again to
+renew the local identity before creating more signed links. Compiled children are separate
+artifacts and are unsigned.
 
 ## Remember across requests
 
@@ -221,6 +223,7 @@ smartlinks build <script.js|script.ts>   Build an immutable execution URL
 smartlinks run <script.js|script.ts>     Run locally with the production sandbox
 smartlinks decode <link-or-payload>      Inspect a Smartlink without executing it
 smartlinks login                         Verify GitHub and create an author signing key
+smartlinks whoami                        Check the configured author and certificate expiry
 smartlinks logout                        Remove the local author signing identity
 ```
 
@@ -257,8 +260,10 @@ guarded outbound fetches.
 
 Generated links are opaque bearer artifacts. `--copy` sends the link to the clipboard without
 printing it, while `--out link.txt` writes it to a file with owner-only POSIX permissions; both
-print only a compact size and payload-budget receipt. Plain `--json` includes the execution URL
-once and omits the equivalent decoder URL. `smartlinks decode` accepts the execution URL directly.
+print only a compact size, payload-budget, and SHA-256 fingerprint receipt. The fingerprint helps
+detect accidental artifact drift; it is not an authenticity guarantee. Plain `--json` includes
+the execution URL once and omits the equivalent decoder URL. `smartlinks decode` accepts the
+execution URL directly.
 
 An interstitial separates immutable system guidance, an optional author-provided note, machine
 facts, and the decoded source. Notes are whitespace-normalized and limited to 140 Unicode
