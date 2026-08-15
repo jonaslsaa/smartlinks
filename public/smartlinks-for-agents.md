@@ -55,12 +55,18 @@ Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` fo
 `{ status?, headers?, bodyBase64 }` for bytes, or `undefined` for the default completion page.
 `body` and `bodyBase64` are mutually exclusive. `bodyBase64` accepts padded or unpadded Base64,
 is limited to 1 MiB after decoding, and defaults to `application/octet-stream` when headers do
-not supply a content type; `content-disposition` remains author-controlled.
+not supply a content type; `content-disposition` remains author-controlled. Every mapped response
+receives the runtime's fixed Content Security Policy, `Referrer-Policy: no-referrer`,
+`X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`. An author CSP is enforced in
+addition to the runtime policy, so it may tighten but cannot weaken the floor; other headers remain
+author-controlled.
 
 A response can be a complete HTML document. The script cannot read its own URL, but relative
 references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the
 same link with new parameters; add `cache-control: no-store` when each execution should differ.
-Escape every interpolated value — query parameters and fetched data are attacker-controlled.
+The runtime policy permits inline styles and same-origin forms while blocking scripts and external
+subresources. Escape every interpolated value — query parameters and fetched data are
+attacker-controlled.
 
 TypeScript is checked in isolation with strict compiler settings and built-in types for `ctx`,
 global `fetch`, and valid script results — no project `tsconfig`, no import resolution. The link
@@ -296,7 +302,8 @@ fails open or closed.
   create a child link. Local `run --allow-network` additionally resolves and pins DNS connections
   to validated public addresses.
 - Known crawler, preview, prefetch, and `HEAD` requests do not execute scripts; they receive a
-  non-executing HTTP 200 preview, even after expiry. Detection is intentionally best-effort.
+  non-executing HTTP 200 preview with `x-smartlinks-preview: 1`, even after expiry. Detection is
+  intentionally best-effort.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 
 ## Budgeting the payload

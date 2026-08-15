@@ -111,7 +111,9 @@ Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? 
 response, return `{ status?, headers?, bodyBase64 }` for bytes, or return nothing for a small
 success page. `body` and `bodyBase64` are mutually exclusive. Binary responses are limited to
 1 MiB after decoding and default to `application/octet-stream` when no content type is supplied.
-Top-level `await` works.
+Every response receives a runtime-owned browser-security floor. An author-provided Content
+Security Policy can tighten that floor but cannot replace it; other response headers remain under
+the author's control. Top-level `await` works.
 
 ## Mint a link from a link
 
@@ -226,6 +228,8 @@ include `--secret`, `--expires`, `--interstitial`, `--sign`, `--copy`, `--out`, 
 note and implies `--interstitial`. `--expires` accepts a duration such as `30m`, `1h`, or `7d`, or an
 absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
 running the script; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
+Preview responses are marked with `x-smartlinks-preview: 1` so tooling can distinguish them from
+executions without inspecting the body.
 Local networking is off by default; opt in with `smartlinks run --allow-network`. To inspect a
 networked script without sending requests, use `smartlinks run script.ts --simulate`. It runs one
 deterministic path with the real fetch guards, records fetches and locally compiled child hops,

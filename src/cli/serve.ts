@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isPreviewRequest } from "../shared/bots.js";
 import { MAX_REQUEST_BODY_BYTES, RequestBodyTooLargeError } from "../shared/request-context.js";
+import { hardenResponse, SMARTLINKS_PREVIEW_HEADER } from "../shared/response-security.js";
 import { executeLocalRequest, LocalScriptError, type LocalScriptExecution } from "./run.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
@@ -30,21 +31,18 @@ function escapeHtml(value: string): string {
 }
 
 function localPage(title: string, heading: string, detail: string, status = 200): Response {
-  return new Response(
-    `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>:root{color-scheme:dark;font-family:ui-sans-serif,system-ui,sans-serif;background:#090909;color:#f3f3f3}body{width:min(calc(100% - 32px),760px);margin:48px auto;line-height:1.55}.local{display:inline-block;padding:4px 9px;border:1px solid #3d725f;border-radius:999px;color:#8de0bf;background:#0c1d17;font-size:13px;font-weight:700}h1{font-size:28px;margin:18px 0 12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:18px;border:1px solid #303030;background:#111;color:#eee;line-height:1.5}</style></head><body><span class="local">Local Smartlinks preview</span><h1>${escapeHtml(heading)}</h1><pre>${escapeHtml(detail)}</pre></body></html>`,
-    {
-      status,
-      headers: {
-        "cache-control": "no-store",
-        "content-security-policy":
-          "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
-        "content-type": "text/html; charset=utf-8",
-        "cross-origin-resource-policy": "same-origin",
-        "referrer-policy": "no-referrer",
-        "x-content-type-options": "nosniff",
-        "x-frame-options": "DENY",
+  return hardenResponse(
+    new Response(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>:root{color-scheme:dark;font-family:ui-sans-serif,system-ui,sans-serif;background:#090909;color:#f3f3f3}body{width:min(calc(100% - 32px),760px);margin:48px auto;line-height:1.55}.local{display:inline-block;padding:4px 9px;border:1px solid #3d725f;border-radius:999px;color:#8de0bf;background:#0c1d17;font-size:13px;font-weight:700}h1{font-size:28px;margin:18px 0 12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;padding:18px;border:1px solid #303030;background:#111;color:#eee;line-height:1.5}</style></head><body><span class="local">Local Smartlinks preview</span><h1>${escapeHtml(heading)}</h1><pre>${escapeHtml(detail)}</pre></body></html>`,
+      {
+        status,
+        headers: {
+          "cache-control": "no-store",
+          "content-type": "text/html; charset=utf-8",
+          "cross-origin-resource-policy": "same-origin",
+        },
       },
-    },
+    ),
   );
 }
 
@@ -206,7 +204,11 @@ async function handleRequest(
       throw new ServeRequestError(404, "Only the root path is served locally.");
     }
     if (isPreviewRequest(request)) {
-      await writeResponse(incoming.method, outgoing, new Response(null, { status: 200 }));
+      await writeResponse(
+        incoming.method,
+        outgoing,
+        new Response(null, { status: 200, headers: { [SMARTLINKS_PREVIEW_HEADER]: "1" } }),
+      );
       return;
     }
 
