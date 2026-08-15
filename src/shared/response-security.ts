@@ -12,6 +12,7 @@ const RUNTIME_SECURITY_HEADERS = {
 /** Applies the security policy owned by the Smartlinks runtime to a final response. */
 export function hardenResponse(response: Response): Response {
   const headers = new Headers(response.headers);
+  headers.delete(SMARTLINKS_PREVIEW_HEADER);
 
   // Separate CSP policies are enforced together, so an author can tighten the runtime policy
   // without weakening it.
@@ -20,6 +21,17 @@ export function hardenResponse(response: Response): Response {
     headers.set(name, value);
   }
 
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/** Marks a response that deliberately did not execute guest code. */
+export function markPreviewResponse(response: Response): Response {
+  const headers = new Headers(response.headers);
+  headers.set(SMARTLINKS_PREVIEW_HEADER, "1");
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

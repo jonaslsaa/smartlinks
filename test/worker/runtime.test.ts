@@ -82,6 +82,7 @@ describe("Worker routes", () => {
           "referrer-policy": "unsafe-url",
           "x-content-type-options": "off",
           "x-frame-options": "SAMEORIGIN",
+          "x-smartlinks-preview": "1",
           "x-runtime": "quickjs"
         },
         body: \`\${ctx.params.name}:\${ctx.secrets.TOKEN}\`

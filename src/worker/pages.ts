@@ -2,7 +2,7 @@ import type { AuthorVerification } from "../shared/author.js";
 import type { DecodedPayload } from "../shared/codec.js";
 import { formatNotAfter } from "../shared/codec.js";
 import { payloadFacts } from "../shared/payload-facts.js";
-import { SMARTLINKS_PREVIEW_HEADER } from "../shared/response-security.js";
+import { markPreviewResponse } from "../shared/response-security.js";
 import { formatStoredScript } from "../shared/script.js";
 import { escapeHtml, html } from "./http.js";
 
@@ -78,17 +78,14 @@ export function previewPage(
   author: AuthorVerification,
   head = false,
 ): Response {
-  const response = html(
-    page(
-      "Smartlink preview",
-      `<h1>Smartlink</h1><p>This URL contains a small program. Preview requests never execute it.</p>${authorHtml(author)}${factsHtml(decoded)}`,
+  const response = markPreviewResponse(
+    html(
+      page(
+        "Smartlink preview",
+        `<h1>Smartlink</h1><p>This URL contains a small program. Preview requests never execute it.</p>${authorHtml(author)}${factsHtml(decoded)}`,
+      ),
+      { headers: { "cache-control": "no-store" } },
     ),
-    {
-      headers: {
-        "cache-control": "no-store",
-        [SMARTLINKS_PREVIEW_HEADER]: "1",
-      },
-    },
   );
   return head ? new Response(null, response) : response;
 }

@@ -438,6 +438,7 @@ return {
     "referrer-policy": "unsafe-url",
     "x-content-type-options": "off",
     "x-frame-options": "SAMEORIGIN",
+    "x-smartlinks-preview": "1",
     "x-smartlinks-serve": "yes",
   },
   body: JSON.stringify({
@@ -467,6 +468,7 @@ return {
         first.headers.get("content-security-policy")?.includes("img-src https://images.example"),
       );
       assertRuntimeSecurityHeaders(first.headers);
+      assert.equal(first.headers.get("x-smartlinks-preview"), null);
       assert.deepEqual(await first.json(), {
         params: { tag: "two" },
         paramValues: { tag: ["one", "two"] },
