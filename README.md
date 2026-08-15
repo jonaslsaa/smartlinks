@@ -86,7 +86,7 @@ Smartlink scripts receive one small `ctx` object:
 | `ctx.params` | Query parameters |
 | `ctx.paramValues` | Every value for repeated query parameters |
 | `ctx.method` | Incoming HTTP method |
-| `ctx.headers` | Incoming headers with lowercase names |
+| `ctx.headers` | Incoming headers with lowercase names, excluding `cookie` |
 | `ctx.body` | Request body as a string, or `null` |
 | `ctx.secrets` | Decrypted plaintext values, keyed by secret name |
 | `ctx.requestId` | Opaque ID for correlating one execution |
@@ -111,7 +111,11 @@ Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? 
 response, return `{ status?, headers?, bodyBase64 }` for bytes, or return nothing for a small
 success page. `body` and `bodyBase64` are mutually exclusive. Binary responses are limited to
 1 MiB after decoding and default to `application/octet-stream` when no content type is supplied.
-Top-level `await` works.
+Every response receives the runtime's fixed Content Security Policy, `Referrer-Policy: no-referrer`,
+`X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`. An author CSP can tighten but not
+replace that floor. Other headers remain author-controlled except `Set-Cookie` and
+`Clear-Site-Data`; browser cookie state is deliberately unsupported. The runtime also reserves
+`X-Smartlinks-Preview` so executed responses cannot impersonate previews. Top-level `await` works.
 
 ## Mint a link from a link
 
@@ -226,6 +230,10 @@ include `--secret`, `--expires`, `--interstitial`, `--sign`, `--copy`, `--out`, 
 note and implies `--interstitial`. `--expires` accepts a duration such as `30m`, `1h`, or `7d`, or an
 absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
 running the script; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
+Those previews carry `x-smartlinks-preview: 1`. Its presence confirms that the request did not
+execute guest code only on the immediate response from the configured Smartlinks runtime: disable
+redirect following and verify the response origin before trusting it. Absence alone does not prove
+that execution occurred.
 Local networking is off by default; opt in with `smartlinks run --allow-network`. To inspect a
 networked script without sending requests, use `smartlinks run script.ts --simulate`. It runs one
 deterministic path with the real fetch guards, records fetches and locally compiled child hops,

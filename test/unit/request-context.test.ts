@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createRequestId,
+  guestRequestHeaders,
   localRequestBody,
   lowercaseHeaders,
   readBoundedRequestBody,
@@ -27,6 +28,12 @@ describe("request context normalization", () => {
     expect(lowercaseHeaders([["Content-Type", "application/json"]], true)).toEqual({
       "content-type": "application/json",
     });
+    expect(
+      guestRequestHeaders([
+        ["Cookie", "ambient=state"],
+        ["X-Test", "visible"],
+      ]),
+    ).toEqual({ "x-test": "visible" });
     expect(() =>
       lowercaseHeaders(
         [

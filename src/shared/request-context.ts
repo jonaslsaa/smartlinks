@@ -45,6 +45,14 @@ export function lowercaseHeaders(
   return headers;
 }
 
+export function guestRequestHeaders(
+  entries: Iterable<readonly [string, string]>,
+): Record<string, string> {
+  const headers = lowercaseHeaders(entries);
+  delete headers.cookie;
+  return headers;
+}
+
 export function localRequestBody(method: string, body: string | undefined): string | null {
   if (method === "GET" || method === "HEAD") {
     if (body !== undefined) {
