@@ -10,6 +10,10 @@ filename ends in `.ts`, transpiles it, optionally minifies the emitted JavaScrip
 exact stored wrapper with QuickJS, seals requested secrets, compresses the payload, and returns
 an execution URL. No script or per-link record is stored by the service.
 
+An optional author signature is also self-contained. `smartlinks login` verifies GitHub once,
+creates a dedicated local Ed25519 key, and receives a compact Smartlinks certificate. Building,
+decoding, previewing, and executing signed links make no GitHub request.
+
 The execution URL carries the script and encrypted secret blobs. A Cloudflare Worker decodes the
 payload, decrypts secrets, creates a fresh QuickJS runtime, supplies a small request context, and
 maps the script's return value to an HTTP response.
@@ -204,6 +208,7 @@ execution and validation path.
 - `--out FILE`: write the execution URL to a file and print only a compact size receipt. New and
   existing output files are set to owner-only permissions on POSIX systems.
 - `--json`: emit machine-readable output only.
+- `--sign`: sign every immutable payload field with the identity configured by `smartlinks login`.
 - `--no-type-check`: skip strict semantic checking for TypeScript; syntax must still transpile.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
 
@@ -283,6 +288,17 @@ writing binary data to the terminal.
 executing it or decrypting secrets. It renders `notAfter` as an absolute UTC timestamp and marks
 links whose deadline has passed. It also displays any author-provided note and the same payload
 facts shown by the browser interstitial.
+
+`smartlinks login` runs a zero-permission GitHub App device flow, generates a local author key, and
+stores only that private key and its 90-day Smartlinks certificate. The temporary GitHub token is
+discarded during issuance. `smartlinks logout` removes the local author identity. A build requested
+with `--sign` fails rather than silently becoming unsigned when no valid certificate exists.
+
+Signing is provenance, not endorsement or additional authority. The Worker rejects invalid signed
+artifacts before execution, while unsigned links remain valid. An expired certificate leaves the
+artifact signature intact but reports `author certificate expired`; without a transparency log,
+the runtime cannot trust a signing timestamp supplied by the author. Compiled children are separate
+artifacts and remain unsigned. `decode` verifies locally and never contacts GitHub.
 
 ## Secrets and authority
 

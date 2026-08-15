@@ -1,4 +1,5 @@
 import { Aes128Gcm, CipherSuite, DhkemX25519HkdfSha256, HkdfSha256 } from "@hpke/core";
+import type { AuthorCertificate } from "./author.js";
 import { concatBytes, fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
 import type { DecodedPayload, Envelope, PayloadVersion } from "./codec.js";
 
@@ -23,23 +24,26 @@ export type LegacySecretBinding = {
   notAfter?: number;
 };
 
-export type ArtifactSecretBinding = {
-  authority: 1;
+type ArtifactIdentityFields = {
   version: PayloadVersion;
   script: string;
   closures: readonly string[];
   notAfter?: number;
   interstitial: boolean;
   interstitialNote?: string;
+};
+
+type ArtifactSecretFields = ArtifactIdentityFields & {
   secretName: string;
 };
 
+export type ArtifactSecretBinding =
+  | (ArtifactSecretFields & { authority: 1; authorCertificate?: never })
+  | (ArtifactSecretFields & { authority: 2; authorCertificate: AuthorCertificate });
+
 export type SecretBinding = LegacySecretBinding | ArtifactSecretBinding;
 
-export type ArtifactIdentity = Pick<
-  ArtifactSecretBinding,
-  "version" | "script" | "closures" | "notAfter" | "interstitial" | "interstitialNote"
->;
+export type ArtifactIdentity = ArtifactIdentityFields;
 
 function artifactIdentityValues(identity: ArtifactIdentity): readonly unknown[] {
   const values = [
@@ -71,11 +75,15 @@ export function payloadArtifactIdentity(
 
 export function artifactSecretBinding(
   version: PayloadVersion,
-  envelope: Pick<Envelope, "s" | "c" | "i" | "notAfter" | "interstitialNote">,
+  envelope: Pick<Envelope, "s" | "c" | "i" | "a" | "notAfter" | "interstitialNote">,
   secretName: string,
+  authorCertificate?: AuthorCertificate,
 ): ArtifactSecretBinding {
-  return {
-    authority: 1,
+  const signedAuthority = envelope.a === 2;
+  if (signedAuthority !== (authorCertificate !== undefined)) {
+    throw new Error("Signed sealed secrets require their author certificate.");
+  }
+  const fields: ArtifactSecretFields = {
     version,
     script: envelope.s,
     closures: envelope.c ?? [],
@@ -86,11 +94,19 @@ export function artifactSecretBinding(
       : { interstitialNote: envelope.interstitialNote }),
     secretName,
   };
+  return authorCertificate === undefined
+    ? { ...fields, authority: 1 }
+    : { ...fields, authority: 2, authorCertificate };
 }
 
 function payloadSecretBinding(decoded: DecodedPayload, secretName: string): SecretBinding {
-  if (decoded.envelope.a === 1) {
-    return artifactSecretBinding(decoded.version, decoded.envelope, secretName);
+  if (decoded.envelope.a === 1 || decoded.envelope.a === 2) {
+    return artifactSecretBinding(
+      decoded.version,
+      decoded.envelope,
+      secretName,
+      decoded.envelope.a === 2 ? decoded.envelope.u?.[0] : undefined,
+    );
   }
   if (decoded.envelope.c?.length) {
     throw new Error("Sealed compile closures require complete-artifact binding.");
@@ -133,14 +149,19 @@ async function aad(keyId: number, binding: SecretBinding): Promise<Uint8Array> {
     );
   }
 
-  const artifact = JSON.stringify([...artifactIdentityValues(binding), binding.secretName]);
+  const artifactFields = [...artifactIdentityValues(binding), binding.secretName];
+  const artifact = JSON.stringify(
+    binding.authority === 1
+      ? artifactFields
+      : [binding.authority, ...artifactFields, binding.authorCertificate],
+  );
   const artifactHash = await crypto.subtle.digest(
     "SHA-256",
     Uint8Array.from(utf8(artifact)).buffer,
   );
   return concatBytes(
     Uint8Array.of(keyId),
-    utf8("smartlinks/authority/v1"),
+    utf8(`smartlinks/authority/v${binding.authority}`),
     new Uint8Array(artifactHash),
   );
 }

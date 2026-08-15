@@ -16,6 +16,8 @@
   ],
   "vars": {
     "ACTIVE_KEY_ID": "1",
+    "AUTHOR_CA_KEY_ID": "1",
+    "AUTHOR_CA_PUBLIC_KEY_1": "iIakS3SEmbDXHtqGGsDhiQTGgx8yB9G6orxyHyqAIwc",
     "LANDING_URL": "https://smartlinks.jonaslsa.com/",
     "RUNTIME_HOSTNAMES": ["s.jonaslsa.com"]
   },
@@ -25,6 +27,14 @@
       "namespace_id": "20260815",
       "simple": {
         "limit": 60,
+        "period": 60
+      }
+    },
+    {
+      "name": "IDENTITY_RATE_LIMITER",
+      "namespace_id": "20260816",
+      "simple": {
+        "limit": 30,
         "period": 60
       }
     }
