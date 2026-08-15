@@ -54,13 +54,7 @@ headers do not supply a content type. `content-disposition` remains author-contr
 `ctx.crypto.open(token, options?)` authenticates it and returns the value, throwing on any
 tampered, truncated, foreign, or mismatched token. Each call is one of the 16 cryptographic
 operations. Tokens let a link hand the client state the client can neither read nor forge and
-recover it on a later request: stateless sessions and wizards, hidden answers, cooldown
-timestamps, signed cursors.
-
-```ts
-const state = ctx.params.s ? await ctx.crypto.open(ctx.params.s) : { step: 1, answers: [] };
-const next = await ctx.crypto.seal({ ...state, step: state.step + 1 }, { context: "wizard" });
-```
+recover it on a later request.
 
 Without options, the token is bound to the exact artifact: only a byte-identical link (same
 script, closures, expiry, interstitial flag) can open it. Rebuilding with any change rotates the
@@ -79,6 +73,37 @@ Tokens are replayable: the holder can resend an old one, and statelessness makes
 impossible. Patterns that care embed a timestamp in the value and check it after opening. Local
 `smartlinks run` executions derive tokens from an ephemeral per-run key, so local and production
 tokens never interoperate; behavior is otherwise identical.
+
+What this looks like in practice:
+
+**Wizard** — a multi-step form whose whole session lives in one query parameter.
+
+```ts
+const state = ctx.params.s ? await ctx.crypto.open(ctx.params.s) : { step: 1, answers: [] };
+const next = await ctx.crypto.seal({ ...state, step: state.step + 1 }, { context: "wizard" });
+```
+
+**Hidden answer** — the solution rides inside the link's own URL, checkable but unreadable.
+
+```ts
+const answer = await ctx.crypto.open(ctx.params.a, { context: "answer" });
+return { body: ctx.params.guess === answer ? "Correct!" : "Try again." };
+```
+
+**Cooldown** — stateless rate limiting; the client carries its own timer.
+
+```ts
+const last = ctx.params.t ? await ctx.crypto.open(ctx.params.t, { context: "cooldown" }) : 0;
+if (Date.now() - last < 60_000) return { status: 429, body: "Wait a minute." };
+const t = await ctx.crypto.seal(Date.now(), { context: "cooldown" });
+```
+
+**Voucher** — one link issues a claim, a different link redeems it, via a shared `@random` key.
+
+```ts
+return ctx.crypto.seal({ user: ctx.params.user }, { key: ctx.secrets.VOUCHER_KEY }); // issuer
+const claim = await ctx.crypto.open(ctx.params.v, { key: ctx.secrets.VOUCHER_KEY }); // redeemer
+```
 
 ### Runtime compilation
 
