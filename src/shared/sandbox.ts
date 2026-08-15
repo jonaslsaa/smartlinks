@@ -223,6 +223,28 @@ const webApiBootstrap = `
     value: async (input, init) => new SmartlinksResponse(await hostFetch(input, init)),
   });
 
+  {
+    const cryptoApi = globalThis.__smartlinks_ctx.crypto;
+    const hostSeal = cryptoApi.seal;
+    const hostOpen = cryptoApi.open;
+    const checkTokenOptions = (options) => {
+      if (
+        options !== null &&
+        typeof options === "object" &&
+        reflectApply(hasOwnProperty, options, ["key"]) &&
+        options.key === undefined
+      ) {
+        throw new CompileError(
+          'The token key is undefined. Pass a string of at least 16 bytes or omit "key".',
+        );
+      }
+      return options;
+    };
+    cryptoApi.seal = (value, options) =>
+      hostSeal(jsonStringify(value), checkTokenOptions(options));
+    cryptoApi.open = (token, options) => hostOpen(token, checkTokenOptions(options));
+  }
+
   if (hostCompile && beginCompile) {
     Object.defineProperty(globalThis.__smartlinks_ctx, "compile", {
       configurable: true,
@@ -446,9 +468,15 @@ export async function runScriptWithModule(
         );
       },
     );
-    const sealHandle = asyncHostFunction("seal", async (value, options) =>
-      guestCrypto.seal(value, options as GuestTokenOptions),
-    );
+    const sealHandle = asyncHostFunction("seal", async (serialized, options) => {
+      if (serialized !== undefined && typeof serialized !== "string") {
+        throw new TypeError("seal requires a JSON-serializable value.");
+      }
+      return guestCrypto.seal(
+        serialized === undefined ? undefined : JSON.parse(serialized),
+        options as GuestTokenOptions,
+      );
+    });
     const openHandle = asyncHostFunction("open", async (token, options) => {
       if (typeof token !== "string") {
         throw new TypeError("open requires a token string.");

@@ -56,53 +56,63 @@ tampered, truncated, foreign, or mismatched token. Each call is one of the 16 cr
 operations. Tokens let a link hand the client state the client can neither read nor forge and
 recover it on a later request.
 
-Without options, the token is bound to the exact artifact: only a byte-identical link (same
-script, closures, expiry, interstitial flag) can open it. Rebuilding with any change rotates the
+Without options, the token is bound to the exact artifact: only a link with identical script,
+closures, expiry, and interstitial flag can open it. Rebuilding with any change rotates the
 key and invalidates outstanding tokens; that is the identity model working as intended. Children
 minted with `ctx.compile` are distinct artifacts and never share transparent tokens with their
 parent.
 
 `options.key` (a string of at least 16 bytes) skips artifact binding, so tokens survive rebuilds
-and cross between cooperating links. Seal the same key into each link with
-`--secret VOUCHER_KEY=@random`: the CLI generates 32 random bytes, seals them, and never prints
-them; reuse the generated value through the environment when building the counterpart link.
-`options.context` domain-separates tokens — a token sealed with `{ context: "cooldown" }` opens
-only with that context, so a cooldown token cannot be replayed where a cursor is expected.
+and cross between cooperating links. For two independently built links, generate the key once and
+supply it through the environment for both builds — `export VOUCHER_KEY=$(openssl rand -base64
+32)`, then `--secret VOUCHER_KEY` on each. `--secret NAME=@random` instead seals a fresh 32-byte
+key that nobody, including the author, ever sees; each build generates its own, so it suits a key
+shared only downward from a parent into its `ctx.compile` children via the `seal` option, never a
+key two separate builds must agree on. `options.context` domain-separates tokens — a token sealed
+with `{ context: "cooldown" }` opens only with that context, so a cooldown token cannot be
+replayed where a cursor is expected.
 
 Tokens are replayable: the holder can resend an old one, and statelessness makes true once-only
 impossible. Patterns that care embed a timestamp in the value and check it after opening. Local
-`smartlinks run` executions derive tokens from an ephemeral per-run key, so local and production
-tokens never interoperate; behavior is otherwise identical.
+executions derive tokens from an ephemeral per-process key — stable across the requests of one
+`run --serve` session, but local and production tokens never interoperate; behavior is otherwise
+identical.
 
 What this looks like in practice:
 
 **Wizard** — a multi-step form whose whole session lives in one query parameter.
 
 ```ts
-const state = ctx.params.s ? await ctx.crypto.open(ctx.params.s) : { step: 1, answers: [] };
+const state = ctx.params.s
+  ? await ctx.crypto.open<{ step: number; answers: string[] }>(ctx.params.s, { context: "wizard" })
+  : { step: 1, answers: [] };
 const next = await ctx.crypto.seal({ ...state, step: state.step + 1 }, { context: "wizard" });
 ```
 
 **Hidden answer** — the solution rides inside the link's own URL, checkable but unreadable.
 
 ```ts
-const answer = await ctx.crypto.open(ctx.params.a, { context: "answer" });
+if (!ctx.params.a) return { status: 400, body: "Missing the sealed answer." };
+const answer = await ctx.crypto.open<string>(ctx.params.a, { context: "answer" });
 return { body: ctx.params.guess === answer ? "Correct!" : "Try again." };
 ```
 
 **Cooldown** — stateless rate limiting; the client carries its own timer.
 
 ```ts
-const last = ctx.params.t ? await ctx.crypto.open(ctx.params.t, { context: "cooldown" }) : 0;
+const last = ctx.params.t ? await ctx.crypto.open<number>(ctx.params.t, { context: "cooldown" }) : 0;
 if (Date.now() - last < 60_000) return { status: 429, body: "Wait a minute." };
 const t = await ctx.crypto.seal(Date.now(), { context: "cooldown" });
 ```
 
-**Voucher** — one link issues a claim, a different link redeems it, via a shared `@random` key.
+**Voucher** — one link issues a claim, a different link redeems it, via the shared key above.
 
 ```ts
-return ctx.crypto.seal({ user: ctx.params.user }, { key: ctx.secrets.VOUCHER_KEY }); // issuer
-const claim = await ctx.crypto.open(ctx.params.v, { key: ctx.secrets.VOUCHER_KEY }); // redeemer
+return ctx.crypto.seal({ user: ctx.params.user ?? "" }, { key: ctx.secrets.VOUCHER_KEY! }); // issuer
+```
+
+```ts
+const claim = await ctx.crypto.open(ctx.params.v!, { key: ctx.secrets.VOUCHER_KEY! }); // redeemer
 ```
 
 ### Runtime compilation

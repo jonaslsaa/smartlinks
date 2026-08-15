@@ -117,8 +117,29 @@ async function deriveTokenKey(
   );
 }
 
+// The token version byte is unauthenticated; a future token version must also change this
+// AAD string.
 function tokenAad(context: string | undefined): Uint8Array<ArrayBuffer> {
   return bufferSource(utf8(`smartlinks/guest-token/v1 ${context ?? ""}`));
+}
+
+function parseTokenOptions(rawOptions: unknown): GuestTokenOptions {
+  if (
+    rawOptions !== null &&
+    typeof rawOptions === "object" &&
+    "key" in rawOptions &&
+    rawOptions.key === undefined
+  ) {
+    throw new Error(
+      'The token key is undefined. Pass a string of at least 16 bytes or omit "key".',
+    );
+  }
+  const parsed = tokenOptionsSchema.safeParse(rawOptions);
+  if (!parsed.success) {
+    const detail = parsed.error.issues.map((issue) => issue.message).join("; ");
+    throw new Error(`Invalid token options: ${detail}`);
+  }
+  return parsed.data;
 }
 
 export function createGuestCrypto(
@@ -144,7 +165,9 @@ export function createGuestCrypto(
       return deriveTokenKey(cryptoImpl, keyBytes, new Uint8Array(0), EXPLICIT_KEY_INFO);
     }
     if (tokenKeySource?.masterSecret === undefined) {
-      throw new Error("The transparent token key is not configured in this runtime.");
+      throw new Error(
+        "The transparent token key is not configured in this runtime. Set the TOKEN_MASTER_SECRET Worker secret, or pass an explicit key.",
+      );
     }
     const { masterSecret, artifactIdentity } = tokenKeySource;
     transparentKey ??= (async () =>
@@ -194,7 +217,7 @@ export function createGuestCrypto(
       if (serialized === undefined) {
         throw new TypeError("seal requires a JSON-serializable value.");
       }
-      const options = tokenOptionsSchema.parse(rawOptions);
+      const options = parseTokenOptions(rawOptions);
       guard(serialized, options?.key ?? "", options?.context ?? "");
       const key = await tokenKey(options);
       const nonce = cryptoImpl.getRandomValues(new Uint8Array(TOKEN_NONCE_BYTES));
@@ -211,7 +234,7 @@ export function createGuestCrypto(
       if (typeof token !== "string") {
         throw new TypeError("open requires a token string.");
       }
-      const options = tokenOptionsSchema.parse(rawOptions);
+      const options = parseTokenOptions(rawOptions);
       guard(token, options?.key ?? "", options?.context ?? "");
       let bytes: Uint8Array;
       try {
@@ -219,12 +242,12 @@ export function createGuestCrypto(
       } catch {
         throw new Error("The token is not a valid base64url value.");
       }
-      if (bytes[0] !== TOKEN_VERSION) {
-        throw new Error("The token has an unsupported version.");
-      }
       const ciphertextStart = 1 + TOKEN_NONCE_BYTES;
       if (bytes.byteLength < ciphertextStart + TOKEN_TAG_BYTES) {
         throw new Error("The token is truncated.");
+      }
+      if (bytes[0] !== TOKEN_VERSION) {
+        throw new Error("The token has an unsupported version.");
       }
       const key = await tokenKey(options);
       let plaintext: ArrayBuffer;

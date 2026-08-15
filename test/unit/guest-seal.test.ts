@@ -91,9 +91,23 @@ describe("guest token seal/open", () => {
     await expect(guest().seal("value", { key: EXPLICIT_KEY })).resolves.toBeDefined();
   });
 
-  it("rejects unserializable values and unknown options", async () => {
+  it("rejects unserializable values and reports readable option errors", async () => {
     await expect(link().seal(undefined)).rejects.toThrow("JSON-serializable");
-    await expect(link().seal(1, { keys: EXPLICIT_KEY } as never)).rejects.toThrow();
+    await expect(link().seal(1, { keys: EXPLICIT_KEY } as never)).rejects.toThrow(
+      "Invalid token options",
+    );
+    await expect(link().seal(1, { key: undefined } as never)).rejects.toThrow('omit "key"');
+    await expect(link().open("")).rejects.toThrow("truncated");
+  });
+
+  it("pins the artifact canonicalization and token construction", async () => {
+    expect(identity("return 1")).toBe('["2","return 1",[],null,false]');
+    const golden = guest({ masterSecret: "golden-master", artifactIdentity: identity("return 1") });
+    await expect(
+      golden.open("AazT-6Pw89AnnibljgzCknYUhTH3zZr-PPkPE3lQSlSf64HV85-fu19lERq7QBEaNf4", {
+        context: "golden",
+      }),
+    ).resolves.toEqual({ golden: true, n: 7 });
   });
 
   it("charges the crypto budget and enforces the input cap", async () => {

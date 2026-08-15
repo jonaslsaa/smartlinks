@@ -63,10 +63,10 @@ type __SmartlinksContext = {
       value: __SmartlinksJson,
       options?: { key?: string; context?: string },
     ): Promise<string>;
-    open(
+    open<T extends __SmartlinksJson = __SmartlinksJson>(
       token: string,
       options?: { key?: string; context?: string },
-    ): Promise<__SmartlinksJson>;
+    ): Promise<T>;
   };
   compile: __SmartlinksCompile;
 };

@@ -98,6 +98,18 @@ describe("Worker routes", () => {
     expect(rejected.status).toBe(422);
   });
 
+  it("fails transparent tokens with 422 when the master secret is unset", async () => {
+    const created = await createSmartlink({
+      source: `return { body: await ctx.crypto.seal(1) }`,
+      service: origin,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const { TOKEN_MASTER_SECRET: _unset, ...env } = testEnv();
+    const response = await worker.fetch(new Request(created.link), env as Env);
+    expect(response.status).toBe(422);
+  });
+
   it("blocks guest fetches to the active runtime and configured aliases", async () => {
     for (const hostname of ["runtime.example", "s.jonaslsa.com"]) {
       const created = await createSmartlink({

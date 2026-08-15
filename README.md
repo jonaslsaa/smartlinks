@@ -65,6 +65,7 @@ program without running it.
 | Render a badge from query parameters | [SVG status badge](examples/badge.js) |
 | Translate one webhook into another | [Webhook adapter](examples/webhook-adapter.js) |
 | Trigger an authenticated action | [GitHub workflow dispatch](examples/github-workflow-dispatch.js) |
+| Hide a secret inside the link itself | [Riddle with a sealed answer](examples/riddle.js) |
 | Write the function body in TypeScript | [Typed response](examples/typed-response.ts) |
 
 Smartlink scripts receive one small `ctx` object:
@@ -167,8 +168,9 @@ voucher issued by one link and redeemed by another.
 
 Only the exact link that sealed a token can open it — edit and rebuild the script, and old tokens
 die with the old link. For tokens that must survive rebuilds or travel between two different
-links, seal a shared key into each with `--secret VOUCHER_KEY=@random` and pass
-`{ key: ctx.secrets.VOUCHER_KEY }`. Tokens are replayable — a visitor can present an old one
+links, generate a key once (`export VOUCHER_KEY=$(openssl rand -base64 32)`), seal it into each
+build with `--secret VOUCHER_KEY`, and pass `{ key: ctx.secrets.VOUCHER_KEY }`. Tokens are
+replayable — a visitor can present an old one
 again — so anything time-sensitive should carry its own timestamp. Copyable versions of all four
 patterns are in the [agent guide](public/smartlinks-for-agents.md).
 
@@ -296,9 +298,11 @@ npm run dev
 ```
 
 To deploy your own runtime, run `npx wrangler deploy`, then provision its key with the internal
-`node dist/index.js keygen --key-id 1 --set-worker` command. Set `SMARTLINKS_URL` to the new
-Worker URL when building links. Keep `RUNTIME_HOSTNAMES` in `wrangler.jsonc` synchronized with
-every public hostname that can reach the Worker. Never commit `.dev.vars`.
+`node dist/index.js keygen --key-id 1 --set-worker` command and set the token master secret with
+`npx wrangler secret put TOKEN_MASTER_SECRET` (any long random string; without it, `ctx.crypto.seal`
+without an explicit key fails). Set `SMARTLINKS_URL` to the new Worker URL when building links.
+Keep `RUNTIME_HOSTNAMES` in `wrangler.jsonc` synchronized with every public hostname that can
+reach the Worker. Never commit `.dev.vars`.
 
 ---
 

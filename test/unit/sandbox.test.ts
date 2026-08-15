@@ -111,6 +111,11 @@ describe("QuickJS sandbox", () => {
     );
   });
 
+  it("rejects non-JSON seal values and undefined keys at the guest bridge", async () => {
+    await expect(run(`await ctx.crypto.seal(() => 1)`)).rejects.toThrow("JSON-serializable");
+    await expect(run(`await ctx.crypto.seal(1, { key: undefined })`)).rejects.toThrow('omit "key"');
+  });
+
   it("allows only one compile attempt, including after a rejected first attempt", async () => {
     const compile = vi.fn(async () => {
       throw new Error("first compile rejected");

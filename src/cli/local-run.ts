@@ -25,6 +25,8 @@ import type { LocalSimulation } from "./simulation.js";
 
 const LOCAL_SERVICE_URL = "https://smartlinks.local";
 const MAX_COMPILE_REDIRECTS = 10;
+// Process-wide so tokens survive across the requests of one `run --serve` session.
+const masterSecret = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 
 type LocalProgram = {
   source: string;
@@ -62,7 +64,6 @@ async function execute(
   context: SandboxContext,
   createGuestFetch: () => GuestFetch,
   getLocalKey: () => Promise<GeneratedKeyPair>,
-  masterSecret: string,
 ): Promise<ScriptResult> {
   const cryptoBudget = createCryptoOperationBudget();
   return runScript({
@@ -119,7 +120,6 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     localKey ??= generateKeyPair(1);
     return localKey;
   };
-  const masterSecret = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   let decoded: DecodedPayload = {
     version: "2",
     envelope: {
@@ -128,7 +128,7 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     },
   };
   let context = program.context;
-  let result = await execute(decoded, context, createGuestFetch, getLocalKey, masterSecret);
+  let result = await execute(decoded, context, createGuestFetch, getLocalKey);
 
   for (let followed = 0; ; followed += 1) {
     const url = compiledUrl(result);
@@ -157,6 +157,6 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
       secrets,
       requestId: createRequestId(),
     };
-    result = await execute(decoded, context, createGuestFetch, getLocalKey, masterSecret);
+    result = await execute(decoded, context, createGuestFetch, getLocalKey);
   }
 }
