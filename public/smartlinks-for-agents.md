@@ -32,10 +32,19 @@ The script receives `ctx` with:
 - `secrets`: decrypted values keyed by the names supplied during build.
 - `requestId`: an opaque per-execution correlation ID.
 - `crypto`: `sha256(message, encoding?)`, `hmacSha256(key, message, encoding?)`,
-  `verifyHmacSha256(key, message, signature, encoding?)` (constant-time), and the `seal`/`open`
+  `verifyHmacSha256(key, message, signature, encoding?)` (constant-time),
+  `random(byteCount, encoding?)` drawing up to 256 bytes of host entropy, and the `seal`/`open`
   token helpers below. Inputs are strings; encoding is lowercase `hex` (default) or `base64`.
-  At most 16 cryptographic operations per execution, 1 MiB of string input each.
+  At most 16 cryptographic operations per execution, 1 MiB of string input per hashing or HMAC
+  operation.
 - `compile`: mint one child Smartlink from a statically packaged closure.
+
+Prefer deriving values with `hmacSha256(ctx.secrets.KEY!, ctx.requestId + counter)` when the link
+already holds a sealed key; use `random` when it must originate a fresh secret — `Math.random` is
+not cryptographically secure. Simulation substitutes a reproducible stream for explicit `random`
+calls, with distinct bytes on successive calls across the whole simulated parent/child chain.
+Browser-compatible globals `btoa(value)` and `atob(value)` encode and decode Latin-1 binary
+strings — the standard Base64 that `bodyBase64` accepts.
 
 Global `fetch(url, options)` accepts a string URL, method, plain headers, and a string body, and
 returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirected`, `headers`,

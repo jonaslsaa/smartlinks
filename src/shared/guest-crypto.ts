@@ -4,6 +4,7 @@ import { concatBytes, fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js"
 const encodingSchema = z.enum(["hex", "base64"]);
 export type GuestCryptoEncoding = z.infer<typeof encodingSchema>;
 export const MAX_CRYPTO_OPERATIONS = 16;
+export const MAX_RANDOM_BYTES = 256;
 const MAX_CRYPTO_INPUT_BYTES = 1_048_576;
 export const MIN_TOKEN_KEY_BYTES = 16;
 const TOKEN_VERSION = 1;
@@ -26,6 +27,7 @@ export type GuestTokenKeySource = {
 };
 
 export type GuestCrypto = {
+  random(byteCount: number, encoding?: GuestCryptoEncoding): Promise<string>;
   sha256(message: string, encoding?: GuestCryptoEncoding): Promise<string>;
   hmacSha256(key: string, message: string, encoding?: GuestCryptoEncoding): Promise<string>;
   verifyHmacSha256(
@@ -42,10 +44,27 @@ export type CryptoOperationBudget = {
   consume(count?: number): void;
 };
 
+export type GuestRandomBytes = (byteCount: number) => Uint8Array;
+
+export type GuestCryptoOptions = {
+  crypto?: Crypto;
+  budget?: CryptoOperationBudget;
+  tokenKeySource?: GuestTokenKeySource;
+  randomBytes?: GuestRandomBytes;
+};
+
 const encoder = new TextEncoder();
 
-function encode(bytes: ArrayBuffer, encoding: GuestCryptoEncoding): string {
-  const view = new Uint8Array(bytes);
+function parseEncoding(value: unknown): GuestCryptoEncoding {
+  const parsed = encodingSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new TypeError('Encoding must be "hex" or "base64".');
+  }
+  return parsed.data;
+}
+
+function encode(bytes: ArrayBuffer | Uint8Array, encoding: GuestCryptoEncoding): string {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   if (encoding === "hex") {
     return Array.from(view, (byte) => byte.toString(16).padStart(2, "0")).join("");
   }
@@ -142,11 +161,12 @@ function parseTokenOptions(rawOptions: unknown): GuestTokenOptions {
   return parsed.data;
 }
 
-export function createGuestCrypto(
-  cryptoImpl: Crypto = crypto,
-  budget: CryptoOperationBudget = createCryptoOperationBudget(),
-  tokenKeySource?: GuestTokenKeySource,
-): GuestCrypto {
+export function createGuestCrypto(configuration: GuestCryptoOptions = {}): GuestCrypto {
+  const cryptoImpl = configuration.crypto ?? crypto;
+  const budget = configuration.budget ?? createCryptoOperationBudget();
+  const randomBytes =
+    configuration.randomBytes ??
+    ((byteCount: number) => cryptoImpl.getRandomValues(new Uint8Array(byteCount)));
   const guard = (...values: string[]) => {
     budget.consume();
     const bytes = values.reduce((total, value) => total + encoder.encode(value).byteLength, 0);
@@ -164,12 +184,12 @@ export function createGuestCrypto(
       }
       return deriveTokenKey(cryptoImpl, keyBytes, new Uint8Array(0), EXPLICIT_KEY_INFO);
     }
-    if (tokenKeySource?.masterSecret === undefined) {
+    if (configuration.tokenKeySource?.masterSecret === undefined) {
       throw new Error(
         "The transparent token key is not configured in this runtime. Set the TOKEN_MASTER_SECRET Worker secret, or pass an explicit key.",
       );
     }
-    const { masterSecret, artifactIdentity } = tokenKeySource;
+    const { masterSecret, artifactIdentity } = configuration.tokenKeySource;
     transparentKey ??= (async () =>
       deriveTokenKey(
         cryptoImpl,
@@ -183,14 +203,29 @@ export function createGuestCrypto(
   };
 
   return {
+    async random(byteCount, rawEncoding = "hex") {
+      budget.consume();
+      if (!Number.isInteger(byteCount) || byteCount <= 0) {
+        throw new TypeError("random requires a positive integer byte count.");
+      }
+      if (byteCount > MAX_RANDOM_BYTES) {
+        throw new Error(`random may generate at most ${MAX_RANDOM_BYTES} bytes.`);
+      }
+      const encoding = parseEncoding(rawEncoding);
+      const bytes = randomBytes(byteCount);
+      if (!(bytes instanceof Uint8Array) || bytes.byteLength !== byteCount) {
+        throw new Error("The runtime returned an invalid number of random bytes.");
+      }
+      return encode(bytes, encoding);
+    },
     async sha256(message, rawEncoding = "hex") {
       guard(message);
-      const encoding = encodingSchema.parse(rawEncoding);
+      const encoding = parseEncoding(rawEncoding);
       return encode(await cryptoImpl.subtle.digest("SHA-256", encoder.encode(message)), encoding);
     },
     async hmacSha256(key, message, rawEncoding = "hex") {
       guard(key, message);
-      const encoding = encodingSchema.parse(rawEncoding);
+      const encoding = parseEncoding(rawEncoding);
       const signature = await cryptoImpl.subtle.sign(
         "HMAC",
         await hmacKey(cryptoImpl, key),
@@ -200,7 +235,7 @@ export function createGuestCrypto(
     },
     async verifyHmacSha256(key, message, signature, rawEncoding = "hex") {
       guard(key, message, signature);
-      const encoding = encodingSchema.parse(rawEncoding);
+      const encoding = parseEncoding(rawEncoding);
       const decoded = decode(signature, encoding);
       if (!decoded) {
         return false;

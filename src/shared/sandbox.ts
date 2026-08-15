@@ -13,6 +13,7 @@ import {
   createCryptoOperationBudget,
   createGuestCrypto,
   type GuestCrypto,
+  type GuestCryptoEncoding,
   type GuestTokenOptions,
 } from "./guest-crypto.js";
 import {
@@ -57,6 +58,8 @@ const webApiBootstrap = `
   const beginCompile = globalThis.__smartlinks_begin_compile;
   const hostCompile = globalThis.__smartlinks_host_compile;
   const CompileError = Error;
+  const WebApiTypeError = TypeError;
+  const StringConstructor = String;
   const arrayIsArray = Array.isArray;
   const arrayPush = Array.prototype.push;
   const hasOwnProperty = Object.prototype.hasOwnProperty;
@@ -71,11 +74,103 @@ const webApiBootstrap = `
   const objectSetPrototypeOf = Object.setPrototypeOf;
   const ownKeys = Reflect.ownKeys;
   const reflectApply = Reflect.apply;
+  const stringCharCodeAt = String.prototype.charCodeAt;
+  const stringFromCharCode = String.fromCharCode;
+  const stringIndexOf = String.prototype.indexOf;
+  const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   const arrayIndexPattern = /^(?:0|[1-9][0-9]*)$/;
   const regexpTest = RegExp.prototype.test;
   delete globalThis.__smartlinks_host_fetch;
   delete globalThis.__smartlinks_begin_compile;
   delete globalThis.__smartlinks_host_compile;
+
+  function invalidBase64Character(message) {
+    const error = new CompileError(message);
+    error.name = "InvalidCharacterError";
+    return error;
+  }
+
+  function btoa(value) {
+    if (arguments.length === 0) {
+      throw new WebApiTypeError("btoa requires an argument.");
+    }
+    if (typeof value === "symbol") {
+      throw new WebApiTypeError("btoa cannot convert a Symbol to a string.");
+    }
+    const input = StringConstructor(value);
+    let output = "";
+    for (let index = 0; index < input.length; index += 3) {
+      const first = reflectApply(stringCharCodeAt, input, [index]);
+      const hasSecond = index + 1 < input.length;
+      const hasThird = index + 2 < input.length;
+      const second = hasSecond ? reflectApply(stringCharCodeAt, input, [index + 1]) : 0;
+      const third = hasThird ? reflectApply(stringCharCodeAt, input, [index + 2]) : 0;
+      if (first > 255 || second > 255 || third > 255) {
+        throw invalidBase64Character(
+          "The string to be encoded contains characters outside of the Latin1 range.",
+        );
+      }
+      const bits = (first << 16) | (second << 8) | third;
+      output += base64Alphabet[(bits >> 18) & 63];
+      output += base64Alphabet[(bits >> 12) & 63];
+      output += hasSecond ? base64Alphabet[(bits >> 6) & 63] : "=";
+      output += hasThird ? base64Alphabet[bits & 63] : "=";
+    }
+    return output;
+  }
+
+  function atob(value) {
+    if (arguments.length === 0) {
+      throw new WebApiTypeError("atob requires an argument.");
+    }
+    if (typeof value === "symbol") {
+      throw new WebApiTypeError("atob cannot convert a Symbol to a string.");
+    }
+    const input = StringConstructor(value);
+    let cleaned = "";
+    for (let index = 0; index < input.length; index += 1) {
+      const code = reflectApply(stringCharCodeAt, input, [index]);
+      if (code !== 9 && code !== 10 && code !== 12 && code !== 13 && code !== 32) {
+        cleaned += stringFromCharCode(code);
+      }
+    }
+
+    let end = cleaned.length;
+    if (end % 4 === 0) {
+      if (cleaned[end - 1] === "=") end -= 1;
+      if (cleaned[end - 1] === "=") end -= 1;
+    }
+    if (end % 4 === 1) {
+      throw invalidBase64Character("The string to be decoded is not correctly encoded.");
+    }
+    for (let index = 0; index < end; index += 1) {
+      if (reflectApply(stringIndexOf, base64Alphabet, [cleaned[index]]) < 0) {
+        throw invalidBase64Character("The string to be decoded is not correctly encoded.");
+      }
+    }
+
+    let output = "";
+    for (let index = 0; index < end; index += 4) {
+      const first = reflectApply(stringIndexOf, base64Alphabet, [cleaned[index]]);
+      const second = reflectApply(stringIndexOf, base64Alphabet, [cleaned[index + 1]]);
+      const third =
+        index + 2 < end
+          ? reflectApply(stringIndexOf, base64Alphabet, [cleaned[index + 2]])
+          : 0;
+      const fourth =
+        index + 3 < end
+          ? reflectApply(stringIndexOf, base64Alphabet, [cleaned[index + 3]])
+          : 0;
+      const bits = (first << 18) | (second << 12) | (third << 6) | fourth;
+      output += stringFromCharCode((bits >> 16) & 255);
+      if (index + 2 < end) output += stringFromCharCode((bits >> 8) & 255);
+      if (index + 3 < end) output += stringFromCharCode(bits & 255);
+    }
+    return output;
+  }
+
+  globalThis.btoa = btoa;
+  globalThis.atob = atob;
 
   function serializeCompileValue(value, depth, state) {
     state.values += 1;
@@ -434,8 +529,14 @@ export async function runScriptWithModule(
     vm.setProp(vm.global, "__smartlinks_host_fetch", fetchHandle);
 
     const cryptoBudget = options.cryptoBudget ?? createCryptoOperationBudget();
-    const guestCrypto = options.crypto ?? createGuestCrypto(crypto, cryptoBudget);
+    const guestCrypto = options.crypto ?? createGuestCrypto({ crypto, budget: cryptoBudget });
     const cryptoHandle = vm.newObject();
+    const randomHandle = asyncHostFunction("random", async (byteCount, encoding) => {
+      if (typeof byteCount !== "number") {
+        throw new TypeError("random requires a numeric byte count.");
+      }
+      return guestCrypto.random(byteCount, encoding as GuestCryptoEncoding | undefined);
+    });
     const sha256Handle = asyncHostFunction("sha256", async (message, encoding) => {
       if (typeof message !== "string") {
         throw new TypeError("sha256 requires a string message.");
@@ -483,6 +584,7 @@ export async function runScriptWithModule(
       }
       return guestCrypto.open(token, options as GuestTokenOptions);
     });
+    vm.setProp(cryptoHandle, "random", randomHandle);
     vm.setProp(cryptoHandle, "sha256", sha256Handle);
     vm.setProp(cryptoHandle, "hmacSha256", hmacHandle);
     vm.setProp(cryptoHandle, "verifyHmacSha256", verifyHandle);
@@ -534,6 +636,7 @@ export async function runScriptWithModule(
     verifyHandle.dispose();
     hmacHandle.dispose();
     sha256Handle.dispose();
+    randomHandle.dispose();
     cryptoHandle.dispose();
     compileHandle?.dispose();
     beginCompileHandle?.dispose();
