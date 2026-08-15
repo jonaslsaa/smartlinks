@@ -153,7 +153,7 @@ npm run check
 ```
 
 `npm run check` covers formatting, strict TypeScript, unit tests, Workers-runtime tests,
-generated bindings, and a Wrangler production dry-run.
+end-to-end tests of the built CLI, generated bindings, and a Wrangler production dry-run.
 
 For local Worker development:
 
