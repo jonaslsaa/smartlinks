@@ -1,9 +1,15 @@
+type HttpErrorOptions = ErrorOptions & {
+  headers?: HeadersInit;
+};
+
 export class HttpError extends Error {
+  readonly headers: Headers;
   readonly status: number;
 
-  constructor(status: number, message: string, options?: ErrorOptions) {
+  constructor(status: number, message: string, options?: HttpErrorOptions) {
     super(message, options);
     this.name = "HttpError";
+    this.headers = new Headers(options?.headers);
     this.status = status;
   }
 }

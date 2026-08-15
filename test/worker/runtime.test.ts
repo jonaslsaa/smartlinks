@@ -1,6 +1,6 @@
 import { deflateRawSync } from "node:zlib";
 import { deflateSync } from "fflate";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { createSmartlink } from "../../src/cli/build.js";
 import { toBase64Url } from "../../src/shared/bytes.js";
 import { encodePayload, MAX_DECOMPRESSED_LENGTH } from "../../src/shared/codec.js";
@@ -16,9 +16,14 @@ beforeAll(async () => {
   pair = await generateKeyPair(1);
 });
 
-function testEnv() {
+function testEnv(
+  executionRateLimiter: RateLimit = {
+    limit: async () => ({ success: true }),
+  },
+) {
   return {
     ACTIVE_KEY_ID: "1" as const,
+    EXECUTION_RATE_LIMITER: executionRateLimiter,
     LANDING_URL: "https://sl.jonaslsa.com/" as const,
     PRIVATE_KEY_1: pair.privateKeySecret,
   };
@@ -93,6 +98,43 @@ describe("Worker routes", () => {
       testEnv(),
     );
     await expect(execution.text()).resolves.toBe("confirmed");
+  });
+
+  it("rate limits executions without charging previews or interstitial reviews", async () => {
+    const limit = vi.fn(async () => ({ success: false }));
+    const limitedEnv = testEnv({ limit });
+    const created = await createSmartlink({
+      source: 'return { body: "limited" }',
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(
+      new Request(created.link, { headers: { "cf-connecting-ip": "203.0.113.10" } }),
+      limitedEnv,
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    await expect(response.json()).resolves.toEqual({
+      error: "Too many Smartlink executions. Try again shortly.",
+    });
+    expect(limit).toHaveBeenCalledWith({ key: "203.0.113.10" });
+
+    const interstitial = await createSmartlink({
+      source: 'return { body: "reviewed" }',
+      service: origin,
+      interstitial: true,
+      validate: validateWorkerScript,
+    });
+    const review = await worker.fetch(new Request(interstitial.link), limitedEnv);
+    expect(review.status).toBe(200);
+
+    const preview = await worker.fetch(
+      new Request(created.link, { headers: { "user-agent": "Slackbot-LinkExpanding" } }),
+      limitedEnv,
+    );
+    expect(preview.status).toBe(200);
+    expect(limit).toHaveBeenCalledTimes(1);
   });
 
   it("never executes preview or prefetch requests", async () => {
