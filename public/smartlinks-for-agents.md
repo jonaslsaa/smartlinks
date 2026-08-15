@@ -91,8 +91,9 @@ only with that context.
 
 Tokens are replayable — statelessness makes true once-only impossible. Patterns that care embed a
 timestamp in the value and check it after opening. Local executions derive tokens from an
-ephemeral per-process key: stable across one `run --serve` session, never interoperable with
-production, otherwise identical.
+ephemeral per-process key, so a token minted by one `run` invocation will not open in the next —
+test multi-step flows with `run --serve`, whose key is stable for the session. Local and
+production tokens never interoperate; behavior is otherwise identical.
 
 The canonical shape — a wizard whose whole session lives in one query parameter:
 
@@ -130,9 +131,9 @@ cannot make that interpreter safe to feed untrusted code.
 Options:
 
 - `ttlSeconds?: number` — positive integer seconds; the child deadline is
-  `min(now + ttlSeconds, parent notAfter)`. Omission inherits the parent deadline, and a parent
-  without one may mint a child without one. Children shared outside the parent's audience should
-  usually expire — prefer hours, not days.
+  `min(now + ttlSeconds, parent notAfter)`, or plain `now + ttlSeconds` when the parent has no
+  deadline. Omission inherits the parent deadline, and a parent without one may mint a child
+  without one.
 - `interstitial?: boolean` — explicit value overrides the parent; omission inherits.
 - `note?: string` — child-specific author note, implies an interstitial. Notes do not inherit,
   and `note` cannot combine with `interstitial: false`.
