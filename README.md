@@ -228,6 +228,8 @@ include `--secret`, `--expires`, `--interstitial`, `--sign`, `--copy`, `--out`, 
 note and implies `--interstitial`. `--expires` accepts a duration such as `30m`, `1h`, or `7d`, or an
 absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
 running the script; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
+Preview responses are marked with `x-smartlinks-preview: 1` so tooling can distinguish them from
+executions without inspecting the body.
 Local networking is off by default; opt in with `smartlinks run --allow-network`. To inspect a
 networked script without sending requests, use `smartlinks run script.ts --simulate`. It runs one
 deterministic path with the real fetch guards, records fetches and locally compiled child hops,

@@ -541,6 +541,7 @@ return {
       await writeFile(script, 'throw new Error("HEAD must not execute");\n');
       const head = await fetch(server.origin, { method: "HEAD" });
       assert.equal(head.status, 200);
+      assert.equal(head.headers.get("x-smartlinks-preview"), "1");
       assert.equal(await head.text(), "");
 
       await writeFile(script, "const completed = true;\n");

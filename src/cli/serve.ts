@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isPreviewRequest } from "../shared/bots.js";
 import { MAX_REQUEST_BODY_BYTES, RequestBodyTooLargeError } from "../shared/request-context.js";
-import { hardenResponse } from "../shared/response-security.js";
+import { hardenResponse, SMARTLINKS_PREVIEW_HEADER } from "../shared/response-security.js";
 import { executeLocalRequest, LocalScriptError, type LocalScriptExecution } from "./run.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
@@ -204,7 +204,14 @@ async function handleRequest(
       throw new ServeRequestError(404, "Only the root path is served locally.");
     }
     if (isPreviewRequest(request)) {
-      await writeResponse(incoming.method, outgoing, new Response(null, { status: 200 }));
+      await writeResponse(
+        incoming.method,
+        outgoing,
+        new Response(null, {
+          status: 200,
+          headers: { [SMARTLINKS_PREVIEW_HEADER]: "1" },
+        }),
+      );
       return;
     }
 

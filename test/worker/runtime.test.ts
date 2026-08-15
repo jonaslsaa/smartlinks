@@ -10,7 +10,10 @@ import {
 } from "../../src/shared/author.js";
 import { toBase64Url } from "../../src/shared/bytes.js";
 import { encodePayload, MAX_DECOMPRESSED_LENGTH } from "../../src/shared/codec.js";
-import { RUNTIME_CONTENT_SECURITY_POLICY } from "../../src/shared/response-security.js";
+import {
+  RUNTIME_CONTENT_SECURITY_POLICY,
+  SMARTLINKS_PREVIEW_HEADER,
+} from "../../src/shared/response-security.js";
 import { generateKeyPair, sealSecret } from "../../src/shared/seal.js";
 import { decodeWorkerPayload, inflateRawWithLimit } from "../../src/worker/codec.js";
 import { exchangeGithubIdentity } from "../../src/worker/identity.js";
@@ -101,6 +104,7 @@ describe("Worker routes", () => {
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBeNull();
     await expect(response.text()).resolves.toBe("Jonas:sealed-value");
   });
 
@@ -692,6 +696,7 @@ describe("Worker routes", () => {
       testEnv(),
     );
     expect(response.status).toBe(200);
+    expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBe("1");
     await expect(response.text()).resolves.toContain("Preview requests never execute it");
 
     const head = await worker.fetch(
@@ -699,6 +704,7 @@ describe("Worker routes", () => {
       testEnv(),
     );
     expect(head.status).toBe(200);
+    expect(head.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBe("1");
     await expect(head.text()).resolves.toBe("");
   });
 

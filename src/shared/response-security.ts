@@ -1,6 +1,8 @@
 export const RUNTIME_CONTENT_SECURITY_POLICY =
   "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
+export const SMARTLINKS_PREVIEW_HEADER = "x-smartlinks-preview";
+
 const RUNTIME_SECURITY_HEADERS = {
   "referrer-policy": "no-referrer",
   "x-content-type-options": "nosniff",
