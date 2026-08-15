@@ -62,10 +62,14 @@ type __SmartlinksContext = {
   };
   compile: __SmartlinksCompile;
 };
-type __SmartlinksResult =
-  | string
-  | { status?: number; headers?: Record<string, string>; body?: string; text?: never }
-  | void;
+type __SmartlinksLiteralResponse = {
+  status?: number;
+  headers?: Record<string, string>;
+  body?: string;
+  bodyBase64?: string;
+  text?: never;
+} & ({ bodyBase64?: never } | { body?: never; bodyBase64: string });
+type __SmartlinksResult = string | __SmartlinksLiteralResponse | void;
 type __SmartlinksJson =
   | string
   | number

@@ -41,8 +41,11 @@ returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirec
 `bodyUsed`, `text()`, and `json()`. The response body can be consumed once. Streams, `Request`,
 `Blob`, `FormData`, cloning, custom redirect modes, and guest abort signals are not supported.
 
-Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` for a literal
-response, or `undefined` for the default completion page.
+Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` for a text response,
+`{ status?, headers?, bodyBase64 }` for bytes, or `undefined` for the default completion page.
+`body` and `bodyBase64` are mutually exclusive. `bodyBase64` accepts standard padded or unpadded
+Base64, is limited to 1 MiB after decoding, and defaults to `application/octet-stream` when the
+headers do not supply a content type. `content-disposition` remains author-controlled.
 
 ### Runtime compilation
 
@@ -161,6 +164,9 @@ production. Local compile sealing uses an ephemeral in-process keypair and retur
 that ephemeral key, and executes the final response in the same process, with a ten-hop local
 follow limit. It does not contact `/pk`, use production private-key material, or publish a durable
 bearer link.
+For binary responses, `--json` emits `bodyBase64` instead of a lossy text body. Redirected plain
+stdout receives the exact bytes; an interactive terminal prints a byte-count receipt rather than
+writing binary data to the terminal.
 
 ## Other commands
 

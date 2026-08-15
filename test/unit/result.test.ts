@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mapScriptResult } from "../../src/shared/result.js";
+import {
+  InvalidScriptResponseError,
+  MAX_BINARY_RESPONSE_BYTES,
+  mapScriptResult,
+} from "../../src/shared/result.js";
 
 describe("script result mapping", () => {
   it("turns strings into redirects", () => {
@@ -13,6 +17,42 @@ describe("script result mapping", () => {
     expect(response.status).toBe(202);
     expect(response.headers.get("x-test")).toBe("yes");
     await expect(response.text()).resolves.toBe("done");
+  });
+
+  it("decodes binary response bodies without changing their bytes", async () => {
+    const bytes = Uint8Array.from([0, 255, 137, 80, 78, 71, 13, 10, 26, 10]);
+    const bodyBase64 = Buffer.from(bytes).toString("base64");
+    const response = mapScriptResult({ status: 201, bodyBase64 });
+
+    expect(response.status).toBe(201);
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+
+    const unpadded = mapScriptResult({ bodyBase64: bodyBase64.replace(/=+$/u, "") });
+    expect(new Uint8Array(await unpadded.arrayBuffer())).toEqual(bytes);
+  });
+
+  it("preserves an explicit content type for binary responses", () => {
+    const response = mapScriptResult({
+      headers: { "content-type": "text/calendar" },
+      bodyBase64: "QkVHSU46VkNBTEVOREFS",
+    });
+
+    expect(response.headers.get("content-type")).toBe("text/calendar");
+  });
+
+  it("rejects ambiguous, malformed, and oversized binary responses", () => {
+    expect(() => mapScriptResult({ body: "text", bodyBase64: "dGV4dA==" })).toThrow(
+      new InvalidScriptResponseError("A response cannot include both body and bodyBase64."),
+    );
+    for (const bodyBase64 of ["not base64", "A", "AA=", "AA===", "AB=="]) {
+      expect(() => mapScriptResult({ bodyBase64 })).toThrow("bodyBase64 must be valid Base64.");
+    }
+
+    const oversized = Buffer.alloc(MAX_BINARY_RESPONSE_BYTES + 1).toString("base64");
+    expect(() => mapScriptResult({ bodyBase64: oversized })).toThrow(
+      "bodyBase64 exceeds the 1 MB decoded body limit.",
+    );
   });
 
   it("returns the default done page for undefined", async () => {

@@ -88,8 +88,11 @@ method, header, and string-body options and returns a Response-like value with `
 `ctx.crypto` provides `sha256`, `hmacSha256`, and `verifyHmacSha256`. They operate on strings,
 use lowercase hex by default, and can use Base64 when passed `"base64"`.
 
-Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? }` for a response,
-or return nothing for a small success page. Top-level `await` works.
+Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? }` for a text
+response, return `{ status?, headers?, bodyBase64 }` for bytes, or return nothing for a small
+success page. `body` and `bodyBase64` are mutually exclusive. Binary responses are limited to
+1 MiB after decoding and default to `application/octet-stream` when no content type is supplied.
+Top-level `await` works.
 
 ## Mint a link from a link
 
@@ -158,6 +161,8 @@ Local `ctx.compile` uses an ephemeral in-process key and a clearly non-productio
 `https://smartlinks.local/...` artifact. `run` follows compiled local links and executes their
 final response in the same process, so dry-runs verify sealed delegation without publishing a
 bearer link or needing the production private key.
+For binary responses, `run --json` emits `bodyBase64` instead of `body`. Redirected plain `run`
+stdout receives the exact bytes; an interactive terminal shows a byte-count receipt.
 
 Generated links are opaque bearer artifacts. `--copy` sends the link to the clipboard without
 printing it, while `--out link.txt` writes it to a file with owner-only POSIX permissions; both
