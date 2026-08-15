@@ -4,7 +4,11 @@
     "includes": [
       "src/**",
       "test/**",
+      "public/**",
       "*.ts",
+      "*.js",
+      "*.css",
+      "*.html",
       "*.json",
       "*.jsonc",
       "!!dist",

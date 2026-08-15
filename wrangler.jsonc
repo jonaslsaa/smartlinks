@@ -13,7 +13,7 @@
   ],
   "vars": {
     "ACTIVE_KEY_ID": "1",
-    "LANDING_URL": "https://smartlinks-coral.vercel.app"
+    "LANDING_URL": "https://sl.jonaslsa.com/"
   },
   "observability": {
     "enabled": true,

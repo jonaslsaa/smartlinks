@@ -9,6 +9,7 @@
   --quiet: #858585;
   --border: #292929;
   --code: #0a0a0a;
+  --accent: #78f6c2;
 }
 
 * {
@@ -133,6 +134,103 @@ p {
   color: var(--muted);
 }
 
+.eyebrow {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agent-section {
+  padding-top: 28px;
+}
+
+.agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.agent-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 210px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  color: #03140d;
+  background: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.agent-actions button:hover {
+  background: #a0ffda;
+}
+
+.agent-actions button:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: 4px;
+}
+
+.agent-actions button span {
+  margin-left: 24px;
+}
+
+.agent-actions a {
+  color: var(--muted);
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.copy-status {
+  min-height: 1.55em;
+  margin: 10px 0 0;
+  color: var(--quiet);
+  font-size: 12px;
+}
+
+.manual-copy {
+  margin-top: 14px;
+}
+
+.manual-copy label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.manual-copy textarea {
+  width: 100%;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  color: var(--text);
+  background: var(--code);
+  font:
+    12px / 1.5 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    monospace;
+}
+
+.manual-copy textarea:focus-visible {
+  outline: 1px solid #fff;
+  outline-offset: 3px;
+}
+
 .lead {
   max-width: 780px;
   margin-bottom: 20px;
@@ -232,6 +330,16 @@ footer a {
 
   .lead {
     font-size: 18px;
+  }
+
+  .agent-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .agent-actions button {
+    width: 100%;
   }
 
   pre {

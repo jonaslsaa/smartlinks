@@ -5,24 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Turn small JavaScript programs into URLs and run them in an isolated Cloudflare Worker."
+      content="Turn small JavaScript or TypeScript programs into URLs and run them in an isolated Cloudflare Worker."
     />
     <meta name="theme-color" content="#000000" />
     <meta property="og:title" content="Smartlinks" />
     <meta
       property="og:description"
-      content="A CLI and runtime for turning small JavaScript programs into URLs."
+      content="A CLI and runtime for turning small JavaScript or TypeScript programs into URLs."
     />
     <meta property="og:type" content="website" />
     <title>Smartlinks</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/styles.css" />
+    <script src="/site.js" defer></script>
   </head>
   <body>
     <header>
       <a class="brand" href="/">Smartlinks <span>[preview]</span></a>
       <nav aria-label="Primary navigation">
         <a class="active" href="#overview">Overview</a>
+        <a href="#agents">For agents</a>
         <a href="#install">Install</a>
         <a href="https://github.com/jonaslsaa/smartlinks">GitHub</a>
       </nav>
@@ -32,7 +34,8 @@
       <section id="overview" aria-labelledby="title">
         <h1 id="title">Smartlinks</h1>
         <p class="lead">
-          Smartlinks is a CLI and runtime for turning small JavaScript programs into URLs.
+          Smartlinks is a CLI and runtime for turning small JavaScript or TypeScript programs
+          into URLs.
         </p>
         <p>
           The link is the deployment. Query parameters are its inputs, and the script’s
@@ -40,11 +43,29 @@
         </p>
       </section>
 
+      <section id="agents" class="agent-section" aria-labelledby="agents-title">
+        <p class="eyebrow">Agent-assisted building</p>
+        <h2 id="agents-title">Give your agent the context.</h2>
+        <p>
+          Copy a prompt that points your coding agent at the Smartlinks format, CLI, runtime
+          limits, and safety model.
+        </p>
+        <div class="agent-actions">
+          <button id="copy-agent-prompt" type="button">Coffee for agents <span>→</span></button>
+          <a href="/smartlinks-for-agents.md">Read the agent guide</a>
+        </div>
+        <p id="copy-status" class="copy-status" aria-live="polite"></p>
+        <div id="manual-copy" class="manual-copy" hidden>
+          <label for="manual-agent-prompt">Agent prompt</label>
+          <textarea id="manual-agent-prompt" rows="6" readonly></textarea>
+        </div>
+      </section>
+
       <section id="install" aria-labelledby="install-title">
         <h2 id="install-title">Start Here</h2>
         <p>Install the CLI and build a link:</p>
-        <pre><code>npm install -g github:jonaslsaa/smartlinks
-smartlinks build script.js</code></pre>
+        <pre><code>npm install --global @jonaslsa/smartlinks
+smartlinks build script.ts</code></pre>
         <p>
           Add <code>--secret TOKEN</code> to encrypt a secret for the exact script before
           putting it in the URL.

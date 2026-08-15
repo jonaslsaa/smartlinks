@@ -37,6 +37,13 @@ transpiles TypeScript.
 
 ## CLI discovery
 
+Smartlinks requires Node.js 18.18 or newer. In a fresh environment, check the runtime and CLI;
+install the CLI from npm if it is unavailable:
+
+- `node --version`
+- `npm install --global @jonaslsa/smartlinks`
+- `smartlinks --version`
+
 Treat installed CLI help as authoritative:
 
 - `smartlinks --help`
@@ -74,8 +81,8 @@ Use this as the local dry-run before building a final link.
 - `--json`: emit the mapped response as machine-readable output.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
 
-Local execution uses the same wrapper, QuickJS engine, request-context normalization, guarded
-fetch policy, and response mapping as production.
+Local execution uses the same wrapper, QuickJS engine, request-context normalization, general
+URL/method/header/body/count/redirect policy, and response mapping as production.
 
 ## Other commands
 
@@ -107,9 +114,11 @@ revocable credentials. Avoid inline `NAME=value` secrets because shell history c
 - Each request gets a fresh QuickJS runtime with a 16 MiB heap, 512 KiB stack, deterministic
   1,500-interrupt-poll budget, and 15-second host-wait deadline. Interrupt polls are not CPU-time
   measurements.
-- `ctx.fetch` permits HTTP(S), blocks local/private/reserved destinations, limits same-origin
-  redirects to three, total requests to five, request and response bodies to 1 MiB, and each fetch
-  to ten seconds. Cross-origin redirects are rejected.
+- `ctx.fetch` permits HTTP(S), blocks local hostnames and private/local/reserved IP literals,
+  limits same-origin redirects to three, total requests to five, request and response bodies to
+  1 MiB, and each fetch to ten seconds. Cross-origin redirects are rejected. Local
+  `smartlinks run --allow-network` additionally resolves and pins DNS connections to validated
+  public addresses.
 - Known crawler, preview, prefetch, and `HEAD` requests do not execute scripts. Detection is
   intentionally best-effort.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.

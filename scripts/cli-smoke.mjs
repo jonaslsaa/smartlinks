@@ -23,6 +23,20 @@ if (typedOutput.status !== 200 || typedOutput.body !== "Hello from TypeScript, C
   throw new Error("The TypeScript CLI smoke did not transpile and execute the script.");
 }
 
+const defaultBuild = await exec(process.execPath, [
+  cli.pathname,
+  "build",
+  typedExample.pathname,
+  "--json",
+]);
+const defaultOutput = JSON.parse(defaultBuild.stdout);
+if (
+  typeof defaultOutput.link !== "string" ||
+  !defaultOutput.link.startsWith("https://smartlinks-runtime.jonasvox-2014.workers.dev/r/2")
+) {
+  throw new Error("The CLI did not use the working Smartlinks runtime.");
+}
+
 try {
   await exec(process.execPath, [
     cli.pathname,

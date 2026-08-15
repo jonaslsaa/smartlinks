@@ -6,14 +6,14 @@ Cloudflare Worker, and the return value becomes the HTTP response. There are no 
 database records, or stored scripts.
 
 Runtime: <https://smartlinks-runtime.jonasvox-2014.workers.dev>
-Landing page: <https://smartlinks-coral.vercel.app>
+Landing page: <https://sl.jonaslsa.com>
 
 ## Quick start
 
-Install the TypeScript CLI directly from GitHub:
+Install the CLI from npm:
 
 ```sh
-npm install -g github:jonaslsaa/smartlinks
+npm install --global @jonaslsa/smartlinks
 ```
 
 Create `hello.js`. Smartlink scripts are async function bodies, so top-level `await` and
@@ -231,11 +231,11 @@ To rotate, generate and store the next ID first, change `ACTIVE_KEY_ID` in `wran
 then deploy. Keep every older `PRIVATE_KEY_<id>` secret that is still referenced by a live
 link. Removing an old key deliberately makes those links unable to decrypt their secrets.
 
-The routes are:
+The Worker-origin routes are:
 
 | Route | Purpose |
 | --- | --- |
-| `GET /` | Runtime health and metadata |
+| `GET /` | Temporary redirect to the landing page |
 | `ALL /r/<payload>` | Preview, confirm if requested, decrypt, and execute |
 | `GET /d/<payload>` | Decode and audit without executing |
 | `GET /pk` | Current public encryption key and key ID |

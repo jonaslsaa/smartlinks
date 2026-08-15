@@ -122,11 +122,12 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (request.method !== "GET" && request.method !== "HEAD") {
       throw new HttpError(405, "Method not allowed.");
     }
-    return json({
-      service: "smartlinks-runtime",
-      status: "ok",
-      currentPayloadVersion: "2",
-      documentation: env.LANDING_URL,
+    return new Response(null, {
+      status: 302,
+      headers: {
+        "cache-control": "no-store",
+        location: env.LANDING_URL,
+      },
     });
   }
 

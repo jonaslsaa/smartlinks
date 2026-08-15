@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "",
+  "installCommand": "",
+  "outputDirectory": "public",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "s.jonaslsa.com" }],
+      "destination": "https://smartlinks-runtime.jonasvox-2014.workers.dev/:path*",
+      "statusCode": 302
+    }
+  ]
+}
