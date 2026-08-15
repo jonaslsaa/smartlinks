@@ -257,8 +257,10 @@ request, never building a production link or contacting production. In serve mod
 `ctx.compile` returns a clickable URL on that loopback server; compiled children and grandchildren
 remain executable for the server session, including deliberately sealed delegation. One-shot
 `run` uses clearly non-production `https://smartlinks.local/...` URLs and follows them in the same
-process. When scripting a multi-step token flow across separate `run` processes, set the same
-high-entropy `SMARTLINKS_LOCAL_TOKEN_KEY` for each.
+process. Serve mode instead passes a directly returned child through as a 302, so the browser
+navigates to the artifact it is executing, as it does in production. When scripting a multi-step
+token flow across separate `run` processes, set the same high-entropy
+`SMARTLINKS_LOCAL_TOKEN_KEY` for each.
 
 Generated links are opaque bearer artifacts. `--copy` sends the link to the clipboard without
 printing it; `--out link.txt` writes it with owner-only POSIX permissions. Both print only a

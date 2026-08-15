@@ -262,11 +262,12 @@ ephemeral in-process keypair. One-shot `run` returns local-only
 `https://smartlinks.local/r/<payload>` URLs and follows them in the same process. In serve mode the
 keypair is stable for the server session and compilation uses the active loopback origin, so links
 embedded in HTML or other responses can be opened later; a child receives only the secrets
-deliberately sealed into its payload, never the root command's undelegated secrets. Directly
-returned compiled links retain the ten-hop local follow limit. Local execution never contacts
-`/pk`, uses production key material, or publishes a durable bearer link. For binary responses,
-`--json` emits `bodyBase64`; redirected plain stdout receives the exact bytes; an interactive
-terminal prints a byte-count receipt instead of binary data.
+deliberately sealed into its payload, never the root command's undelegated secrets. One-shot `run`
+follows directly returned compiled links with a ten-hop limit; serve mode returns the mapped 302
+so the browser navigates to the child artifact, matching production routing. Local execution never
+contacts `/pk`, uses production key material, or publishes a durable bearer link. For binary
+responses, `--json` emits `bodyBase64`; redirected plain stdout receives the exact bytes; an
+interactive terminal prints a byte-count receipt instead of binary data.
 
 ## `smartlinks decode <link-or-payload> [--json]`
 

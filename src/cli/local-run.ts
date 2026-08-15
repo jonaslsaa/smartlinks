@@ -63,7 +63,8 @@ type LocalProgram = {
 type LocalRuntimeOptions = {
   allowNetwork: boolean;
   blockedHostnames: readonly string[];
-  service?: string;
+  followCompiledLinks: boolean;
+  service: string;
 };
 
 type LocalExecutionEnvironment = {
@@ -157,7 +158,7 @@ export type LocalRuntime = {
 };
 
 export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
-  const service = options.service ?? LOCAL_SERVICE_URL;
+  const service = options.service;
   const nodeFetch = options.allowNetwork ? createNodeFetch() : undefined;
   let localKey: Promise<GeneratedKeyPair> | undefined;
   const getLocalKey = () => {
@@ -204,6 +205,10 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
     let decoded = initialDecoded;
     let context = initialContext;
     let result = await execute(decoded, context, environment, service, 1);
+
+    if (!options.followCompiledLinks) {
+      return result;
+    }
 
     for (let followed = 0; ; followed += 1) {
       const url = compiledUrl(result, service);
@@ -263,10 +268,15 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
 }
 
 export async function runLocalProgram(
-  program: LocalProgram & LocalRuntimeOptions,
+  program: LocalProgram & Pick<LocalRuntimeOptions, "allowNetwork" | "blockedHostnames">,
 ): Promise<ScriptResult> {
   if (program.allowNetwork && program.simulation) {
     throw new Error("Network access and network simulation cannot be enabled together.");
   }
-  return createLocalRuntime(program).executeProgram(program);
+  return createLocalRuntime({
+    allowNetwork: program.allowNetwork,
+    blockedHostnames: program.blockedHostnames,
+    followCompiledLinks: true,
+    service: LOCAL_SERVICE_URL,
+  }).executeProgram(program);
 }

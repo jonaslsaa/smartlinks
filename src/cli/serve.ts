@@ -288,6 +288,7 @@ export async function serveLocalScript(options: ServeOptions): Promise<void> {
     runtime = createLocalRuntime({
       allowNetwork: options.allowNetwork,
       blockedHostnames: options.blockedHostnames,
+      followCompiledLinks: false,
       service: origin,
     });
   } catch (error) {

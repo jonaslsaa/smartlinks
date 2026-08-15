@@ -467,7 +467,14 @@ return {
         script,
         'const child = async (_childCtx: typeof ctx, name: string) => ({ body: "compiled:" + name });\nreturn ctx.compile(child, [ctx.params.name ?? "world"]);\n',
       );
-      const compiled = await fetch(`${server.origin}/?name=Browser`);
+      const compiledRedirect = await fetch(`${server.origin}/?name=Browser`, {
+        redirect: "manual",
+      });
+      assert.equal(compiledRedirect.status, 302);
+      const compiledLocation = compiledRedirect.headers.get("location");
+      assert.ok(compiledLocation?.startsWith(`${server.origin}/r/`));
+
+      const compiled = await fetch(compiledLocation);
       assert.equal(compiled.status, 200);
       assert.equal(await compiled.text(), "compiled:Browser");
 
