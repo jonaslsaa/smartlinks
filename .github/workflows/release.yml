@@ -58,9 +58,6 @@ jobs:
       - run: npm run check
       - run: npm run build
 
-      - name: Verify the committed CLI bundle
-        run: git diff --exit-code -- dist
-
       - name: Prepare version commit and tag
         id: release
         env:
@@ -87,7 +84,7 @@ jobs:
             npm run build
             npm run test:cli
             git diff --check
-            git add package.json package-lock.json dist
+            git add package.json package-lock.json
             git commit -m "Release $tag"
             git tag "$tag"
           fi
