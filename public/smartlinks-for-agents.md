@@ -166,7 +166,7 @@ information-flow analysis; transformed, encoded, or split secret values cannot b
 Self-continuing chains are supported, unbounded by design: a packaged closure may compile another
 closure or itself — closure-table references are not outer captures — and each hop is an ordinary
 execution that independently reapplies the same one-mint budget, validation, expiry resolution,
-sealing, and payload limits. There is no stored ancestry, generation counter, or depth policy.
+sealing, and payload limits. There is no built-in stored ancestry, generation counter, or depth policy.
 
 A parent whose mint branch is reachable by anyone holding its URL is an unauthenticated admin
 endpoint. Keep parent links private or verify a signed request before compiling.
