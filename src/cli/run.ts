@@ -71,21 +71,11 @@ export async function executeLocalRequest(
   request: Request,
   options: LocalScriptOptions,
 ): Promise<LocalScriptExecution> {
-  let source: string;
-  let closures: string[];
   try {
     const originalSource = await readScriptSource(options.file, { typeCheck: options.typeCheck });
-    const prepared = await prepareSmartlinkProgram(originalSource, options.minify);
-    source = prepared.source;
-    closures = prepared.closures;
-  } catch (error) {
-    throw new LocalScriptError(errorMessage(error), { cause: error });
-  }
-
-  let result: ScriptResult;
-  try {
+    const { source, closures } = await prepareSmartlinkProgram(originalSource, options.minify);
     const url = new URL(request.url);
-    result = await runLocalProgram({
+    const result: ScriptResult = await runLocalProgram({
       source,
       closures,
       context: {
@@ -100,20 +90,16 @@ export async function executeLocalRequest(
       allowNetwork: options.allowNetwork,
       blockedHostnames: options.blockedHostnames,
     });
-  } catch (error) {
-    if (error instanceof RequestBodyTooLargeError) {
-      throw error;
-    }
-    throw new LocalScriptError(errorMessage(error), { cause: error });
-  }
 
-  try {
     return {
       binary: isBinaryLiteralResponse(result),
       defaultPage: result === undefined,
       response: mapScriptResult(result),
     };
   } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      throw error;
+    }
     throw new LocalScriptError(errorMessage(error), { cause: error });
   }
 }
