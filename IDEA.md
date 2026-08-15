@@ -44,7 +44,7 @@ be fixed, anyone with a link can run it, etc.).
    the service's public key. Modern v2 links mark complete-artifact binding with
    `a: 1`; their AAD covers the key ID plus a canonical hash of the payload
    version, entry script, ordered compile table, baked program data, exact
-   `notAfter`/no-expiry state, execution-policy flags, and target secret name. A
+   `notAfter`/no-expiry state, execution-policy flags, optional author note, and target secret name. A
    sealed blob therefore decrypts only for the immutable program and authority
    the author built. The Worker retains the earlier script-and-expiry AAD reader
    only so links produced during the deployment transition continue to run.
@@ -65,10 +65,11 @@ be fixed, anyone with a link can run it, etc.).
      preview page, no execution
    - `Sec-Purpose`/`Purpose: prefetch` headers → preview page, no execution
 8. **Interstitial is per-link opt-in** (author's choice, flag in the
-   envelope). When enabled: GET renders a confirmation page showing the
-   pretty-printed decoded script with a form that **POSTs** back with
-   `__confirm=1` to actually execute. When disabled: GET executes directly
-   (minus bots, per #7).
+   envelope). When enabled: GET renders immutable system guidance, an optional
+   author-provided note, payload facts, and the pretty-printed decoded script,
+   with a form that **POSTs** back with `__confirm=1` to actually execute. The
+   note is public, limited to 140 Unicode characters, and implies the
+   interstitial. When disabled: GET executes directly (minus bots, per #7).
 9. **Guarded fetch** inside the sandbox: http(s) only, block private/loopback
    /link-local IPs and localhost, cap ~5 subrequests and ~1 MB per response.
 10. **Size budget**: total URL must stay comfortably under 8,000 chars;
@@ -108,15 +109,17 @@ https://<domain>/r/<payload>?<user params...>
   "a": 1,
   "c": ["<compile closure>"],
   "k": { "TOKEN": "<base64url sealed blob>" },
-  "n": 2000000000
+  "n": 2000000000,
+  "m": "<author note>"
 }
 ```
 
   `s` = script, `i` = interstitial flag (optional), `a` = complete-artifact AAD
   marker (optional), `c` = ordered compile closure table (optional), `k` =
   sealed secrets by name (optional), `n` = `notAfter` expiry as integer Unix
-  seconds (optional). Decoders still accept the earlier verbose `notAfter` wire
-  key, but authors emit only `n`.
+  seconds (optional), `m` = author-provided interstitial note (optional, requires
+  `i`). Decoders still accept the earlier verbose `notAfter` wire key, but
+  authors emit only `n`.
 - Query params starting with `__` are reserved for the service
   (`__confirm`); all others belong to the script.
 - Sealed blob layout: `keyId (1 byte) || hpke enc || ciphertext`.
@@ -167,7 +170,7 @@ repo and **imports the same codec/seal/sandbox modules the worker uses** so
 link formats can never drift. Commands:
 
 ```
-smartlinks build <script.js|script.ts> [--interstitial] [--secret NAME[=value]] [--expires 7d]
+smartlinks build <script.js|script.ts> [--interstitial] [--interstitial-note TEXT] [--secret NAME[=value]] [--expires 7d]
     # strictly type-check .ts input, transpile, compress + encode; fetch /pk
     # and HPKE-seal secrets bound to the script and expiry. --copy or --out
     # keeps the finished link out of terminal output while reporting its size.

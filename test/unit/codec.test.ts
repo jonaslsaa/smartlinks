@@ -22,6 +22,7 @@ describe("payload codec", () => {
       c: ["async value=>value"],
       k: { TOKEN: "AQID" },
       notAfter: 2_000_000_000,
+      interstitialNote: "Deploys the reviewed release",
     };
     const payload = encodePayload(envelope);
 
@@ -37,6 +38,41 @@ describe("payload codec", () => {
     expect(JSON.parse(serialized)).toEqual({ s: envelope.s, n: envelope.notAfter });
     expect(serialized).not.toContain("notAfter");
     expect(decodePayload(encodePayload(envelope)).envelope).toEqual(envelope);
+  });
+
+  it("normalizes author notes and uses a compact wire key", () => {
+    const serialized = new TextDecoder().decode(
+      serializeEnvelope({
+        s: "async()=>1",
+        i: true,
+        interstitialNote: "  Deploys\n\tthe reviewed release  ",
+      }),
+    );
+
+    expect(JSON.parse(serialized)).toEqual({
+      s: "async()=>1",
+      i: true,
+      m: "Deploys the reviewed release",
+    });
+    expect(serialized).not.toContain("interstitialNote");
+    expect(
+      decodePayload(encodePayload({ s: "async()=>1", i: true, interstitialNote: "ok" })),
+    ).toMatchObject({ envelope: { interstitialNote: "ok" } });
+  });
+
+  it("requires an interstitial and bounds author notes by Unicode code points", () => {
+    expect(() => serializeEnvelope({ s: "async()=>1", interstitialNote: "hello" })).toThrow(
+      "requires an interstitial",
+    );
+    expect(() =>
+      serializeEnvelope({ s: "async()=>1", i: true, interstitialNote: "\u0000" }),
+    ).toThrow("control characters");
+    expect(() =>
+      serializeEnvelope({ s: "async()=>1", i: true, interstitialNote: "🙂".repeat(141) }),
+    ).toThrow("at most 140 characters");
+    expect(() =>
+      serializeEnvelope({ s: "async()=>1", i: true, interstitialNote: "🙂".repeat(140) }),
+    ).not.toThrow();
   });
 
   it("decodes the previous expiry key without accepting an ambiguous expiry", () => {

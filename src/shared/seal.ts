@@ -30,6 +30,7 @@ export type ArtifactSecretBinding = {
   closures: readonly string[];
   notAfter?: number;
   interstitial: boolean;
+  interstitialNote?: string;
   secretName: string;
 };
 
@@ -37,7 +38,7 @@ export type SecretBinding = LegacySecretBinding | ArtifactSecretBinding;
 
 export function artifactSecretBinding(
   version: PayloadVersion,
-  envelope: Pick<Envelope, "s" | "c" | "i" | "notAfter">,
+  envelope: Pick<Envelope, "s" | "c" | "i" | "notAfter" | "interstitialNote">,
   secretName: string,
 ): ArtifactSecretBinding {
   return {
@@ -47,6 +48,9 @@ export function artifactSecretBinding(
     closures: envelope.c ?? [],
     ...(envelope.notAfter === undefined ? {} : { notAfter: envelope.notAfter }),
     interstitial: envelope.i === true,
+    ...(envelope.interstitialNote === undefined
+      ? {}
+      : { interstitialNote: envelope.interstitialNote }),
     secretName,
   };
 }
@@ -57,6 +61,9 @@ function payloadSecretBinding(decoded: DecodedPayload, secretName: string): Secr
   }
   if (decoded.envelope.c?.length) {
     throw new Error("Sealed compile closures require complete-artifact binding.");
+  }
+  if (decoded.envelope.interstitialNote !== undefined) {
+    throw new Error("Sealed interstitial notes require complete-artifact binding.");
   }
   return decoded.envelope.notAfter === undefined
     ? { script: decoded.envelope.s }
@@ -93,14 +100,26 @@ async function aad(keyId: number, binding: SecretBinding): Promise<Uint8Array> {
     );
   }
 
-  const artifact = JSON.stringify([
-    binding.version,
-    binding.script,
-    binding.closures,
-    binding.notAfter ?? null,
-    binding.interstitial,
-    binding.secretName,
-  ]);
+  const artifact = JSON.stringify(
+    binding.interstitialNote === undefined
+      ? [
+          binding.version,
+          binding.script,
+          binding.closures,
+          binding.notAfter ?? null,
+          binding.interstitial,
+          binding.secretName,
+        ]
+      : [
+          binding.version,
+          binding.script,
+          binding.closures,
+          binding.notAfter ?? null,
+          binding.interstitial,
+          binding.interstitialNote,
+          binding.secretName,
+        ],
+  );
   const artifactHash = await crypto.subtle.digest(
     "SHA-256",
     Uint8Array.from(utf8(artifact)).buffer,

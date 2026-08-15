@@ -81,6 +81,7 @@ type __SmartlinksCompileOptions = {
   seal?: Record<string, string>;
   ttlSeconds?: number;
   interstitial?: boolean;
+  note?: string;
 };
 type __SmartlinksCompile = <const Args extends readonly __SmartlinksJson[]>(
   closure: (

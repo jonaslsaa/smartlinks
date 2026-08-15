@@ -12,6 +12,7 @@ import {
   MAX_PAYLOAD_LENGTH,
   payloadFromInput,
 } from "../shared/codec.js";
+import { payloadFacts } from "../shared/payload-facts.js";
 import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
 import { createSmartlink } from "./build.js";
@@ -50,6 +51,7 @@ const publicKeySchema = z.object({
 
 type BuildOptions = {
   interstitial?: boolean;
+  interstitialNote?: string;
   secret: string[];
   minify: boolean;
   typeCheck: boolean;
@@ -166,6 +168,9 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     secrets,
     ...(publicKey ? { publicKey } : {}),
     ...(options.interstitial ? { interstitial: true } : {}),
+    ...(options.interstitialNote === undefined
+      ? {}
+      : { interstitialNote: options.interstitialNote }),
     ...(notAfter !== undefined ? { notAfter } : {}),
     minify: options.minify,
   });
@@ -193,6 +198,9 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
           characters: created.link.length,
           payloadCharacters: created.payload.length,
           payloadVersion: 2,
+          ...(created.interstitialNote === undefined
+            ? {}
+            : { interstitialNote: created.interstitialNote }),
           ...(notAfter === undefined
             ? {}
             : { notAfter, expiresAt: formatNotAfter(notAfter), expired: false }),
@@ -233,31 +241,24 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
   const decoded = decodePayload(payloadFromInput(input));
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
   const closures = (decoded.envelope.c ?? []).map((closure) => formatStoredScript("2", closure));
-  const notAfter = decoded.envelope.notAfter;
-  const expiresAt = notAfter === undefined ? null : formatNotAfter(notAfter);
-  const expired = isExpired(notAfter);
-  const metadata = {
-    payloadVersion: Number(decoded.version),
-    interstitial: decoded.envelope.i === true,
-    sealedSecrets: Object.keys(decoded.envelope.k ?? {}),
-    compileClosures: decoded.envelope.c?.length ?? 0,
-    notAfter: notAfter ?? null,
-    expiresAt,
-    expired,
-  };
+  const metadata = payloadFacts(decoded);
+  const interstitialNote = decoded.envelope.interstitialNote ?? null;
 
   if (options.json) {
-    console.log(JSON.stringify({ ...metadata, script, closures }, null, 2));
+    console.log(JSON.stringify({ ...metadata, interstitialNote, script, closures }, null, 2));
     return;
   }
   const interactive = startUi("smartlinks decode", false);
   if (interactive) {
+    if (interstitialNote !== null) {
+      p.note(interstitialNote, "Author-provided note");
+    }
     p.note(script, "Script");
     closures.forEach((closure, index) => {
       p.note(closure, `Compile closure ${index}`);
     });
     p.note(
-      `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nCompile closures: ${metadata.compileClosures}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}\nExpiry: ${expiresAt === null ? "never" : `${expiresAt}${expired ? " (expired)" : ""}`}`,
+      `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nCompile closures: ${metadata.compileClosures}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}\nExpiry: ${metadata.expiresAt === null ? "never" : `${metadata.expiresAt}${metadata.expired ? " (expired)" : ""}`}`,
       "Metadata",
     );
     p.outro("Decoded without executing");
@@ -267,7 +268,7 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
         "\n\n",
       ),
     );
-    console.error(JSON.stringify(metadata));
+    console.error(JSON.stringify({ ...metadata, interstitialNote }));
   }
 }
 
@@ -432,6 +433,7 @@ program
   .description("Minify a script and build an executable smartlink.")
   .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to encode")
   .option("-i, --interstitial", "require browser confirmation before execution")
+  .option("--interstitial-note <text>", "add an author note and require browser confirmation")
   .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
   .option("--expires <duration-or-date>", "expire after a duration or at an ISO 8601 date")
   .option("--copy", "copy the link without printing it")

@@ -339,15 +339,34 @@ describe("Worker routes", () => {
   });
 
   it("requires and processes an opt-in interstitial", async () => {
+    const notAfter = Math.floor(Date.now() / 1_000) + 60 * 60;
     const created = await createSmartlink({
       source: 'return { body: "confirmed" }',
       service: origin,
-      interstitial: true,
+      interstitialNote: '  Deploys <script>alert("x")</script>\n after review  ',
+      notAfter,
+      secrets: { RELEASE_TOKEN: "never render this value" },
+      publicKey: pair,
       validate: validateWorkerScript,
     });
     const review = await worker.fetch(new Request(created.link), testEnv());
     expect(review.headers.get("content-type")).toContain("text/html");
-    await expect(review.text()).resolves.toContain("Review before running");
+    const reviewHtml = await review.text();
+    expect(reviewHtml).toContain("Review before running");
+    expect(reviewHtml).toContain("This link runs a program");
+    expect(reviewHtml).toContain("Author-provided note");
+    expect(reviewHtml).toContain('aria-labelledby="system-warning-heading"');
+    expect(reviewHtml).toContain('aria-labelledby="author-note-heading"');
+    expect(reviewHtml).toContain('aria-labelledby="facts-heading"');
+    expect(reviewHtml).toContain(
+      "Deploys &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; after review",
+    );
+    expect(reviewHtml).not.toContain('<script>alert("x")</script>');
+    expect(reviewHtml).toContain("Payload version");
+    expect(reviewHtml).toContain(new Date(notAfter * 1_000).toISOString());
+    expect(reviewHtml).toContain("RELEASE_TOKEN");
+    expect(reviewHtml).not.toContain("never render this value");
+    expect(reviewHtml).toContain("Compile closures");
 
     const execution = await worker.fetch(
       new Request(`${created.link}?__confirm=1`, { method: "POST" }),
@@ -416,11 +435,16 @@ describe("Worker routes", () => {
     const created = await createSmartlink({
       source: 'return { body: "decoded" }',
       service: origin,
+      interstitialNote: "Explains the decoded action",
       validate: validateWorkerScript,
     });
     const response = await worker.fetch(new Request(created.decoder), testEnv());
     expect(response.status).toBe(200);
-    await expect(response.text()).resolves.toContain("Decoded smartlink");
+    const decodedHtml = await response.text();
+    expect(decodedHtml).toContain("Decoded smartlink");
+    expect(decodedHtml).toContain("Author-provided note");
+    expect(decodedHtml).toContain("Explains the decoded action");
+    expect(decodedHtml).toContain("Smartlink facts");
 
     const expiredPayload = encodePayload({
       s: 'return { body: "expired" }',
@@ -455,6 +479,36 @@ describe("Worker routes", () => {
         ...(tamperedNotAfter === undefined ? {} : { notAfter: tamperedNotAfter }),
       });
       const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: "Sealed secret TOKEN could not be decrypted.",
+      });
+    }
+  });
+
+  it("rejects a sealed payload whose author note is stripped or changed", async () => {
+    const created = await createSmartlink({
+      source: 'return { body: "bound" }',
+      service: origin,
+      interstitialNote: "Original note",
+      secrets: { TOKEN: "secret" },
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const decoded = await decodeWorkerPayload(created.payload);
+
+    for (const interstitialNote of [undefined, "Changed note"]) {
+      const payload = encodePayload({
+        ...decoded.envelope,
+        ...(interstitialNote === undefined
+          ? { interstitialNote: undefined }
+          : { interstitialNote }),
+      });
+      const response = await worker.fetch(
+        new Request(`${origin}/r/${payload}?__confirm=1`, { method: "POST" }),
+        testEnv(),
+      );
 
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toEqual({
