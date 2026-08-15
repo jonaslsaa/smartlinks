@@ -24,8 +24,11 @@ const fetchOptionsSchema = z
 
 export type GuestFetchResponse = {
   status: number;
+  statusText: string;
   headers: Record<string, string>;
   text: string;
+  url: string;
+  redirected: boolean;
 };
 
 export type GuestFetch = (url: string, options?: unknown) => Promise<GuestFetchResponse>;
@@ -59,11 +62,11 @@ export function assertPublicUrl(input: string): URL {
   try {
     url = new URL(input);
   } catch (error) {
-    throw new Error("ctx.fetch requires an absolute URL.", { cause: error });
+    throw new Error("fetch requires an absolute URL.", { cause: error });
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("ctx.fetch only supports http: and https: URLs.");
+    throw new Error("fetch only supports http: and https: URLs.");
   }
   if (url.username || url.password) {
     throw new Error("Credentials are not allowed in fetch URLs.");
@@ -220,8 +223,11 @@ export function createGuardedFetch(options: GuardedFetchOptions = {}): GuestFetc
       }
       return {
         status: response.status,
+        statusText: response.statusText,
         headers: responseHeaders,
         text: await readResponseText(response),
+        url: url.href,
+        redirected: redirects > 0,
       };
     }
   };

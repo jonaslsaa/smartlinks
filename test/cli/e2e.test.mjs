@@ -79,12 +79,16 @@ test("keygen emits a usable key pair for the requested key ID", async () => {
 
 test("run passes request values and secrets through the production sandbox", async () => {
   const source = `
+const signature = await ctx.crypto.hmacSha256("key", "message");
 const received: Record<string, unknown> = {
   params: ctx.params,
+  paramValues: ctx.paramValues,
   method: ctx.method,
   headers: ctx.headers,
   body: ctx.body,
   secret: ctx.secrets.E2E_TOKEN,
+  requestId: ctx.requestId,
+  cryptoVerified: await ctx.crypto.verifyHmacSha256("key", "message", signature),
 };
 
 return {
@@ -102,6 +106,10 @@ return {
       "name=CLI",
       "--param",
       "mode=e2e",
+      "--param",
+      "tag=one",
+      "--param",
+      "tag=two",
       "--secret",
       "E2E_TOKEN=sealed",
       "--header",
@@ -117,12 +125,17 @@ return {
     assert.equal(response.status, 201);
     assert.equal(response.headers["content-type"], "application/json");
     assert.equal(response.headers["x-smartlinks-e2e"], "run");
-    assert.deepEqual(JSON.parse(response.body), {
-      params: { name: "CLI", mode: "e2e" },
+    const received = JSON.parse(response.body);
+    assert.match(received.requestId, /^[0-9a-f-]{36}$/u);
+    delete received.requestId;
+    assert.deepEqual(received, {
+      params: { name: "CLI", mode: "e2e", tag: "two" },
+      paramValues: { name: ["CLI"], mode: ["e2e"], tag: ["one", "two"] },
       method: "POST",
       headers: { "x-trace": "trace-123" },
       body: '{"ok":true}',
       secret: "sealed",
+      cryptoVerified: true,
     });
   });
 });

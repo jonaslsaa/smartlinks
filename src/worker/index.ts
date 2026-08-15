@@ -2,7 +2,12 @@ import { ZodError } from "zod";
 import { isPreviewRequest } from "../shared/bots.js";
 import type { DecodedPayload } from "../shared/codec.js";
 import { createGuardedFetch } from "../shared/guarded-fetch.js";
-import { lowercaseHeaders, userParams } from "../shared/request-context.js";
+import {
+  createRequestId,
+  lowercaseHeaders,
+  userParams,
+  userParamValues,
+} from "../shared/request-context.js";
 import { mapScriptResult, type ScriptResult } from "../shared/result.js";
 import { openSecret, publicKeyFromPrivateSecret, sealedSecretKeyId } from "../shared/seal.js";
 import { decodeWorkerPayload } from "./codec.js";
@@ -110,10 +115,12 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
       source: decoded.envelope.s,
       context: {
         params: userParams(url.searchParams),
+        paramValues: userParamValues(url.searchParams),
         method: request.method,
         headers: lowercaseHeaders(request.headers),
         body: await readBoundedBody(request),
         secrets,
+        requestId: createRequestId(request.headers.get("cf-ray")),
       },
       fetch: createGuardedFetch(),
     });

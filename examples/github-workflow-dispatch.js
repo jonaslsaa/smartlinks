@@ -7,7 +7,7 @@ if (!owner || !repo) {
   return { status: 400, body: "Required query parameters: owner and repo" };
 }
 
-const response = await ctx.fetch(
+const response = await fetch(
   `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`,
   {
     method: "POST",
@@ -22,8 +22,8 @@ const response = await ctx.fetch(
   },
 );
 
-if (response.status !== 204) {
-  return { status: 502, body: `GitHub returned HTTP ${response.status}: ${response.text}` };
+if (!response.ok) {
+  return { status: 502, body: `GitHub returned HTTP ${response.status}: ${await response.text()}` };
 }
 
 return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions`;

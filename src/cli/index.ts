@@ -6,7 +6,13 @@ import { Command, Option } from "commander";
 import { z } from "zod";
 import { decodePayload, payloadFromInput } from "../shared/codec.js";
 import { createGuardedFetch } from "../shared/guarded-fetch.js";
-import { localRequestBody, lowercaseHeaders, userParams } from "../shared/request-context.js";
+import {
+  createRequestId,
+  localRequestBody,
+  lowercaseHeaders,
+  userParams,
+  userParamValues,
+} from "../shared/request-context.js";
 import { mapScriptResult } from "../shared/result.js";
 import { runScript } from "../shared/sandbox.js";
 import { formatStoredScript, minifyScriptBody, wrapScriptBody } from "../shared/script.js";
@@ -15,13 +21,7 @@ import { createSmartlink } from "./build.js";
 import { createNodeFetch } from "./node-fetch.js";
 import { readScriptSource } from "./source.js";
 import { fail, startUi } from "./ui.js";
-import {
-  assignments,
-  collect,
-  normalizeServiceUrl,
-  resolveSecrets,
-  splitAssignment,
-} from "./values.js";
+import { collect, normalizeServiceUrl, resolveSecrets, splitAssignment } from "./values.js";
 
 declare const __SMARTLINKS_VERSION__: string;
 
@@ -175,18 +175,18 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     ? await minifyScriptBody(originalSource)
     : wrapScriptBody(originalSource);
   const method = options.method.toUpperCase();
+  const parameters = options.param.map((value) => splitAssignment(value, "Parameter"));
   const guestFetch = options.allowNetwork
     ? createGuardedFetch({ fetchImpl: createNodeFetch() })
     : async () => {
-        throw new Error(
-          "Network access is disabled. Re-run with --allow-network to enable ctx.fetch.",
-        );
+        throw new Error("Network access is disabled. Re-run with --allow-network to enable fetch.");
       };
   const result = await runScript({
     version: "2",
     source,
     context: {
-      params: userParams(Object.entries(assignments(options.param, "Parameter"))),
+      params: userParams(parameters),
+      paramValues: userParamValues(parameters),
       method,
       headers: lowercaseHeaders(
         options.header.map((value) => splitAssignment(value, "Header")),
@@ -194,6 +194,7 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
       ),
       body: localRequestBody(method, options.body),
       secrets: await resolveSecrets(options.secret, { prompt: interactive }),
+      requestId: createRequestId(),
     },
     fetch: guestFetch,
   });
@@ -321,7 +322,7 @@ program
   .option("-H, --header <NAME=value>", "request header; repeatable", collect, [])
   .option("-X, --method <method>", "request method", "GET")
   .option("--body <text>", "request body")
-  .option("--allow-network", "allow guarded outbound ctx.fetch calls")
+  .option("--allow-network", "allow guarded outbound fetch calls")
   .option("--json", "print machine-readable output")
   .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
   .addOption(new Option("--no-minify", "skip JavaScript minification"))

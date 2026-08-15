@@ -72,11 +72,20 @@ Smartlink scripts receive one small `ctx` object:
 | Value | What it contains |
 | --- | --- |
 | `ctx.params` | Query parameters |
+| `ctx.paramValues` | Every value for repeated query parameters |
 | `ctx.method` | Incoming HTTP method |
 | `ctx.headers` | Incoming headers with lowercase names |
 | `ctx.body` | Request body as a string, or `null` |
 | `ctx.secrets` | Decrypted plaintext values, keyed by secret name |
-| `ctx.fetch(url, options)` | Guarded HTTP returning `{ status, headers, text }` |
+| `ctx.requestId` | Opaque ID for correlating one execution |
+| `ctx.crypto` | SHA-256 and HMAC-SHA256 helpers backed by Web Crypto |
+
+Scripts also have a global, guarded `fetch(url, options)`. It accepts familiar string URL,
+method, header, and string-body options and returns a Response-like value with `status`, `ok`,
+`url`, `redirected`, `headers`, `text()`, and `json()`.
+
+`ctx.crypto` provides `sha256`, `hmacSha256`, and `verifyHmacSha256`. They operate on strings,
+use lowercase hex by default, and can use Base64 when passed `"base64"`.
 
 Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? }` for a response,
 or return nothing for a small success page. Top-level `await` works.
@@ -107,9 +116,9 @@ Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful 
 include `--secret`, `--interstitial`, `--copy`, `--json`, `--no-minify`, and `--no-type-check`.
 Local networking is off by default; opt in with `smartlinks run --allow-network`.
 
-TypeScript input is strictly type-checked against the Smartlinks `ctx` and response contract,
-then transpiled from the `.ts` extension before validation and encoding. Use `--no-type-check`
-to explicitly skip semantic checking and only strip the types.
+TypeScript input is strictly type-checked against the Smartlinks `ctx`, global `fetch`, and
+response contract, then transpiled from the `.ts` extension before validation and encoding. Use
+`--no-type-check` to explicitly skip semantic checking and only strip the types.
 
 ## How the link works
 

@@ -47,6 +47,8 @@ describe("guarded fetch", () => {
       },
     });
     expect(response.status).toBe(200);
+    expect(response.url).toBe("https://example.com/done");
+    expect(response.redirected).toBe(true);
     expect(JSON.parse(response.text)).toEqual({
       connection: null,
       contentLength: null,
