@@ -294,8 +294,8 @@ fails open or closed.
 - Execution links are immutable, with no authentication, revocation list, or per-link analytics.
   `notAfter` is checked before sandbox execution; normal expired executions return HTTP 410. A
   script that throws, exhausts a budget, or returns an invalid response shape yields HTTP 422.
-  The hosted runtime allows 60 executions per minute per client IP; excess executions return HTTP
-  429 with `retry-after: 60`.
+  The hosted runtime is rate-limited per client IP for fair use; excess executions return HTTP 429
+  with a `retry-after` header to honor before retrying.
 - Encoded payloads are limited to 7,800 characters; raw and emitted source have a
   one-million-character wrong-file guard.
 - Each request gets a fresh QuickJS runtime: 16 MiB heap, 512 KiB stack, deterministic
