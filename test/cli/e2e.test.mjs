@@ -250,6 +250,9 @@ try {
 
 test("run simulates network calls and traces compiled children without leaking secrets", async () => {
   const source = `
+await fetch(
+  "https://api.example/parent?token=" + encodeURIComponent(ctx.secrets.CHILD_TOKEN!),
+);
 const child = async (childCtx: typeof ctx) => {
   const token = childCtx.secrets.CHILD_TOKEN!;
   const response = await fetch("https://api.example/deploy?token=" + encodeURIComponent(token), {
@@ -276,6 +279,7 @@ return ctx.compile(child, [], {
 
   await withTemporaryScript("ts", source, async (script) => {
     const secret = "top-secret";
+    const parentSecret = "parent-secret";
     const result = await runCli(
       [
         "run",
@@ -283,6 +287,8 @@ return ctx.compile(child, [], {
         "--simulate",
         "--param",
         `token=${secret}`,
+        "--secret",
+        `CHILD_TOKEN=${parentSecret}`,
         "--header",
         `X-Input=${secret}`,
         "--method",
@@ -302,24 +308,29 @@ return ctx.compile(child, [], {
       headers: { "x-input": "[secret:CHILD_TOKEN]" },
       body: "[secret:CHILD_TOKEN]",
     });
-    assert.equal(report.events[0].type, "compile");
-    assert.equal(report.events[0].hop, 1);
-    assert.deepEqual(report.events[0].artifact.sealedSecrets, ["CHILD_TOKEN"]);
-    assert.equal(report.events[1].type, "fetch");
+    assert.equal(report.events[0].type, "fetch");
     assert.equal(
-      report.events[1].request.url,
+      report.events[0].request.url,
+      "https://api.example/parent?token=[secret:CHILD_TOKEN]",
+    );
+    assert.equal(report.events[1].type, "compile");
+    assert.equal(report.events[1].hop, 1);
+    assert.deepEqual(report.events[1].artifact.sealedSecrets, ["CHILD_TOKEN"]);
+    assert.equal(report.events[2].type, "fetch");
+    assert.equal(
+      report.events[2].request.url,
       "https://api.example/deploy?token=[secret:CHILD_TOKEN]",
     );
-    assert.deepEqual(report.events[1].request.headers, {
+    assert.deepEqual(report.events[2].request.headers, {
       authorization: "Bearer [secret:CHILD_TOKEN]",
     });
-    assert.equal(report.events[1].request.body, '{"token":"[secret:CHILD_TOKEN]"}');
-    assert.deepEqual(report.events[1].response, {
+    assert.equal(report.events[2].request.body, '{"token":"[secret:CHILD_TOKEN]"}');
+    assert.deepEqual(report.events[2].response, {
       status: 200,
       headers: { "content-type": "application/json" },
       body: "{}",
     });
-    assert.deepEqual(report.events[2], {
+    assert.deepEqual(report.events[3], {
       type: "fetch-blocked",
       request: { url: "https://runtime.example/pk", method: "GET" },
       reason: "Fetches to the Smartlinks runtime are blocked.",
@@ -328,6 +339,7 @@ return ctx.compile(child, [], {
     assert.equal(report.response.headers["x-token"], "[secret:CHILD_TOKEN]");
     assert.match(report.response.body, /\[secret:CHILD_TOKEN\]/u);
     assert.doesNotMatch(result.stdout, new RegExp(secret, "u"));
+    assert.doesNotMatch(result.stdout, new RegExp(parentSecret, "u"));
     assert.equal(result.stderr, "");
   });
 });

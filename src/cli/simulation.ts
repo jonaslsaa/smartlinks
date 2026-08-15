@@ -9,7 +9,7 @@ import { type PayloadFacts, payloadFacts } from "../shared/payload-facts.js";
 const SIMULATED_BODY = "{}";
 const SIMULATED_HEADERS = { "content-type": "application/json" } as const;
 const SIMULATED_STATUS = 200;
-const MAX_HUMAN_FIELD_LENGTH = 240;
+const MAX_HUMAN_FIELD_LENGTH = 96;
 
 export type SimulationInputs = {
   method: string;
@@ -88,7 +88,7 @@ function requestMethod(options: unknown): string {
 
 export class LocalSimulation {
   readonly #events: SimulationEventSlot[] = [];
-  readonly #secrets = new Map<string, string>();
+  readonly #secrets: Array<readonly [name: string, value: string]> = [];
   readonly #inputs: SimulationInputs;
   #fetchQueue: Promise<void> = Promise.resolve();
 
@@ -99,8 +99,11 @@ export class LocalSimulation {
 
   addSecrets(secrets: Record<string, string>): void {
     for (const [name, value] of Object.entries(secrets)) {
-      if (value.length > 0) {
-        this.#secrets.set(name, value);
+      if (
+        value.length > 0 &&
+        !this.#secrets.some(([knownName, knownValue]) => knownName === name && knownValue === value)
+      ) {
+        this.#secrets.push([name, value]);
       }
     }
   }
@@ -191,7 +194,12 @@ export class LocalSimulation {
   }
 
   #reportEvents(): SimulationEvent[] {
-    return this.#events.flatMap(({ event }) => (event ? [this.#redactEvent(event)] : []));
+    return this.#events.map(({ event }, index) => {
+      if (!event) {
+        throw new Error(`Simulation trace step ${index + 1} did not finish.`);
+      }
+      return this.#redactEvent(event);
+    });
   }
 
   createGuestFetch(blockedHostnames: readonly string[]): GuestFetch {

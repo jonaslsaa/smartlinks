@@ -105,7 +105,7 @@ describe("local network simulation", () => {
 
     const formatted = formatSimulationReport(report);
 
-    expect(formatted).toContain("260 characters omitted");
+    expect(formatted).toContain("404 characters omitted");
     expect(formatted).toContain("use --json for the complete simulation report");
     expect(formatted).not.toContain(body);
     expect(report.inputs.body).toBe(body);
