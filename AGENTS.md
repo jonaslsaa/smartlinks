@@ -30,6 +30,24 @@ executes exactly what production executes.
 Tests: Vitest for unit and Worker suites (the latter on `@cloudflare/vitest-pool-workers`, real
 workerd), `node --test` for CLI end-to-end. Biome formats and lints.
 
+## Where it runs
+
+- <https://s.jonaslsa.com> — the runtime (Cloudflare Worker custom domain); links execute here,
+  and it is the CLI's default service URL
+- <https://smartlinks.jonaslsa.com> — product page, serving `public/` from Vercel, including the
+  hosted copy of the agent guide at `/smartlinks-for-agents.md`
+
+## External references
+
+- [Workers limits](https://developers.cloudflare.com/workers/platform/limits/) — CPU and memory
+  ceilings the execution budgets are designed around
+- [Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/) —
+  for `wrangler.jsonc`, including the rate-limiting binding
+- [Vitest integration](https://developers.cloudflare.com/workers/testing/vitest-integration/) —
+  how the Worker test suite runs inside workerd
+- [quickjs-emscripten](https://github.com/justjake/quickjs-emscripten) — the sandbox engine
+- [RFC 9180 (HPKE)](https://www.rfc-editor.org/rfc/rfc9180) — the sealing construction
+
 ## Design philosophy
 
 The pieces form a stateless actor system addressable by URL: sealed secrets are a link's private
