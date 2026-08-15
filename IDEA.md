@@ -102,14 +102,15 @@ https://<domain>/r/<payload>?<user params...>
   "a": 1,
   "c": ["<compile closure>"],
   "k": { "TOKEN": "<base64url sealed blob>" },
-  "notAfter": 2000000000
+  "n": 2000000000
 }
 ```
 
   `s` = script, `i` = interstitial flag (optional), `a` = complete-artifact AAD
   marker (optional), `c` = ordered compile closure table (optional), `k` =
-  sealed secrets by name (optional), `notAfter` = expiry as integer Unix seconds
-  (optional).
+  sealed secrets by name (optional), `n` = `notAfter` expiry as integer Unix
+  seconds (optional). Decoders still accept the earlier verbose `notAfter` wire
+  key, but authors emit only `n`.
 - Query params starting with `__` are reserved for the service
   (`__confirm`); all others belong to the script.
 - Sealed blob layout: `keyId (1 byte) || hpke enc || ciphertext`.
