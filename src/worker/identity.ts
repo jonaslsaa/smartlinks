@@ -1,7 +1,7 @@
 import { z } from "zod";
 import {
   type AuthorCertificate,
-  GITHUB_OAUTH_CLIENT_ID,
+  GITHUB_APP_CLIENT_ID,
   issueAuthorCertificate,
   verifyAuthorCertificate,
 } from "../shared/author.js";
@@ -29,6 +29,7 @@ const githubUserSchema = z.object({
 
 type ExchangeResult =
   | { status: "pending"; interval: number }
+  | { status: "slow_down" }
   | { status: "authorized"; accessToken: string };
 
 async function exchangeDeviceCode(
@@ -39,7 +40,7 @@ async function exchangeDeviceCode(
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
-      client_id: GITHUB_OAUTH_CLIENT_ID,
+      client_id: GITHUB_APP_CLIENT_ID,
       device_code: deviceCode,
       grant_type: "urn:ietf:params:oauth:grant-type:device_code",
     }),
@@ -57,10 +58,13 @@ async function exchangeDeviceCode(
   if (!pending.success) {
     throw new HttpError(502, "GitHub returned an unexpected authentication response.");
   }
-  if (pending.data.error === "authorization_pending" || pending.data.error === "slow_down") {
+  if (pending.data.error === "slow_down") {
+    return { status: "slow_down" };
+  }
+  if (pending.data.error === "authorization_pending") {
     return {
       status: "pending",
-      interval: pending.data.interval ?? (pending.data.error === "slow_down" ? 10 : 5),
+      interval: pending.data.interval ?? 5,
     };
   }
   throw new HttpError(
@@ -97,11 +101,13 @@ export async function exchangeGithubIdentity(options: {
   fetchImpl?: typeof fetch;
   nowSeconds?: number;
 }): Promise<
-  { status: "pending"; interval: number } | { status: "issued"; certificate: AuthorCertificate }
+  | { status: "pending"; interval: number }
+  | { status: "slow_down" }
+  | { status: "issued"; certificate: AuthorCertificate }
 > {
   const fetchImpl = options.fetchImpl ?? fetch;
   const exchange = await exchangeDeviceCode(options.deviceCode, fetchImpl);
-  if (exchange.status === "pending") {
+  if (exchange.status === "pending" || exchange.status === "slow_down") {
     return exchange;
   }
   const identity = await githubIdentity(exchange.accessToken, fetchImpl);

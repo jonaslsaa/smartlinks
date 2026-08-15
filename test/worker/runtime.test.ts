@@ -153,12 +153,45 @@ describe("Worker routes", () => {
     expect(interstitial.status).toBe(200);
     await expect(interstitial.text()).resolves.toContain("github.com/jonaslsaa");
 
+    const preview = await worker.fetch(
+      new Request(created.link, { headers: { "user-agent": "Slackbot-LinkExpanding" } }),
+      testEnv(),
+    );
+    expect(preview.status).toBe(200);
+    await expect(preview.text()).resolves.toContain("github.com/jonaslsaa");
+
     const run = await worker.fetch(
       new Request(`${created.link}?__confirm=1`, { method: "POST" }),
       testEnv(),
     );
     expect(run.status).toBe(200);
     await expect(run.text()).resolves.toBe("signed:sealed-authority");
+
+    const decoded = await decodeWorkerPayload(created.payload);
+    const { u: _proof, ...withoutProof } = decoded.envelope;
+    const downgradedPayload = encodePayload({ ...withoutProof, a: 1 });
+    const downgraded = await worker.fetch(
+      new Request(`${origin}/r/${downgradedPayload}?__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    expect(downgraded.status).toBe(400);
+
+    if (!decoded.envelope.u) {
+      throw new Error("Expected a signed payload.");
+    }
+    const [issuedCertificate, signature] = decoded.envelope.u;
+    const tamperedSignature = `${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`;
+    const invalidPayload = encodePayload({
+      ...decoded.envelope,
+      u: [issuedCertificate, tamperedSignature],
+    });
+    const invalidPreview = await worker.fetch(
+      new Request(`${origin}/r/${invalidPayload}`, {
+        headers: { "user-agent": "Slackbot-LinkExpanding" },
+      }),
+      testEnv(),
+    );
+    expect(invalidPreview.status).toBe(400);
   });
 
   it("exchanges an authorized device code without returning the GitHub token", async () => {
@@ -221,6 +254,22 @@ describe("Worker routes", () => {
       }),
     ).resolves.toEqual({ status: "pending", interval: 7 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves GitHub's slow-down signal for cumulative client backoff", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ error: "slow_down" }));
+    await expect(
+      exchangeGithubIdentity({
+        authorPublicKey: authorKey.publicKey,
+        deviceCode: "device-code-with-enough-entropy",
+        issuerKeyId: 1,
+        issuerPrivateKey: authorIssuer.privateKey,
+        issuerPublicKey: authorIssuer.publicKey,
+        fetchImpl,
+      }),
+    ).resolves.toEqual({ status: "slow_down" });
   });
 
   it("rate-limits certificate polling before parsing or contacting GitHub", async () => {

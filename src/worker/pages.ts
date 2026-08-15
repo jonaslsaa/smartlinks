@@ -72,11 +72,15 @@ function factsHtml(decoded: DecodedPayload): string {
   return `<section class="panel" aria-labelledby="facts-heading"><h2 class="eyebrow" id="facts-heading">Smartlink facts</h2><dl><dt>Payload version</dt><dd>${facts.payloadVersion}</dd><dt>Expiry</dt><dd>${escapeHtml(expiry)}</dd><dt>Sealed secrets</dt><dd>${secrets}</dd><dt>Compile closures</dt><dd>${facts.compileClosures}</dd></dl></section>`;
 }
 
-export function previewPage(head = false): Response {
+export function previewPage(
+  decoded: DecodedPayload,
+  author: AuthorVerification,
+  head = false,
+): Response {
   const response = html(
     page(
       "Smartlink preview",
-      "<h1>Smartlink</h1><p>This URL contains a small program. Preview requests never execute it.</p>",
+      `<h1>Smartlink</h1><p>This URL contains a small program. Preview requests never execute it.</p>${authorHtml(author)}${factsHtml(decoded)}`,
     ),
     { headers: { "cache-control": "no-store" } },
   );

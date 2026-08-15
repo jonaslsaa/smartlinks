@@ -2,7 +2,12 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestAuthorCertificate, requestGithubDeviceCode } from "../../src/cli/author-login.js";
+import {
+  nextAuthorPollInterval,
+  requestAuthorCertificate,
+  requestGithubDeviceCode,
+  validateIssuedCertificate,
+} from "../../src/cli/author-login.js";
 import {
   authorKey,
   clearStoredAuthor,
@@ -22,7 +27,7 @@ afterEach(async () => {
 });
 
 describe("author login", () => {
-  it("requests an unscoped GitHub OAuth device code", async () => {
+  it("requests a GitHub App device code without caller-selected scopes", async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
         device_code: "device-code",
@@ -71,6 +76,38 @@ describe("author login", () => {
         fetchImpl,
       ),
     ).resolves.toEqual({ status: "issued", certificate });
+  });
+
+  it("backs off by five seconds for every GitHub slow-down response", () => {
+    expect(nextAuthorPollInterval(5, { status: "slow_down" })).toBe(10);
+    expect(nextAuthorPollInterval(10, { status: "slow_down" })).toBe(15);
+    expect(nextAuthorPollInterval(15, { status: "pending", interval: 7 })).toBe(15);
+  });
+
+  it("authenticates an issued certificate before it can be stored", async () => {
+    const [issuer, attacker, author] = await Promise.all([
+      generateAuthorKeyPair(),
+      generateAuthorKeyPair(),
+      generateAuthorKeyPair(),
+    ]);
+    const certificate = await issueAuthorCertificate({
+      authorPublicKey: author.publicKey,
+      identity: { githubId: 123456, githubLogin: "jonaslsaa" },
+      issuerKeyId: 9,
+      issuerPrivateKey: issuer.privateKey,
+      issuedAt: Math.floor(Date.now() / 1_000),
+      expiresAt: Math.floor(Date.now() / 1_000) + 3_600,
+    });
+
+    await expect(
+      validateIssuedCertificate(certificate, author, { 9: issuer.publicKey }),
+    ).resolves.toBeUndefined();
+    await expect(
+      validateIssuedCertificate(certificate, attacker, { 9: issuer.publicKey }),
+    ).rejects.toThrow("different signing key");
+    await expect(validateIssuedCertificate(certificate, author, {})).rejects.toThrow(
+      "Unknown certificate issuer",
+    );
   });
 
   it("stores only the local key and certificate in a private file", async () => {

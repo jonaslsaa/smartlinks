@@ -2,36 +2,22 @@ import { z } from "zod";
 import { concatBytes, fromBase64Url, toBase64Url, utf8 } from "./bytes.js";
 import type { DecodedPayload, Envelope, PayloadVersion } from "./codec.js";
 
-const ED25519_PUBLIC_KEY_LENGTH = 32;
-const ED25519_SIGNATURE_LENGTH = 64;
 const GITHUB_LOGIN = /^(?!-)[A-Za-z0-9-]{1,39}(?<!-)$/u;
 const BASE64URL = /^[A-Za-z0-9_-]+$/u;
 const CERTIFICATE_DOMAIN = utf8("smartlinks/author-certificate/v1\0");
 const ARTIFACT_DOMAIN = utf8("smartlinks/author-artifact/v1\0");
 
-export const GITHUB_OAUTH_CLIENT_ID = "Ov23litDbojXW9bRX9Lu";
+export const GITHUB_APP_CLIENT_ID = "Iv23liVE6og0SQZEQqSc";
 
 const encodedPublicKeySchema = z
   .string()
-  .regex(BASE64URL)
-  .refine((value) => {
-    try {
-      return fromBase64Url(value).byteLength === ED25519_PUBLIC_KEY_LENGTH;
-    } catch {
-      return false;
-    }
-  }, "The author public key is invalid.");
+  .length(43, "The author public key is invalid.")
+  .regex(BASE64URL, "The author public key is invalid.");
 
 const encodedSignatureSchema = z
   .string()
-  .regex(BASE64URL)
-  .refine((value) => {
-    try {
-      return fromBase64Url(value).byteLength === ED25519_SIGNATURE_LENGTH;
-    } catch {
-      return false;
-    }
-  }, "The author signature is invalid.");
+  .length(86, "The author signature is invalid.")
+  .regex(BASE64URL, "The author signature is invalid.");
 
 export const authorCertificateSchema = z
   .tuple([
@@ -115,18 +101,21 @@ function artifactSigningBytes(
   envelope: Omit<Envelope, "u">,
   certificate: AuthorCertificate,
 ): Uint8Array {
+  const { s, i, a, c, k, notAfter, interstitialNote, ...unhandled } = envelope;
+  const exhaustive: Record<string, never> = unhandled;
+  void exhaustive;
   const sealedSecrets = Object.entries(envelope.k ?? {}).sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0,
   );
   const artifact = [
     version,
-    envelope.s,
-    envelope.i === true,
-    envelope.a ?? null,
-    envelope.c ?? [],
+    s,
+    i === true,
+    a ?? null,
+    c ?? [],
     sealedSecrets,
-    envelope.notAfter ?? null,
-    envelope.interstitialNote ?? null,
+    notAfter ?? null,
+    interstitialNote ?? null,
     certificateFields(certificate),
   ];
   return concatBytes(ARTIFACT_DOMAIN, utf8(JSON.stringify(artifact)));

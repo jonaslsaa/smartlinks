@@ -143,10 +143,6 @@ async function verifiedAuthor(decoded: DecodedPayload, env: Env): Promise<Author
 }
 
 async function runRoute(request: Request, env: Env, payload: string): Promise<Response> {
-  if (isPreviewRequest(request)) {
-    return previewPage(request.method === "HEAD");
-  }
-
   let decoded: DecodedPayload;
   try {
     decoded = await decodeWorkerPayload(payload);
@@ -156,6 +152,9 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
     });
   }
   const author = await verifiedAuthor(decoded, env);
+  if (isPreviewRequest(request)) {
+    return previewPage(decoded, author, request.method === "HEAD");
+  }
 
   const url = new URL(request.url);
   if (isExpired(decoded.envelope.notAfter)) {
@@ -277,7 +276,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
       issuerPrivateKey: authorIssuerPrivateKey(env, keyId),
       issuerPublicKey,
     });
-    return result.status === "pending"
+    return result.status === "pending" || result.status === "slow_down"
       ? json(result, { status: 202 })
       : json({ certificate: result.certificate });
   }

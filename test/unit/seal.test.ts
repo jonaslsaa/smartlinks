@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { generateAuthorKeyPair, issueAuthorCertificate } from "../../src/shared/author.js";
 import {
   artifactSecretBinding,
   boundSealedSecrets,
@@ -93,6 +94,46 @@ describe("sealed secrets", () => {
         },
       }),
     ).toThrow("complete-artifact binding");
+  });
+
+  it("binds signed sealed authority to the author certificate", async () => {
+    const [pair, issuer, author, otherAuthor] = await Promise.all([
+      generateKeyPair(1),
+      generateAuthorKeyPair(),
+      generateAuthorKeyPair(),
+      generateAuthorKeyPair(),
+    ]);
+    const certificate = await issueAuthorCertificate({
+      authorPublicKey: author.publicKey,
+      identity: { githubId: 123456, githubLogin: "jonaslsaa" },
+      issuerKeyId: 7,
+      issuerPrivateKey: issuer.privateKey,
+      issuedAt: 2_000_000_000,
+      expiresAt: 2_000_003_600,
+    });
+    const otherCertificate = await issueAuthorCertificate({
+      authorPublicKey: otherAuthor.publicKey,
+      identity: { githubId: 654321, githubLogin: "another-author" },
+      issuerKeyId: 7,
+      issuerPrivateKey: issuer.privateKey,
+      issuedAt: 2_000_000_000,
+      expiresAt: 2_000_003_600,
+    });
+    const envelope = { s: "async()=>1", a: 2 as const };
+    const binding = artifactSecretBinding("2", envelope, "TOKEN", certificate);
+    const blob = await sealSecret("top secret", binding, pair);
+
+    await expect(openSecret(blob, binding, pair.privateKeySecret)).resolves.toBe("top secret");
+    await expect(
+      openSecret(
+        blob,
+        artifactSecretBinding("2", envelope, "TOKEN", otherCertificate),
+        pair.privateKeySecret,
+      ),
+    ).rejects.toThrow();
+    expect(() => artifactSecretBinding("2", envelope, "TOKEN")).toThrow(
+      "require their author certificate",
+    );
   });
 
   it("validates the one-byte rotation key ID", async () => {

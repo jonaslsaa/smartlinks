@@ -31,7 +31,7 @@ async function createTestAuthor(configDirectory) {
     crypto.subtle.exportKey("raw", author.publicKey),
   ]);
   const now = Math.floor(Date.now() / 1_000);
-  const unsigned = [1, 1, 123456, "jonaslsaa", toBase64Url(authorPublic), now, now + 3_600];
+  const unsigned = [1, 128, 123456, "jonaslsaa", toBase64Url(authorPublic), now, now + 3_600];
   const certificateSignature = await crypto.subtle.sign(
     "Ed25519",
     issuer.privateKey,
@@ -214,13 +214,15 @@ test("build signs with the configured author and decode verifies it offline", as
     const env = {
       ...process.env,
       SMARTLINKS_CONFIG_DIR: configDirectory,
-      SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_1: issuerPublicKey,
+      SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: issuerPublicKey,
     };
     const built = await runCli(["build", script, "--sign", "--json"], { env });
     const output = JSON.parse(built.stdout);
     assert.equal(built.stderr, "");
     assert.equal(output.signed, true);
     assert.equal(output.author, "jonaslsaa");
+    assert.equal(typeof output.signingOverhead, "number");
+    assert.ok(output.signingOverhead > 0);
 
     const decoded = await runCli(["decode", output.link, "--json"], { env });
     assert.equal(decoded.stderr, "");
@@ -230,6 +232,12 @@ test("build signs with the configured author and decode verifies it offline", as
     assert.equal(verifiedAuthor.githubLogin, "jonaslsaa");
     assert.equal(typeof verifiedAuthor.issuedAt, "number");
     assert.equal(typeof verifiedAuthor.expiresAt, "number");
+
+    const outputFile = join(dirname(script), "signed-link.txt");
+    const receipt = await runCli(["build", script, "--sign", "--out", outputFile], { env });
+    assert.match(receipt.stdout, /signed by github\.com\/jonaslsaa · \+[\d,]+ characters/u);
+    assert.doesNotMatch(receipt.stdout, /https:\/\/s\.jonaslsa\.com\/r\//u);
+    assert.match(await readFile(outputFile, "utf8"), /^https:\/\/s\.jonaslsa\.com\/r\//u);
   });
 });
 

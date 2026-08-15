@@ -289,7 +289,7 @@ executing it or decrypting secrets. It renders `notAfter` as an absolute UTC tim
 links whose deadline has passed. It also displays any author-provided note and the same payload
 facts shown by the browser interstitial.
 
-`smartlinks login` runs GitHub's unscoped OAuth device flow, generates a local author key, and
+`smartlinks login` runs a zero-permission GitHub App device flow, generates a local author key, and
 stores only that private key and its 90-day Smartlinks certificate. The temporary GitHub token is
 discarded during issuance. `smartlinks logout` removes the local author identity. A build requested
 with `--sign` fails rather than silently becoming unsigned when no valid certificate exists.

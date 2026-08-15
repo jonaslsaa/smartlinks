@@ -165,7 +165,7 @@ but cannot stop someone from republishing public source as a different unsigned 
 
 ## Verified authors
 
-`smartlinks login` verifies a GitHub account through an unscoped OAuth device flow, creates a
+`smartlinks login` verifies a GitHub account through a zero-permission GitHub App device flow, creates a
 dedicated Ed25519 key locally, and receives a compact Smartlinks author certificate. The GitHub
 access token is consumed only while the certificate is issued and is never stored. The local
 private key never leaves the machine.
@@ -339,10 +339,13 @@ Keep `RUNTIME_HOSTNAMES` in `wrangler.jsonc` synchronized with every public host
 reach the Worker. Never commit `.dev.vars`.
 
 Self-hosted author certificates additionally require an issuer generated with the internal
-`node dist/index.js author-keygen --key-id 1 --set-worker` command. Put its public key in the
-runtime's `AUTHOR_CA_PUBLIC_KEY_1` configuration. Set the matching
-`SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_1` in self-hosted CLI environments. The hosted Smartlinks OAuth
-identity service does not delegate its issuer key to other runtimes.
+`node dist/index.js author-keygen --key-id 128 --set-worker` command. Reserve issuer ID `1` for
+hosted Smartlinks, choose an otherwise unused ID from `2` through `255`, and set that ID as the
+runtime's `AUTHOR_CA_KEY_ID`. Put the public key in the corresponding configuration (for example,
+`AUTHOR_CA_PUBLIC_KEY_128`) and set the matching CLI variable (for example,
+`SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128`). Issuer IDs must be unique across every runtime a CLI is
+configured to trust. The hosted Smartlinks identity service does not delegate its issuer key to
+other runtimes.
 
 ---
 

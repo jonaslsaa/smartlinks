@@ -1,9 +1,11 @@
 import { z } from "zod";
 import {
   type AuthorCertificate,
+  type AuthorKeyPair,
   authorCertificateSchema,
-  GITHUB_OAUTH_CLIENT_ID,
+  GITHUB_APP_CLIENT_ID,
   generateAuthorKeyPair,
+  verifyAuthorCertificate,
 } from "../shared/author.js";
 
 const deviceCodeSchema = z.object({
@@ -14,16 +16,45 @@ const deviceCodeSchema = z.object({
   interval: z.number().int().positive(),
 });
 
-const pendingCertificateSchema = z.object({
-  status: z.literal("pending"),
-  interval: z.number().int().positive(),
-});
+const pendingCertificateSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("pending"), interval: z.number().int().positive() }),
+  z.object({ status: z.literal("slow_down") }),
+]);
 
 const issuedCertificateSchema = z.object({
   certificate: z.unknown(),
 });
 
 export type DeviceCode = z.infer<typeof deviceCodeSchema>;
+export type AuthorCertificatePoll =
+  | { status: "pending"; interval: number }
+  | { status: "slow_down" }
+  | { status: "issued"; certificate: AuthorCertificate };
+
+export function nextAuthorPollInterval(
+  currentInterval: number,
+  result: Exclude<AuthorCertificatePoll, { status: "issued" }>,
+): number {
+  return result.status === "slow_down"
+    ? currentInterval + 5
+    : Math.max(currentInterval, result.interval);
+}
+
+export async function validateIssuedCertificate(
+  certificate: AuthorCertificate,
+  key: AuthorKeyPair,
+  issuerPublicKeys: Readonly<Record<number, string>>,
+): Promise<void> {
+  if (certificate[4] !== key.publicKey) {
+    throw new Error("The identity service returned a certificate for a different signing key.");
+  }
+  const verification = await verifyAuthorCertificate(certificate, { issuerPublicKeys });
+  if (verification.status !== "valid") {
+    throw new Error(
+      `The identity service returned an unusable certificate: ${verification.status === "invalid" ? verification.reason : "the certificate is already expired"}`,
+    );
+  }
+}
 
 async function responseError(response: Response): Promise<Error> {
   const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined;
@@ -40,7 +71,7 @@ export async function requestGithubDeviceCode(
   const response = await fetchImpl("https://github.com/login/device/code", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ client_id: GITHUB_OAUTH_CLIENT_ID }),
+    body: new URLSearchParams({ client_id: GITHUB_APP_CLIENT_ID }),
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
@@ -54,9 +85,7 @@ export async function requestAuthorCertificate(
   deviceCode: string,
   publicKey: string,
   fetchImpl: typeof fetch = fetch,
-): Promise<
-  { status: "pending"; interval: number } | { status: "issued"; certificate: AuthorCertificate }
-> {
+): Promise<AuthorCertificatePoll> {
   const response = await fetchImpl(`${service}/auth/github/certificate`, {
     method: "POST",
     headers: { "content-type": "application/json" },

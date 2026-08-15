@@ -11,6 +11,12 @@ export function trustedAuthorIssuerKeys(
     }
     const keyId = Number(match[1]);
     if (Number.isInteger(keyId) && keyId >= 1 && keyId <= 255) {
+      const hostedKey = AUTHOR_CA_PUBLIC_KEYS[keyId];
+      if (hostedKey !== undefined && hostedKey !== value) {
+        throw new Error(
+          `Author issuer key ID ${keyId} is reserved by hosted Smartlinks. Choose a different self-hosted key ID.`,
+        );
+      }
       keys[keyId] = value;
     }
   }

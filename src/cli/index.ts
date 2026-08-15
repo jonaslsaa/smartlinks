@@ -19,7 +19,12 @@ import {
 import { payloadFacts } from "../shared/payload-facts.js";
 import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
-import { beginAuthorLogin, requestAuthorCertificate } from "./author-login.js";
+import {
+  beginAuthorLogin,
+  nextAuthorPollInterval,
+  requestAuthorCertificate,
+  validateIssuedCertificate,
+} from "./author-login.js";
 import {
   authorKey,
   clearStoredAuthor,
@@ -101,10 +106,17 @@ function buildStats(linkLength: number, payloadLength: number, notAfter?: number
     .join(" · ");
 }
 
-function buildReceipt(stats: string, options: Pick<BuildOptions, "copy" | "out">): string {
+function buildReceipt(
+  stats: string,
+  options: Pick<BuildOptions, "copy" | "out">,
+  signing?: { githubLogin: string; overhead: number },
+): string {
   return [
     options.copy ? "Copied to clipboard" : undefined,
     stats,
+    signing
+      ? `signed by github.com/${signing.githubLogin} · +${signing.overhead.toLocaleString()} characters`
+      : undefined,
     options.out ? `written to ${options.out}` : undefined,
   ]
     .filter((part): part is string => part !== undefined)
@@ -241,6 +253,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
           ...(options.copy ? { copied: true } : {}),
           ...(options.out ? { out: options.out } : {}),
           ...(author ? { signed: true, author: author.certificate[3] } : {}),
+          ...(author ? { signingOverhead: created.signingOverhead } : {}),
         },
         null,
         2,
@@ -250,7 +263,15 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   }
   if (interactive) {
     if (options.copy || options.out) {
-      p.outro(buildReceipt(stats, options));
+      p.outro(
+        buildReceipt(
+          stats,
+          options,
+          author
+            ? { githubLogin: author.certificate[3], overhead: created.signingOverhead }
+            : undefined,
+        ),
+      );
     } else {
       if (fitsInteractiveNote(created.link)) {
         p.note(created.link, "Smartlink");
@@ -262,7 +283,15 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
       p.outro(stats);
     }
   } else if (options.copy || options.out) {
-    console.log(buildReceipt(stats, options));
+    console.log(
+      buildReceipt(
+        stats,
+        options,
+        author
+          ? { githubLogin: author.certificate[3], overhead: created.signingOverhead }
+          : undefined,
+      ),
+    );
   } else {
     console.log(created.link);
     console.error("Audit: run smartlinks decode with the link above");
@@ -352,10 +381,11 @@ async function loginCommand(): Promise<void> {
   while (Date.now() < deadline) {
     await wait(interval * 1_000);
     const result = await requestAuthorCertificate(service, device.device_code, key.publicKey);
-    if (result.status === "pending") {
-      interval = Math.max(interval, result.interval);
+    if (result.status === "slow_down" || result.status === "pending") {
+      interval = nextAuthorPollInterval(interval, result);
       continue;
     }
+    await validateIssuedCertificate(result.certificate, key, trustedAuthorIssuerKeys());
     await writeStoredAuthor({ key, certificate: result.certificate });
     const login = result.certificate[3];
     if (interactive) {

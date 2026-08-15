@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  authorProofSchema,
   generateAuthorKeyPair,
   issueAuthorCertificate,
   signEnvelope,
@@ -24,7 +25,7 @@ async function signedPayload(now = FIXTURE_NOW) {
     {
       s: 'async ctx=>({body:"hello"})',
       i: true,
-      a: 1,
+      a: 2,
       c: ['async ctx=>({body:"child"})'],
       k: { TOKEN: "sealed-value" },
       notAfter: now + 1_800,
@@ -121,5 +122,15 @@ describe("author signatures", () => {
     await expect(
       signEnvelope("2", { s: 'async ctx=>({body:"hello"})' }, proof[0], other, fixture.now),
     ).rejects.toThrow("does not match the local signing key");
+  });
+
+  it("rejects oversized encoded keys and signatures before cryptographic verification", () => {
+    const oversized = "A".repeat(1_000_000);
+    expect(
+      authorProofSchema.safeParse([
+        [1, 1, 123456, "jonaslsaa", oversized, FIXTURE_NOW, FIXTURE_NOW + 60, oversized],
+        oversized,
+      ]).success,
+    ).toBe(false);
   });
 });
