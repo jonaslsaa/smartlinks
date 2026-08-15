@@ -652,19 +652,45 @@ describe("Worker routes", () => {
   });
 
   it("provides a non-executing decoder page", async () => {
-    const created = await createSmartlink({
-      source: 'return { body: "decoded" }',
-      service: origin,
-      interstitialNote: "Explains the decoded action",
-      validate: validateWorkerScript,
+    const notAfter = Math.floor(Date.now() / 1_000) + 60 * 60;
+    const payload = encodePayload({
+      s: 'async ctx=>({body:"</code><script>entry</script>"})',
+      i: true,
+      c: [
+        'async(ctx,name)=>({body:"first-sentinel:"+name})',
+        'async()=>({body:"second-sentinel:</code><script>closure</script>"})',
+      ],
+      k: { RELEASE_TOKEN: "encrypted-value-must-not-render" },
+      notAfter,
+      interstitialNote: 'Explains <script>alert("x")</script>',
     });
-    const response = await worker.fetch(new Request(created.decoder), testEnv());
+    const response = await worker.fetch(new Request(`${origin}/d/${payload}`), testEnv());
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
     const decodedHtml = await response.text();
     expect(decodedHtml).toContain("Decoded smartlink");
     expect(decodedHtml).toContain("Author-provided note");
-    expect(decodedHtml).toContain("Explains the decoded action");
+    expect(decodedHtml).toContain("Explains &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
     expect(decodedHtml).toContain("Smartlink facts");
+    expect(decodedHtml).toContain("<dt>Payload version</dt><dd>2</dd>");
+    expect(decodedHtml).toContain("<dt>Confirmation required</dt><dd>Yes</dd>");
+    expect(decodedHtml).toContain(new Date(notAfter * 1_000).toISOString());
+    expect(decodedHtml).toContain("<dt>Sealed secrets</dt><dd>1: RELEASE_TOKEN</dd>");
+    expect(decodedHtml).not.toContain("encrypted-value-must-not-render");
+    expect(decodedHtml).toContain("<dt>Compile closures</dt><dd>2</dd>");
+    const closureZero = decodedHtml.indexOf("<h3>Closure 0</h3>");
+    const closureOne = decodedHtml.indexOf("<h3>Closure 1</h3>");
+    const firstClosure = decodedHtml.indexOf("first-sentinel:");
+    const secondClosure = decodedHtml.indexOf("second-sentinel:");
+    expect(closureZero).toBeGreaterThan(-1);
+    expect(closureOne).toBeGreaterThan(closureZero);
+    expect(firstClosure).toBeGreaterThan(closureZero);
+    expect(firstClosure).toBeLessThan(closureOne);
+    expect(secondClosure).toBeGreaterThan(closureOne);
+    expect(decodedHtml).toContain("&lt;/code&gt;&lt;script&gt;entry&lt;/script&gt;");
+    expect(decodedHtml).toContain("&lt;/code&gt;&lt;script&gt;closure&lt;/script&gt;");
+    expect(decodedHtml).not.toContain("<script>entry</script>");
+    expect(decodedHtml).not.toContain("<script>closure</script>");
 
     const expiredPayload = encodePayload({
       s: 'return { body: "expired" }',
@@ -672,7 +698,12 @@ describe("Worker routes", () => {
     });
     const expired = await worker.fetch(new Request(`${origin}/d/${expiredPayload}`), testEnv());
     expect(expired.headers.get("cache-control")).toBe("no-store");
-    await expect(expired.text()).resolves.toContain("(expired)");
+    const expiredHtml = await expired.text();
+    expect(expiredHtml).toContain("(expired)");
+    expect(expiredHtml).toContain("<dt>Confirmation required</dt><dd>No</dd>");
+    expect(expiredHtml).toContain("<dt>Compile closures</dt><dd>0</dd>");
+    expect(expiredHtml).not.toContain("<h2>Compile closures</h2>");
+    expect(expiredHtml).not.toContain("<h3>Closure");
   });
 
   it("rejects a sealed blob copied to another script", async () => {
