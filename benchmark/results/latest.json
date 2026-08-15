@@ -1,0 +1,2606 @@
+{
+  "generatedAt": "2026-08-14T23:22:46.929Z",
+  "environment": {
+    "node": "v26.5.0",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "pipeline": {
+    "compressionInput": "UTF-8 JSON envelope containing terser-current-safe output",
+    "compressionMinifier": "terser-current-safe",
+    "encodingInput": "fflate-deflate-raw-9 compressed envelope"
+  },
+  "samples": [
+    {
+      "id": "tiny-formatters",
+      "rawBytes": 457,
+      "minifiers": [
+        {
+          "id": "none",
+          "sourceBytes": 457,
+          "envelopeBytes": 512,
+          "baselinePayloadCharacters": 371,
+          "milliseconds": 0.011082999999999288
+        },
+        {
+          "id": "terser-current-safe",
+          "sourceBytes": 195,
+          "envelopeBytes": 217,
+          "baselinePayloadCharacters": 212,
+          "milliseconds": 8.701541000000006
+        },
+        {
+          "id": "terser-aggressive",
+          "sourceBytes": 195,
+          "envelopeBytes": 217,
+          "baselinePayloadCharacters": 212,
+          "milliseconds": 2.0215419999999966
+        },
+        {
+          "id": "esbuild",
+          "sourceBytes": 203,
+          "envelopeBytes": 225,
+          "baselinePayloadCharacters": 217,
+          "milliseconds": 7.802833000000007
+        },
+        {
+          "id": "swc",
+          "sourceBytes": 193,
+          "envelopeBytes": 215,
+          "baselinePayloadCharacters": 209,
+          "milliseconds": 0.6015830000000051
+        }
+      ],
+      "compressors": [
+        {
+          "id": "none",
+          "runtime": "none",
+          "compressedBytes": 217,
+          "payloadCharacters": 291,
+          "compressMilliseconds": 0.01066600000001472,
+          "decompressMilliseconds": 0.008499999999997954
+        },
+        {
+          "id": "fflate-deflate-raw-9",
+          "runtime": "current",
+          "compressedBytes": 158,
+          "payloadCharacters": 212,
+          "compressMilliseconds": 0.067875000000015,
+          "decompressMilliseconds": 0.23695800000001555
+        },
+        {
+          "id": "fflate-deflate-raw-9-dictionary",
+          "runtime": "current",
+          "compressedBytes": 149,
+          "payloadCharacters": 200,
+          "compressMilliseconds": 0.08158299999999485,
+          "decompressMilliseconds": 0.05370800000000031
+        },
+        {
+          "id": "native-deflate-raw-9",
+          "runtime": "worker-native",
+          "compressedBytes": 158,
+          "payloadCharacters": 212,
+          "compressMilliseconds": 0.2696669999999983,
+          "decompressMilliseconds": 0.043666999999999234
+        },
+        {
+          "id": "native-gzip-9",
+          "runtime": "worker-native",
+          "compressedBytes": 176,
+          "payloadCharacters": 236,
+          "compressMilliseconds": 0.05216599999999971,
+          "decompressMilliseconds": 0.04004199999999969
+        },
+        {
+          "id": "brotli-q4",
+          "runtime": "extra-decoder",
+          "compressedBytes": 163,
+          "payloadCharacters": 219,
+          "compressMilliseconds": 0.16904199999999037,
+          "decompressMilliseconds": 0.04291599999999107
+        },
+        {
+          "id": "brotli-q9",
+          "runtime": "extra-decoder",
+          "compressedBytes": 157,
+          "payloadCharacters": 211,
+          "compressMilliseconds": 0.14683299999998667,
+          "decompressMilliseconds": 0.01500000000001478
+        },
+        {
+          "id": "brotli-q11",
+          "runtime": "extra-decoder",
+          "compressedBytes": 146,
+          "payloadCharacters": 196,
+          "compressMilliseconds": 0.6241250000000207,
+          "decompressMilliseconds": 0.023500000000012733
+        },
+        {
+          "id": "zstd-default",
+          "runtime": "extra-decoder",
+          "compressedBytes": 168,
+          "payloadCharacters": 225,
+          "compressMilliseconds": 0.09537499999999,
+          "decompressMilliseconds": 0.04137499999998795
+        }
+      ],
+      "encoders": [
+        {
+          "id": "hex",
+          "alphabetSize": 16,
+          "safety": "unreserved",
+          "encodedCharacters": 317,
+          "browserPathCharacters": 317,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.44387499999999136,
+          "decodeMilliseconds": 0.4795000000000016
+        },
+        {
+          "id": "base64url",
+          "alphabetSize": 64,
+          "safety": "unreserved",
+          "encodedCharacters": 212,
+          "browserPathCharacters": 212,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.004666000000014492,
+          "decodeMilliseconds": 0.05516699999998309
+        },
+        {
+          "id": "base66-unreserved",
+          "alphabetSize": 66,
+          "safety": "unreserved",
+          "encodedCharacters": 210,
+          "browserPathCharacters": 210,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.12941700000001788,
+          "decodeMilliseconds": 0.13870900000000574
+        },
+        {
+          "id": "base71-component",
+          "alphabetSize": 71,
+          "safety": "component",
+          "encodedCharacters": 207,
+          "browserPathCharacters": 207,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.0891250000000241,
+          "decodeMilliseconds": 0.11833299999997848
+        },
+        {
+          "id": "base79-path",
+          "alphabetSize": 79,
+          "safety": "path",
+          "encodedCharacters": 202,
+          "browserPathCharacters": 234,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.05208400000000779,
+          "decodeMilliseconds": 0.11562500000002274
+        },
+        {
+          "id": "base85-z85-alphabet",
+          "alphabetSize": 85,
+          "safety": "escaped",
+          "encodedCharacters": 198,
+          "browserPathCharacters": 284,
+          "directPathSafe": false,
+          "encodeMilliseconds": 0.045250000000010004,
+          "decodeMilliseconds": 0.11270799999999781
+        },
+        {
+          "id": "base91",
+          "alphabetSize": 91,
+          "safety": "escaped",
+          "encodedCharacters": 195,
+          "browserPathCharacters": 285,
+          "directPathSafe": false,
+          "encodeMilliseconds": 0.048082999999991216,
+          "decodeMilliseconds": 0.09208300000000236
+        }
+      ]
+    },
+    {
+      "id": "small-api",
+      "rawBytes": 1312,
+      "minifiers": [
+        {
+          "id": "none",
+          "sourceBytes": 1312,
+          "envelopeBytes": 1464,
+          "baselinePayloadCharacters": 861,
+          "milliseconds": 0.0026670000000024174
+        },
+        {
+          "id": "terser-current-safe",
+          "sourceBytes": 737,
+          "envelopeBytes": 767,
+          "baselinePayloadCharacters": 551,
+          "milliseconds": 4.882459000000011
+        },
+        {
+          "id": "terser-aggressive",
+          "sourceBytes": 737,
+          "envelopeBytes": 767,
+          "baselinePayloadCharacters": 551,
+          "milliseconds": 3.758125000000007
+        },
+        {
+          "id": "esbuild",
+          "sourceBytes": 750,
+          "envelopeBytes": 780,
+          "baselinePayloadCharacters": 564,
+          "milliseconds": 0.6962080000000128
+        },
+        {
+          "id": "swc",
+          "sourceBytes": 733,
+          "envelopeBytes": 763,
+          "baselinePayloadCharacters": 552,
+          "milliseconds": 0.6509590000000003
+        }
+      ],
+      "compressors": [
+        {
+          "id": "none",
+          "runtime": "none",
+          "compressedBytes": 767,
+          "payloadCharacters": 1024,
+          "compressMilliseconds": 0.002416000000010854,
+          "decompressMilliseconds": 0.000916999999986956
+        },
+        {
+          "id": "fflate-deflate-raw-9",
+          "runtime": "current",
+          "compressedBytes": 412,
+          "payloadCharacters": 551,
+          "compressMilliseconds": 0.0383329999999944,
+          "decompressMilliseconds": 0.07945799999998826
+        },
+        {
+          "id": "fflate-deflate-raw-9-dictionary",
+          "runtime": "current",
+          "compressedBytes": 397,
+          "payloadCharacters": 531,
+          "compressMilliseconds": 0.05237500000001205,
+          "decompressMilliseconds": 0.06154200000000287
+        },
+        {
+          "id": "native-deflate-raw-9",
+          "runtime": "worker-native",
+          "compressedBytes": 409,
+          "payloadCharacters": 547,
+          "compressMilliseconds": 0.06299999999998818,
+          "decompressMilliseconds": 0.026125000000007503
+        },
+        {
+          "id": "native-gzip-9",
+          "runtime": "worker-native",
+          "compressedBytes": 427,
+          "payloadCharacters": 571,
+          "compressMilliseconds": 0.025541000000004033,
+          "decompressMilliseconds": 0.013916999999992186
+        },
+        {
+          "id": "brotli-q4",
+          "runtime": "extra-decoder",
+          "compressedBytes": 421,
+          "payloadCharacters": 563,
+          "compressMilliseconds": 0.07541599999998994,
+          "decompressMilliseconds": 0.019708000000008496
+        },
+        {
+          "id": "brotli-q9",
+          "runtime": "extra-decoder",
+          "compressedBytes": 399,
+          "payloadCharacters": 533,
+          "compressMilliseconds": 0.32629199999999514,
+          "decompressMilliseconds": 0.01125000000001819
+        },
+        {
+          "id": "brotli-q11",
+          "runtime": "extra-decoder",
+          "compressedBytes": 371,
+          "payloadCharacters": 496,
+          "compressMilliseconds": 0.9621249999999861,
+          "decompressMilliseconds": 0.015749999999997044
+        },
+        {
+          "id": "zstd-default",
+          "runtime": "extra-decoder",
+          "compressedBytes": 438,
+          "payloadCharacters": 585,
+          "compressMilliseconds": 0.02837500000001114,
+          "decompressMilliseconds": 0.012375000000020009
+        }
+      ],
+      "encoders": [
+        {
+          "id": "hex",
+          "alphabetSize": 16,
+          "safety": "unreserved",
+          "encodedCharacters": 825,
+          "browserPathCharacters": 825,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.35970899999998096,
+          "decodeMilliseconds": 0.2581249999999784
+        },
+        {
+          "id": "base64url",
+          "alphabetSize": 64,
+          "safety": "unreserved",
+          "encodedCharacters": 551,
+          "browserPathCharacters": 551,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.008082999999999174,
+          "decodeMilliseconds": 0.028542000000015832
+        },
+        {
+          "id": "base66-unreserved",
+          "alphabetSize": 66,
+          "safety": "unreserved",
+          "encodedCharacters": 547,
+          "browserPathCharacters": 547,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.3189999999999884,
+          "decodeMilliseconds": 0.18541600000000358
+        },
+        {
+          "id": "base71-component",
+          "alphabetSize": 71,
+          "safety": "component",
+          "encodedCharacters": 537,
+          "browserPathCharacters": 537,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.34358300000002373,
+          "decodeMilliseconds": 0.18783400000000938
+        },
+        {
+          "id": "base79-path",
+          "alphabetSize": 79,
+          "safety": "path",
+          "encodedCharacters": 524,
+          "browserPathCharacters": 638,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.29549999999997567,
+          "decodeMilliseconds": 0.1656669999999849
+        },
+        {
+          "id": "base85-z85-alphabet",
+          "alphabetSize": 85,
+          "safety": "escaped",
+          "encodedCharacters": 516,
+          "browserPathCharacters": 704,
+          "directPathSafe": false,
+          "encodeMilliseconds": 0.2941669999999874,
+          "decodeMilliseconds": 0.16791699999998855
+        },
+        {
+          "id": "base91",
+          "alphabetSize": 91,
+          "safety": "escaped",
+          "encodedCharacters": 508,
+          "browserPathCharacters": 788,
+          "directPathSafe": false,
+          "encodeMilliseconds": 0.32304199999998673,
+          "decodeMilliseconds": 0.1563329999999894
+        }
+      ]
+    },
+    {
+      "id": "small-service",
+      "rawBytes": 3373,
+      "minifiers": [
+        {
+          "id": "none",
+          "sourceBytes": 3373,
+          "envelopeBytes": 3769,
+          "baselinePayloadCharacters": 1089,
+          "milliseconds": 0.005374999999986585
+        },
+        {
+          "id": "terser-current-safe",
+          "sourceBytes": 2270,
+          "envelopeBytes": 2346,
+          "baselinePayloadCharacters": 833,
+          "milliseconds": 6.7853330000000085
+        },
+        {
+          "id": "terser-aggressive",
+          "sourceBytes": 2270,
+          "envelopeBytes": 2346,
+          "baselinePayloadCharacters": 833,
+          "milliseconds": 5.236166999999995
+        },
+        {
+          "id": "esbuild",
+          "sourceBytes": 2272,
+          "envelopeBytes": 2348,
+          "baselinePayloadCharacters": 868,
+          "milliseconds": 1.0744589999999903
+        },
+        {
+          "id": "swc",
+          "sourceBytes": 2210,
+          "envelopeBytes": 2286,
+          "baselinePayloadCharacters": 829,
+          "milliseconds": 0.6680839999999932
+        }
+      ],
+      "compressors": [
+        {
+          "id": "none",
+          "runtime": "none",
+          "compressedBytes": 2346,
+          "payloadCharacters": 3129,
+          "compressMilliseconds": 0.0037499999999965894,
+          "decompressMilliseconds": 0.0007920000000183336
+        },
+        {
+          "id": "fflate-deflate-raw-9",
+          "runtime": "current",
+          "compressedBytes": 624,
+          "payloadCharacters": 833,
+          "compressMilliseconds": 0.04708400000001234,
+          "decompressMilliseconds": 0.028874999999999318
+        },
+        {
+          "id": "fflate-deflate-raw-9-dictionary",
+          "runtime": "current",
+          "compressedBytes": 572,
+          "payloadCharacters": 764,
+          "compressMilliseconds": 0.0498749999999859,
+          "decompressMilliseconds": 0.03412500000001728
+        },
+        {
+          "id": "native-deflate-raw-9",
+          "runtime": "worker-native",
+          "compressedBytes": 613,
+          "payloadCharacters": 819,
+          "compressMilliseconds": 0.05620899999999551,
+          "decompressMilliseconds": 0.01191599999998516
+        },
+        {
+          "id": "native-gzip-9",
+          "runtime": "worker-native",
+          "compressedBytes": 631,
+          "payloadCharacters": 843,
+          "compressMilliseconds": 0.027125000000012278,
+          "decompressMilliseconds": 0.00941699999998491
+        },
+        {
+          "id": "brotli-q4",
+          "runtime": "extra-decoder",
+          "compressedBytes": 610,
+          "payloadCharacters": 815,
+          "compressMilliseconds": 0.07304199999998673,
+          "decompressMilliseconds": 0.01474999999999227
+        },
+        {
+          "id": "brotli-q9",
+          "runtime": "extra-decoder",
+          "compressedBytes": 563,
+          "payloadCharacters": 752,
+          "compressMilliseconds": 0.29783299999999713,
+          "decompressMilliseconds": 0.011124999999992724
+        },
+        {
+          "id": "brotli-q11",
+          "runtime": "extra-decoder",
+          "compressedBytes": 532,
+          "payloadCharacters": 711,
+          "compressMilliseconds": 2.0334160000000168,
+          "decompressMilliseconds": 0.012250000000022965
+        },
+        {
+          "id": "zstd-default",
+          "runtime": "extra-decoder",
+          "compressedBytes": 667,
+          "payloadCharacters": 891,
+          "compressMilliseconds": 0.024540999999999258,
+          "decompressMilliseconds": 0.013749999999987494
+        }
+      ],
+      "encoders": [
+        {
+          "id": "hex",
+          "alphabetSize": 16,
+          "safety": "unreserved",
+          "encodedCharacters": 1249,
+          "browserPathCharacters": 1249,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.844333000000006,
+          "decodeMilliseconds": 0.5458749999999952
+        },
+        {
+          "id": "base64url",
+          "alphabetSize": 64,
+          "safety": "unreserved",
+          "encodedCharacters": 833,
+          "browserPathCharacters": 833,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.007374999999996135,
+          "decodeMilliseconds": 0.025874999999984993
+        },
+        {
+          "id": "base66-unreserved",
+          "alphabetSize": 66,
+          "safety": "unreserved",
+          "encodedCharacters": 827,
+          "browserPathCharacters": 827,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.7264160000000004,
+          "decodeMilliseconds": 0.3667909999999779
+        },
+        {
+          "id": "base71-component",
+          "alphabetSize": 71,
+          "safety": "component",
+          "encodedCharacters": 813,
+          "browserPathCharacters": 813,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.7218330000000037,
+          "decodeMilliseconds": 0.37220800000000054
+        },
+        {
+          "id": "base79-path",
+          "alphabetSize": 79,
+          "safety": "path",
+          "encodedCharacters": 793,
+          "browserPathCharacters": 965,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.7207500000000095,
+          "decodeMilliseconds": 0.34270899999998505
+        },
+        {
+          "id": "base85-z85-alphabet",
+          "alphabetSize": 85,
+          "safety": "escaped",
+          "encodedCharacters": 780,
+          "browserPathCharacters": 1078,
+          "directPathSafe": false,
+          "encodeMilliseconds": 0.6974999999999909,
+          "decodeMilliseconds": 0.34379099999998175
+        },
+        {
+          "id": "base91",
+          "alphabetSize": 91,
+          "safety": "escaped",
+          "encodedCharacters": 769,
+          "browserPathCharacters": 1169,
+          "directPathSafe": false,
+          "encodeMilliseconds": 0.6782500000000198,
+          "decodeMilliseconds": 0.33516700000001265
+        }
+      ]
+    },
+    {
+      "id": "medium-chat",
+      "rawBytes": 6049,
+      "minifiers": [
+        {
+          "id": "none",
+          "sourceBytes": 6049,
+          "envelopeBytes": 6906,
+          "baselinePayloadCharacters": 2929,
+          "milliseconds": 0.004917000000034477
+        },
+        {
+          "id": "terser-current-safe",
+          "sourceBytes": 2662,
+          "envelopeBytes": 2779,
+          "baselinePayloadCharacters": 1723,
+          "milliseconds": 10.875833
+        },
+        {
+          "id": "terser-aggressive",
+          "sourceBytes": 2662,
+          "envelopeBytes": 2779,
+          "baselinePayloadCharacters": 1723,
+          "milliseconds": 7.852417000000003
+        },
+        {
+          "id": "esbuild",
+          "sourceBytes": 2659,
+          "envelopeBytes": 2768,
+          "baselinePayloadCharacters": 1755,
+          "milliseconds": 0.843291000000022
+        },
+        {
+          "id": "swc",
+          "sourceBytes": 2577,
+          "envelopeBytes": 2694,
+          "baselinePayloadCharacters": 1671,
+          "milliseconds": 0.7600419999999986
+        }
+      ],
+      "compressors": [
+        {
+          "id": "none",
+          "runtime": "none",
+          "compressedBytes": 2779,
+          "payloadCharacters": 3707,
+          "compressMilliseconds": 0.0028340000000071086,
+          "decompressMilliseconds": 0.0007499999999822649
+        },
+        {
+          "id": "fflate-deflate-raw-9",
+          "runtime": "current",
+          "compressedBytes": 1291,
+          "payloadCharacters": 1723,
+          "compressMilliseconds": 0.05662499999999682,
+          "decompressMilliseconds": 0.05174999999996999
+        },
+        {
+          "id": "fflate-deflate-raw-9-dictionary",
+          "runtime": "current",
+          "compressedBytes": 1226,
+          "payloadCharacters": 1636,
+          "compressMilliseconds": 0.05783299999995961,
+          "decompressMilliseconds": 0.039667000000008557
+        },
+        {
+          "id": "native-deflate-raw-9",
+          "runtime": "worker-native",
+          "compressedBytes": 1273,
+          "payloadCharacters": 1699,
+          "compressMilliseconds": 0.07912499999997635,
+          "decompressMilliseconds": 0.02158299999996416
+        },
+        {
+          "id": "native-gzip-9",
+          "runtime": "worker-native",
+          "compressedBytes": 1291,
+          "payloadCharacters": 1723,
+          "compressMilliseconds": 0.04191699999995535,
+          "decompressMilliseconds": 0.02391699999998309
+        },
+        {
+          "id": "brotli-q4",
+          "runtime": "extra-decoder",
+          "compressedBytes": 1233,
+          "payloadCharacters": 1645,
+          "compressMilliseconds": 0.09962499999994634,
+          "decompressMilliseconds": 0.023082999999985532
+        },
+        {
+          "id": "brotli-q9",
+          "runtime": "extra-decoder",
+          "compressedBytes": 1160,
+          "payloadCharacters": 1548,
+          "compressMilliseconds": 0.49466599999999517,
+          "decompressMilliseconds": 0.015165999999965152
+        },
+        {
+          "id": "brotli-q11",
+          "runtime": "extra-decoder",
+          "compressedBytes": 1068,
+          "payloadCharacters": 1425,
+          "compressMilliseconds": 2.4029580000000124,
+          "decompressMilliseconds": 0.01979199999999537
+        },
+        {
+          "id": "zstd-default",
+          "runtime": "extra-decoder",
+          "compressedBytes": 1321,
+          "payloadCharacters": 1763,
+          "compressMilliseconds": 0.035790999999960604,
+          "decompressMilliseconds": 0.0196250000000191
+        }
+      ],
+      "encoders": [
+        {
+          "id": "hex",
+          "alphabetSize": 16,
+          "safety": "unreserved",
+          "encodedCharacters": 2583,
+          "browserPathCharacters": 2583,
+          "directPathSafe": true,
+          "encodeMilliseconds": 3.6654589999999985,
+          "decodeMilliseconds": 2.394958000000031
+        },
+        {
+          "id": "base64url",
+          "alphabetSize": 64,
+          "safety": "unreserved",
+          "encodedCharacters": 1723,
+          "browserPathCharacters": 1723,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.015375000000005912,
+          "decodeMilliseconds": 0.05200000000002092
+        },
+        {
+          "id": "base66-unreserved",
+          "alphabetSize": 66,
+          "safety": "unreserved",
+          "encodedCharacters": 1710,
+          "browserPathCharacters": 1710,
+          "directPathSafe": true,
+          "encodeMilliseconds": 2.9735410000000115,
+          "decodeMilliseconds": 1.5687090000000126
+        },
+        {
+          "id": "base71-component",
+          "alphabetSize": 71,
+          "safety": "component",
+          "encodedCharacters": 1681,
+          "browserPathCharacters": 1681,
+          "directPathSafe": true,
+          "encodeMilliseconds": 3.0731250000000045,
+          "decodeMilliseconds": 1.5086670000000026
+        },
+        {
+          "id": "base79-path",
+          "alphabetSize": 79,
+          "safety": "path",
+          "encodedCharacters": 1640,
+          "browserPathCharacters": 1978,
+          "directPathSafe": true,
+          "encodeMilliseconds": 2.879708999999991,
+          "decodeMilliseconds": 1.5118329999999673
+        },
+        {
+          "id": "base85-z85-alphabet",
+          "alphabetSize": 85,
+          "safety": "escaped",
+          "encodedCharacters": 1613,
+          "browserPathCharacters": 2251,
+          "directPathSafe": false,
+          "encodeMilliseconds": 2.8697910000000206,
+          "decodeMilliseconds": 1.3925419999999917
+        },
+        {
+          "id": "base91",
+          "alphabetSize": 91,
+          "safety": "escaped",
+          "encodedCharacters": 1588,
+          "browserPathCharacters": 2392,
+          "directPathSafe": false,
+          "encodeMilliseconds": 2.684415999999999,
+          "decodeMilliseconds": 1.4257910000000038
+        }
+      ]
+    },
+    {
+      "id": "medium-renderer",
+      "rawBytes": 14500,
+      "minifiers": [
+        {
+          "id": "none",
+          "sourceBytes": 14500,
+          "envelopeBytes": 16147,
+          "baselinePayloadCharacters": 5775,
+          "milliseconds": 0.005499999999983629
+        },
+        {
+          "id": "terser-current-safe",
+          "sourceBytes": 6157,
+          "envelopeBytes": 6389,
+          "baselinePayloadCharacters": 2921,
+          "milliseconds": 17.787374999999997
+        },
+        {
+          "id": "terser-aggressive",
+          "sourceBytes": 6157,
+          "envelopeBytes": 6389,
+          "baselinePayloadCharacters": 2921,
+          "milliseconds": 13.763832999999977
+        },
+        {
+          "id": "esbuild",
+          "sourceBytes": 6146,
+          "envelopeBytes": 6374,
+          "baselinePayloadCharacters": 2955,
+          "milliseconds": 0.9967920000000277
+        },
+        {
+          "id": "swc",
+          "sourceBytes": 6138,
+          "envelopeBytes": 6368,
+          "baselinePayloadCharacters": 2921,
+          "milliseconds": 1.219500000000039
+        }
+      ],
+      "compressors": [
+        {
+          "id": "none",
+          "runtime": "none",
+          "compressedBytes": 6389,
+          "payloadCharacters": 8520,
+          "compressMilliseconds": 0.0027079999999841675,
+          "decompressMilliseconds": 0.0009169999999585343
+        },
+        {
+          "id": "fflate-deflate-raw-9",
+          "runtime": "current",
+          "compressedBytes": 2190,
+          "payloadCharacters": 2921,
+          "compressMilliseconds": 0.12420899999995072,
+          "decompressMilliseconds": 0.06437500000004093
+        },
+        {
+          "id": "fflate-deflate-raw-9-dictionary",
+          "runtime": "current",
+          "compressedBytes": 2142,
+          "payloadCharacters": 2857,
+          "compressMilliseconds": 0.09649999999999181,
+          "decompressMilliseconds": 0.06970799999999144
+        },
+        {
+          "id": "native-deflate-raw-9",
+          "runtime": "worker-native",
+          "compressedBytes": 2144,
+          "payloadCharacters": 2860,
+          "compressMilliseconds": 0.13504199999999855,
+          "decompressMilliseconds": 0.027750000000082764
+        },
+        {
+          "id": "native-gzip-9",
+          "runtime": "worker-native",
+          "compressedBytes": 2162,
+          "payloadCharacters": 2884,
+          "compressMilliseconds": 0.07300000000009277,
+          "decompressMilliseconds": 0.015500000000088221
+        },
+        {
+          "id": "brotli-q4",
+          "runtime": "extra-decoder",
+          "compressedBytes": 2111,
+          "payloadCharacters": 2816,
+          "compressMilliseconds": 0.20216600000003382,
+          "decompressMilliseconds": 0.03195800000003146
+        },
+        {
+          "id": "brotli-q9",
+          "runtime": "extra-decoder",
+          "compressedBytes": 1977,
+          "payloadCharacters": 2637,
+          "compressMilliseconds": 0.3491669999999658,
+          "decompressMilliseconds": 0.03733400000010079
+        },
+        {
+          "id": "brotli-q11",
+          "runtime": "extra-decoder",
+          "compressedBytes": 1832,
+          "payloadCharacters": 2444,
+          "compressMilliseconds": 4.528208000000063,
+          "decompressMilliseconds": 0.03141700000003311
+        },
+        {
+          "id": "zstd-default",
+          "runtime": "extra-decoder",
+          "compressedBytes": 2256,
+          "payloadCharacters": 3009,
+          "compressMilliseconds": 0.053666000000021086,
+          "decompressMilliseconds": 0.026165999999989253
+        }
+      ],
+      "encoders": [
+        {
+          "id": "hex",
+          "alphabetSize": 16,
+          "safety": "unreserved",
+          "encodedCharacters": 4381,
+          "browserPathCharacters": 4381,
+          "directPathSafe": true,
+          "encodeMilliseconds": 10.657542000000035,
+          "decodeMilliseconds": 6.399375000000077
+        },
+        {
+          "id": "base64url",
+          "alphabetSize": 64,
+          "safety": "unreserved",
+          "encodedCharacters": 2921,
+          "browserPathCharacters": 2921,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.022291999999993095,
+          "decodeMilliseconds": 0.08433300000001509
+        },
+        {
+          "id": "base66-unreserved",
+          "alphabetSize": 66,
+          "safety": "unreserved",
+          "encodedCharacters": 2900,
+          "browserPathCharacters": 2900,
+          "directPathSafe": true,
+          "encodeMilliseconds": 8.537374999999997,
+          "decodeMilliseconds": 4.495040999999901
+        },
+        {
+          "id": "base71-component",
+          "alphabetSize": 71,
+          "safety": "component",
+          "encodedCharacters": 2850,
+          "browserPathCharacters": 2850,
+          "directPathSafe": true,
+          "encodeMilliseconds": 8.759416999999985,
+          "decodeMilliseconds": 4.2877090000000635
+        },
+        {
+          "id": "base79-path",
+          "alphabetSize": 79,
+          "safety": "path",
+          "encodedCharacters": 2781,
+          "browserPathCharacters": 3399,
+          "directPathSafe": true,
+          "encodeMilliseconds": 8.36220800000001,
+          "decodeMilliseconds": 4.442208000000051
+        },
+        {
+          "id": "base85-z85-alphabet",
+          "alphabetSize": 85,
+          "safety": "escaped",
+          "encodedCharacters": 2735,
+          "browserPathCharacters": 3803,
+          "directPathSafe": false,
+          "encodeMilliseconds": 8.124709000000053,
+          "decodeMilliseconds": 4.236625000000004
+        },
+        {
+          "id": "base91",
+          "alphabetSize": 91,
+          "safety": "escaped",
+          "encodedCharacters": 2694,
+          "browserPathCharacters": 4066,
+          "directPathSafe": false,
+          "encodeMilliseconds": 7.9812500000000455,
+          "decodeMilliseconds": 3.923167000000035
+        }
+      ]
+    },
+    {
+      "id": "large-setup",
+      "rawBytes": 22467,
+      "minifiers": [
+        {
+          "id": "none",
+          "sourceBytes": 22467,
+          "envelopeBytes": 25825,
+          "baselinePayloadCharacters": 8148,
+          "milliseconds": 0.00400000000036016
+        },
+        {
+          "id": "terser-current-safe",
+          "sourceBytes": 15700,
+          "envelopeBytes": 16311,
+          "baselinePayloadCharacters": 6251,
+          "milliseconds": 23.731125000000247
+        },
+        {
+          "id": "terser-aggressive",
+          "sourceBytes": 15693,
+          "envelopeBytes": 16304,
+          "baselinePayloadCharacters": 6251,
+          "milliseconds": 22.574666999999863
+        },
+        {
+          "id": "esbuild",
+          "sourceBytes": 17379,
+          "envelopeBytes": 18498,
+          "baselinePayloadCharacters": 6321,
+          "milliseconds": 1.657249999999749
+        },
+        {
+          "id": "swc",
+          "sourceBytes": 15612,
+          "envelopeBytes": 16195,
+          "baselinePayloadCharacters": 6255,
+          "milliseconds": 1.6277079999999842
+        }
+      ],
+      "compressors": [
+        {
+          "id": "none",
+          "runtime": "none",
+          "compressedBytes": 16311,
+          "payloadCharacters": 21749,
+          "compressMilliseconds": 0.0027500000001055014,
+          "decompressMilliseconds": 0.0027079999999841675
+        },
+        {
+          "id": "fflate-deflate-raw-9",
+          "runtime": "current",
+          "compressedBytes": 4687,
+          "payloadCharacters": 6251,
+          "compressMilliseconds": 0.2183749999999236,
+          "decompressMilliseconds": 0.1266249999998763
+        },
+        {
+          "id": "fflate-deflate-raw-9-dictionary",
+          "runtime": "current",
+          "compressedBytes": 4601,
+          "payloadCharacters": 6136,
+          "compressMilliseconds": 0.21412499999996726,
+          "decompressMilliseconds": 0.11775000000034197
+        },
+        {
+          "id": "native-deflate-raw-9",
+          "runtime": "worker-native",
+          "compressedBytes": 4601,
+          "payloadCharacters": 6136,
+          "compressMilliseconds": 0.239292000000205,
+          "decompressMilliseconds": 0.0371250000002874
+        },
+        {
+          "id": "native-gzip-9",
+          "runtime": "worker-native",
+          "compressedBytes": 4619,
+          "payloadCharacters": 6160,
+          "compressMilliseconds": 0.2604999999998654,
+          "decompressMilliseconds": 0.03891599999997197
+        },
+        {
+          "id": "brotli-q4",
+          "runtime": "extra-decoder",
+          "compressedBytes": 4715,
+          "payloadCharacters": 6288,
+          "compressMilliseconds": 0.21566699999993943,
+          "decompressMilliseconds": 0.0525420000003578
+        },
+        {
+          "id": "brotli-q9",
+          "runtime": "extra-decoder",
+          "compressedBytes": 4383,
+          "payloadCharacters": 5845,
+          "compressMilliseconds": 0.4234169999999722,
+          "decompressMilliseconds": 0.053167000000030384
+        },
+        {
+          "id": "brotli-q11",
+          "runtime": "extra-decoder",
+          "compressedBytes": 4008,
+          "payloadCharacters": 5345,
+          "compressMilliseconds": 11.361374999999953,
+          "decompressMilliseconds": 0.06845900000007532
+        },
+        {
+          "id": "zstd-default",
+          "runtime": "extra-decoder",
+          "compressedBytes": 4958,
+          "payloadCharacters": 6612,
+          "compressMilliseconds": 0.07191699999975754,
+          "decompressMilliseconds": 0.02775000000019645
+        }
+      ],
+      "encoders": [
+        {
+          "id": "hex",
+          "alphabetSize": 16,
+          "safety": "unreserved",
+          "encodedCharacters": 9375,
+          "browserPathCharacters": 9375,
+          "directPathSafe": true,
+          "encodeMilliseconds": 46.82179199999973,
+          "decodeMilliseconds": 30.721124999999574
+        },
+        {
+          "id": "base64url",
+          "alphabetSize": 64,
+          "safety": "unreserved",
+          "encodedCharacters": 6251,
+          "browserPathCharacters": 6251,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.043875000000298314,
+          "decodeMilliseconds": 0.1872920000000704
+        },
+        {
+          "id": "base66-unreserved",
+          "alphabetSize": 66,
+          "safety": "unreserved",
+          "encodedCharacters": 6205,
+          "browserPathCharacters": 6205,
+          "directPathSafe": true,
+          "encodeMilliseconds": 38.12962500000003,
+          "decodeMilliseconds": 20.620166000000154
+        },
+        {
+          "id": "base71-component",
+          "alphabetSize": 71,
+          "safety": "component",
+          "encodedCharacters": 6099,
+          "browserPathCharacters": 6099,
+          "directPathSafe": true,
+          "encodeMilliseconds": 37.63362499999994,
+          "decodeMilliseconds": 20.26537499999995
+        },
+        {
+          "id": "base79-path",
+          "alphabetSize": 79,
+          "safety": "path",
+          "encodedCharacters": 5950,
+          "browserPathCharacters": 7160,
+          "directPathSafe": true,
+          "encodeMilliseconds": 36.277458000000024,
+          "decodeMilliseconds": 19.57466599999998
+        },
+        {
+          "id": "base85-z85-alphabet",
+          "alphabetSize": 85,
+          "safety": "escaped",
+          "encodedCharacters": 5852,
+          "browserPathCharacters": 8106,
+          "directPathSafe": false,
+          "encodeMilliseconds": 36.09745900000007,
+          "decodeMilliseconds": 19.169958000000406
+        },
+        {
+          "id": "base91",
+          "alphabetSize": 91,
+          "safety": "escaped",
+          "encodedCharacters": 5763,
+          "browserPathCharacters": 8563,
+          "directPathSafe": false,
+          "encodeMilliseconds": 35.53075000000035,
+          "decodeMilliseconds": 18.87708399999974
+        }
+      ]
+    },
+    {
+      "id": "oversize-interface",
+      "rawBytes": 74980,
+      "minifiers": [
+        {
+          "id": "none",
+          "sourceBytes": 74980,
+          "envelopeBytes": 84468,
+          "baselinePayloadCharacters": 23077,
+          "milliseconds": 0.004708999999820662
+        },
+        {
+          "id": "terser-current-safe",
+          "sourceBytes": 41859,
+          "envelopeBytes": 43184,
+          "baselinePayloadCharacters": 13360,
+          "milliseconds": 49.36133300000074
+        },
+        {
+          "id": "terser-aggressive",
+          "sourceBytes": 41855,
+          "envelopeBytes": 43180,
+          "baselinePayloadCharacters": 13353,
+          "milliseconds": 74.38858299999993
+        },
+        {
+          "id": "esbuild",
+          "sourceBytes": 41713,
+          "envelopeBytes": 43016,
+          "baselinePayloadCharacters": 14019,
+          "milliseconds": 4.47387499999968
+        },
+        {
+          "id": "swc",
+          "sourceBytes": 41374,
+          "envelopeBytes": 42697,
+          "baselinePayloadCharacters": 13277,
+          "milliseconds": 4.907333999999537
+        }
+      ],
+      "compressors": [
+        {
+          "id": "none",
+          "runtime": "none",
+          "compressedBytes": 43184,
+          "payloadCharacters": 57580,
+          "compressMilliseconds": 0.005541999999877589,
+          "decompressMilliseconds": 0.0027909999998882995
+        },
+        {
+          "id": "fflate-deflate-raw-9",
+          "runtime": "current",
+          "compressedBytes": 10019,
+          "payloadCharacters": 13360,
+          "compressMilliseconds": 0.4881249999998545,
+          "decompressMilliseconds": 0.194166000000223
+        },
+        {
+          "id": "fflate-deflate-raw-9-dictionary",
+          "runtime": "current",
+          "compressedBytes": 9931,
+          "payloadCharacters": 13243,
+          "compressMilliseconds": 0.4643340000002354,
+          "decompressMilliseconds": 0.16183300000011513
+        },
+        {
+          "id": "native-deflate-raw-9",
+          "runtime": "worker-native",
+          "compressedBytes": 9662,
+          "payloadCharacters": 12884,
+          "compressMilliseconds": 0.6785420000005615,
+          "decompressMilliseconds": 0.07375000000047294
+        },
+        {
+          "id": "native-gzip-9",
+          "runtime": "worker-native",
+          "compressedBytes": 9680,
+          "payloadCharacters": 12908,
+          "compressMilliseconds": 0.5864170000004378,
+          "decompressMilliseconds": 0.0647079999998823
+        },
+        {
+          "id": "brotli-q4",
+          "runtime": "extra-decoder",
+          "compressedBytes": 9905,
+          "payloadCharacters": 13208,
+          "compressMilliseconds": 0.37912499999947613,
+          "decompressMilliseconds": 0.1003339999997479
+        },
+        {
+          "id": "brotli-q9",
+          "runtime": "extra-decoder",
+          "compressedBytes": 9023,
+          "payloadCharacters": 12032,
+          "compressMilliseconds": 0.7007919999996375,
+          "decompressMilliseconds": 0.07866699999976845
+        },
+        {
+          "id": "brotli-q11",
+          "runtime": "extra-decoder",
+          "compressedBytes": 8366,
+          "payloadCharacters": 11156,
+          "compressMilliseconds": 27.491167000000132,
+          "decompressMilliseconds": 0.13245800000004238
+        },
+        {
+          "id": "zstd-default",
+          "runtime": "extra-decoder",
+          "compressedBytes": 10489,
+          "payloadCharacters": 13987,
+          "compressMilliseconds": 0.12254200000006676,
+          "decompressMilliseconds": 0.058374999999614374
+        }
+      ],
+      "encoders": [
+        {
+          "id": "hex",
+          "alphabetSize": 16,
+          "safety": "unreserved",
+          "encodedCharacters": 20039,
+          "browserPathCharacters": 20039,
+          "directPathSafe": true,
+          "encodeMilliseconds": 216.12824999999975,
+          "decodeMilliseconds": 144.58166700000038
+        },
+        {
+          "id": "base64url",
+          "alphabetSize": 64,
+          "safety": "unreserved",
+          "encodedCharacters": 13360,
+          "browserPathCharacters": 13360,
+          "directPathSafe": true,
+          "encodeMilliseconds": 0.11225000000013097,
+          "decodeMilliseconds": 0.42829100000017206
+        },
+        {
+          "id": "base66-unreserved",
+          "alphabetSize": 66,
+          "safety": "unreserved",
+          "encodedCharacters": 13262,
+          "browserPathCharacters": 13262,
+          "directPathSafe": true,
+          "encodeMilliseconds": 176.6031669999993,
+          "decodeMilliseconds": 96.44858299999942
+        },
+        {
+          "id": "base71-component",
+          "alphabetSize": 71,
+          "safety": "component",
+          "encodedCharacters": 13035,
+          "browserPathCharacters": 13035,
+          "directPathSafe": true,
+          "encodeMilliseconds": 459.32987499999945,
+          "decodeMilliseconds": 92.25083300000006
+        },
+        {
+          "id": "base79-path",
+          "alphabetSize": 79,
+          "safety": "path",
+          "encodedCharacters": 12716,
+          "browserPathCharacters": 15288,
+          "directPathSafe": true,
+          "encodeMilliseconds": 453.3393329999999,
+          "decodeMilliseconds": 90.01791700000103
+        },
+        {
+          "id": "base85-z85-alphabet",
+          "alphabetSize": 85,
+          "safety": "escaped",
+          "encodedCharacters": 12507,
+          "browserPathCharacters": 17533,
+          "directPathSafe": false,
+          "encodeMilliseconds": 166.9064580000013,
+          "decodeMilliseconds": 88.50091599999905
+        },
+        {
+          "id": "base91",
+          "alphabetSize": 91,
+          "safety": "escaped",
+          "encodedCharacters": 12318,
+          "browserPathCharacters": 18374,
+          "directPathSafe": false,
+          "encodeMilliseconds": 166.76050000000032,
+          "decodeMilliseconds": 85.24879099999998
+        }
+      ]
+    }
+  ],
+  "combinations": [
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 21100,
+      "componentPayloadCharacters": 21100,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 21241,
+      "componentPayloadCharacters": 21241,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 21247,
+      "componentPayloadCharacters": 21247,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 21468,
+      "componentPayloadCharacters": 21468,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 21612,
+      "componentPayloadCharacters": 21612,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 21617,
+      "componentPayloadCharacters": 21617,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 21628,
+      "componentPayloadCharacters": 21628,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 21773,
+      "componentPayloadCharacters": 21773,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 21778,
+      "componentPayloadCharacters": 21778,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 21871,
+      "componentPayloadCharacters": 21871,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 22251,
+      "componentPayloadCharacters": 22251,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 22418,
+      "componentPayloadCharacters": 22418,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 22857,
+      "componentPayloadCharacters": 22857,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 22973,
+      "componentPayloadCharacters": 22973,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 22983,
+      "componentPayloadCharacters": 22983,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 23252,
+      "componentPayloadCharacters": 23252,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 23374,
+      "componentPayloadCharacters": 23374,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 23383,
+      "componentPayloadCharacters": 23383,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 23429,
+      "componentPayloadCharacters": 23429,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 23549,
+      "componentPayloadCharacters": 23549,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 23549,
+      "componentPayloadCharacters": 23549,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 23558,
+      "componentPayloadCharacters": 23558,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 23959,
+      "componentPayloadCharacters": 23959,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 24139,
+      "componentPayloadCharacters": 24139,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24426,
+      "componentPayloadCharacters": 24426,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24534,
+      "componentPayloadCharacters": 24534,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24543,
+      "componentPayloadCharacters": 24543,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24587,
+      "componentPayloadCharacters": 24587,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24607,
+      "componentPayloadCharacters": 24607,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 20585,
+      "componentPayloadCharacters": 24631,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24695,
+      "componentPayloadCharacters": 24695,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24704,
+      "componentPayloadCharacters": 24704,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24746,
+      "componentPayloadCharacters": 24746,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24750,
+      "componentPayloadCharacters": 24750,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24788,
+      "componentPayloadCharacters": 24788,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 24852,
+      "componentPayloadCharacters": 24852,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 20727,
+      "componentPayloadCharacters": 24887,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24912,
+      "componentPayloadCharacters": 24912,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 24930,
+      "componentPayloadCharacters": 24930,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 24963,
+      "componentPayloadCharacters": 24963,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 24972,
+      "componentPayloadCharacters": 24972,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25015,
+      "componentPayloadCharacters": 25015,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25035,
+      "componentPayloadCharacters": 25035,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25036,
+      "componentPayloadCharacters": 25036,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 20721,
+      "componentPayloadCharacters": 25051,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 25089,
+      "componentPayloadCharacters": 25089,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25126,
+      "componentPayloadCharacters": 25126,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25135,
+      "componentPayloadCharacters": 25135,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25148,
+      "componentPayloadCharacters": 25148,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25157,
+      "componentPayloadCharacters": 25157,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25176,
+      "componentPayloadCharacters": 25176,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25180,
+      "componentPayloadCharacters": 25180,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25203,
+      "componentPayloadCharacters": 25203,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 25215,
+      "componentPayloadCharacters": 25215,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25218,
+      "componentPayloadCharacters": 25218,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 25222,
+      "componentPayloadCharacters": 25222,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25222,
+      "componentPayloadCharacters": 25222,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 25225,
+      "componentPayloadCharacters": 25225,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25316,
+      "componentPayloadCharacters": 25316,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25325,
+      "componentPayloadCharacters": 25325,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25345,
+      "componentPayloadCharacters": 25345,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25363,
+      "componentPayloadCharacters": 25363,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25363,
+      "componentPayloadCharacters": 25363,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25367,
+      "componentPayloadCharacters": 25367,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 25385,
+      "componentPayloadCharacters": 25385,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25408,
+      "componentPayloadCharacters": 25408,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25527,
+      "componentPayloadCharacters": 25527,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25535,
+      "componentPayloadCharacters": 25535,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25554,
+      "componentPayloadCharacters": 25554,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 25589,
+      "componentPayloadCharacters": 25589,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 25635,
+      "componentPayloadCharacters": 25635,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25654,
+      "componentPayloadCharacters": 25654,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25661,
+      "componentPayloadCharacters": 25661,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25664,
+      "componentPayloadCharacters": 25664,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25714,
+      "componentPayloadCharacters": 25714,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q11",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 21337,
+      "componentPayloadCharacters": 25733,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25828,
+      "componentPayloadCharacters": 25828,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25844,
+      "componentPayloadCharacters": 25844,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25851,
+      "componentPayloadCharacters": 25851,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 25853,
+      "componentPayloadCharacters": 25853,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26021,
+      "componentPayloadCharacters": 26021,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26037,
+      "componentPayloadCharacters": 26037,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 26049,
+      "componentPayloadCharacters": 26049,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26081,
+      "componentPayloadCharacters": 26081,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 26207,
+      "componentPayloadCharacters": 26207,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26229,
+      "componentPayloadCharacters": 26229,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26276,
+      "componentPayloadCharacters": 26276,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 26413,
+      "componentPayloadCharacters": 26413,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 26413,
+      "componentPayloadCharacters": 26413,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26504,
+      "componentPayloadCharacters": 26504,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26663,
+      "componentPayloadCharacters": 26663,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26699,
+      "componentPayloadCharacters": 26699,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26863,
+      "componentPayloadCharacters": 26863,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 22420,
+      "componentPayloadCharacters": 26868,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26870,
+      "componentPayloadCharacters": 26870,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 26871,
+      "componentPayloadCharacters": 26871,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 22411,
+      "componentPayloadCharacters": 26915,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 22298,
+      "componentPayloadCharacters": 26948,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base71-component",
+      "encodingSafety": "component",
+      "rawPayloadCharacters": 27041,
+      "componentPayloadCharacters": 27041,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 27071,
+      "componentPayloadCharacters": 27071,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 27072,
+      "componentPayloadCharacters": 27072,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base66-unreserved",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 27513,
+      "componentPayloadCharacters": 27513,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q9",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 22974,
+      "componentPayloadCharacters": 27602,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base64url",
+      "encodingSafety": "unreserved",
+      "rawPayloadCharacters": 27719,
+      "componentPayloadCharacters": 27719,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 23829,
+      "componentPayloadCharacters": 28539,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 23935,
+      "componentPayloadCharacters": 28747,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 23944,
+      "componentPayloadCharacters": 28776,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24102,
+      "componentPayloadCharacters": 28784,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24006,
+      "componentPayloadCharacters": 28812,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 23986,
+      "componentPayloadCharacters": 28824,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24145,
+      "componentPayloadCharacters": 28867,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24092,
+      "componentPayloadCharacters": 28918,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24320,
+      "componentPayloadCharacters": 28990,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24183,
+      "componentPayloadCharacters": 29065,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24140,
+      "componentPayloadCharacters": 29082,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24302,
+      "componentPayloadCharacters": 29194,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "native-deflate-raw-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24607,
+      "componentPayloadCharacters": 29557,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24600,
+      "componentPayloadCharacters": 29558,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24477,
+      "componentPayloadCharacters": 29579,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24606,
+      "componentPayloadCharacters": 29662,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "native-gzip-9",
+      "compressionRuntime": "worker-native",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24765,
+      "componentPayloadCharacters": 29705,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "fflate-deflate-raw-9-dictionary",
+      "compressionRuntime": "current",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 24965,
+      "componentPayloadCharacters": 29945,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "brotli-q4",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 25009,
+      "componentPayloadCharacters": 30267,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "fflate-deflate-raw-9",
+      "compressionRuntime": "current",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 25412,
+      "componentPayloadCharacters": 30712,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-current-safe",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 25766,
+      "componentPayloadCharacters": 30910,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "terser-aggressive",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 25766,
+      "componentPayloadCharacters": 30922,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "swc",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 25568,
+      "componentPayloadCharacters": 30964,
+      "directPathSafe": true
+    },
+    {
+      "minifier": "esbuild",
+      "compressor": "zstd-default",
+      "compressionRuntime": "extra-decoder",
+      "encoder": "base79-path",
+      "encodingSafety": "path",
+      "rawPayloadCharacters": 26382,
+      "componentPayloadCharacters": 31902,
+      "directPathSafe": true
+    }
+  ]
+}

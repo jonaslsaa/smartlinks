@@ -1,6 +1,7 @@
 .vercel
 .wrangler
 coverage
+benchmark/.cache
 node_modules
 
 .env*
