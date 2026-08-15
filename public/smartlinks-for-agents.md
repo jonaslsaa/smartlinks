@@ -133,8 +133,7 @@ Options:
 - `ttlSeconds?: number` — positive integer seconds; the child deadline is
   `min(now + ttlSeconds, parent notAfter)`, or plain `now + ttlSeconds` when the parent has no
   deadline. Omission inherits the parent deadline, and a parent without one may mint a child
-  without one. Children shared outside the parent's audience should usually expire — prefer
-  hours, not days.
+  without one.
 - `interstitial?: boolean` — explicit value overrides the parent; omission inherits.
 - `note?: string` — child-specific author note, implies an interstitial. Notes do not inherit,
   and `note` cannot combine with `interstitial: false`.
