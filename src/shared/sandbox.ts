@@ -13,6 +13,7 @@ import {
   createCryptoOperationBudget,
   createGuestCrypto,
   type GuestCrypto,
+  type GuestTokenOptions,
 } from "./guest-crypto.js";
 import {
   type GuestCompile,
@@ -221,6 +222,28 @@ const webApiBootstrap = `
     writable: true,
     value: async (input, init) => new SmartlinksResponse(await hostFetch(input, init)),
   });
+
+  {
+    const cryptoApi = globalThis.__smartlinks_ctx.crypto;
+    const hostSeal = cryptoApi.seal;
+    const hostOpen = cryptoApi.open;
+    const checkTokenOptions = (options) => {
+      if (
+        options !== null &&
+        typeof options === "object" &&
+        reflectApply(hasOwnProperty, options, ["key"]) &&
+        options.key === undefined
+      ) {
+        throw new CompileError(
+          'The token key is undefined. Pass a string of at least 16 bytes or omit "key".',
+        );
+      }
+      return options;
+    };
+    cryptoApi.seal = (value, options) =>
+      hostSeal(jsonStringify(value), checkTokenOptions(options));
+    cryptoApi.open = (token, options) => hostOpen(token, checkTokenOptions(options));
+  }
 
   if (hostCompile && beginCompile) {
     Object.defineProperty(globalThis.__smartlinks_ctx, "compile", {
@@ -445,9 +468,26 @@ export async function runScriptWithModule(
         );
       },
     );
+    const sealHandle = asyncHostFunction("seal", async (serialized, options) => {
+      if (serialized !== undefined && typeof serialized !== "string") {
+        throw new TypeError("seal requires a JSON-serializable value.");
+      }
+      return guestCrypto.seal(
+        serialized === undefined ? undefined : JSON.parse(serialized),
+        options as GuestTokenOptions,
+      );
+    });
+    const openHandle = asyncHostFunction("open", async (token, options) => {
+      if (typeof token !== "string") {
+        throw new TypeError("open requires a token string.");
+      }
+      return guestCrypto.open(token, options as GuestTokenOptions);
+    });
     vm.setProp(cryptoHandle, "sha256", sha256Handle);
     vm.setProp(cryptoHandle, "hmacSha256", hmacHandle);
     vm.setProp(cryptoHandle, "verifyHmacSha256", verifyHandle);
+    vm.setProp(cryptoHandle, "seal", sealHandle);
+    vm.setProp(cryptoHandle, "open", openHandle);
     vm.setProp(contextHandle, "crypto", cryptoHandle);
     let beginCompileHandle: QuickJSHandle | undefined;
     let compileHandle: QuickJSHandle | undefined;
@@ -489,6 +529,8 @@ export async function runScriptWithModule(
       throw new Error(`Could not initialize the Smartlinks Web API: ${message}`);
     }
     bootstrap.value.dispose();
+    openHandle.dispose();
+    sealHandle.dispose();
     verifyHandle.dispose();
     hmacHandle.dispose();
     sha256Handle.dispose();

@@ -65,6 +65,7 @@ program without running it.
 | Render a badge from query parameters | [SVG status badge](examples/badge.js) |
 | Translate one webhook into another | [Webhook adapter](examples/webhook-adapter.js) |
 | Trigger an authenticated action | [GitHub workflow dispatch](examples/github-workflow-dispatch.js) |
+| Hide a secret inside the link itself | [Riddle with a sealed answer](examples/riddle.js) |
 | Write the function body in TypeScript | [Typed response](examples/typed-response.ts) |
 
 Smartlink scripts receive one small `ctx` object:
@@ -78,7 +79,7 @@ Smartlink scripts receive one small `ctx` object:
 | `ctx.body` | Request body as a string, or `null` |
 | `ctx.secrets` | Decrypted plaintext values, keyed by secret name |
 | `ctx.requestId` | Opaque ID for correlating one execution |
-| `ctx.crypto` | SHA-256 and HMAC-SHA256 helpers backed by Web Crypto |
+| `ctx.crypto` | Hashing, HMAC, and sealed-token helpers backed by Web Crypto |
 | `ctx.compile` | Mint one immutable child Smartlink from build-time-approved code |
 
 Scripts also have a global, guarded `fetch(url, options)`. It accepts familiar string URL,
@@ -86,7 +87,8 @@ method, header, and string-body options and returns a Response-like value with `
 `url`, `redirected`, `headers`, `text()`, and `json()`.
 
 `ctx.crypto` provides `sha256`, `hmacSha256`, and `verifyHmacSha256`. They operate on strings,
-use lowercase hex by default, and can use Base64 when passed `"base64"`.
+use lowercase hex by default, and can use Base64 when passed `"base64"`. It also provides
+`seal` and `open` for encrypted state tokens — see below.
 
 Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? }` for a text
 response, return `{ status?, headers?, bodyBase64 }` for bytes, or return nothing for a small
@@ -148,6 +150,29 @@ revocable secrets.
 Links without sealed secrets can also expire, but that expiry is advisory: because the source is
 public, someone can decode it and build a new link without the deadline. Preventing that would
 require a signed or stored payload, which Smartlinks deliberately does not have.
+
+## Remember across requests
+
+Smartlinks stores nothing, but a link can still remember: it seals a small value into an
+encrypted token, the visitor carries the token in a URL, and the link opens it on the next
+request. The visitor can neither read nor forge what they carry.
+
+```ts
+const state = ctx.params.s ? await ctx.crypto.open(ctx.params.s) : { step: 1, answers: [] };
+const next = await ctx.crypto.seal({ ...state, step: state.step + 1 });
+```
+
+That one trick covers a lot: a multi-step form whose session lives in a query parameter, a quiz
+link whose answer is embedded but unreadable, a cooldown timer the client carries itself, a
+voucher issued by one link and redeemed by another.
+
+Only the exact link that sealed a token can open it — edit and rebuild the script, and old tokens
+die with the old link. For tokens that must survive rebuilds or travel between two different
+links, generate a key once (`export VOUCHER_KEY=$(openssl rand -base64 32)`), seal it into each
+build with `--secret VOUCHER_KEY`, and pass `{ key: ctx.secrets.VOUCHER_KEY }`. Tokens are
+replayable — a visitor can present an old one
+again — so anything time-sensitive should carry its own timestamp. Copyable versions of all four
+patterns are in the [agent guide](public/smartlinks-for-agents.md).
 
 ## The CLI
 
@@ -273,9 +298,11 @@ npm run dev
 ```
 
 To deploy your own runtime, run `npx wrangler deploy`, then provision its key with the internal
-`node dist/index.js keygen --key-id 1 --set-worker` command. Set `SMARTLINKS_URL` to the new
-Worker URL when building links. Keep `RUNTIME_HOSTNAMES` in `wrangler.jsonc` synchronized with
-every public hostname that can reach the Worker. Never commit `.dev.vars`.
+`node dist/index.js keygen --key-id 1 --set-worker` command and set the token master secret with
+`npx wrangler secret put TOKEN_MASTER_SECRET` (any long random string; without it, `ctx.crypto.seal`
+without an explicit key fails). Set `SMARTLINKS_URL` to the new Worker URL when building links.
+Keep `RUNTIME_HOSTNAMES` in `wrangler.jsonc` synchronized with every public hostname that can
+reach the Worker. Never commit `.dev.vars`.
 
 ---
 

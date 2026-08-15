@@ -1,3 +1,4 @@
+import { toBase64Url } from "../shared/bytes.js";
 import {
   type DecodedPayload,
   decodePayload,
@@ -15,6 +16,7 @@ import {
   type GeneratedKeyPair,
   generateKeyPair,
   openSecret,
+  payloadArtifactIdentity,
   sealedSecretKeyId,
 } from "../shared/seal.js";
 import { encodePayloadForCli } from "./encode.js";
@@ -23,6 +25,8 @@ import type { LocalSimulation } from "./simulation.js";
 
 const LOCAL_SERVICE_URL = "https://smartlinks.local";
 const MAX_COMPILE_REDIRECTS = 10;
+// Process-wide so tokens survive across the requests of one `run --serve` session.
+const masterSecret = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 
 type LocalProgram = {
   source: string;
@@ -67,7 +71,10 @@ async function execute(
     source: decoded.envelope.s,
     context,
     fetch: createGuestFetch(),
-    crypto: createGuestCrypto(crypto, cryptoBudget),
+    crypto: createGuestCrypto(crypto, cryptoBudget, {
+      masterSecret,
+      artifactIdentity: payloadArtifactIdentity(decoded),
+    }),
     cryptoBudget,
     compile: createSmartlinkCompiler({
       parent: decoded,

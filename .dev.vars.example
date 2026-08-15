@@ -1,3 +1,5 @@
 # Generate a key with `node dist/index.js keygen --key-id 1`, then copy the private-key
 # command's value here for local development only. Never commit .dev.vars.
 PRIVATE_KEY_1=replace-with-base64url-private-key
+# Any long random string; ctx.crypto.seal without an explicit key needs it.
+TOKEN_MASTER_SECRET=replace-with-long-random-string

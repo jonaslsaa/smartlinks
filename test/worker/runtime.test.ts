@@ -20,13 +20,14 @@ function testEnv(
   executionRateLimiter: RateLimit = {
     limit: async () => ({ success: true }),
   },
-): Env & { PRIVATE_KEY_1: string } {
+): Env & { PRIVATE_KEY_1: string; TOKEN_MASTER_SECRET: string } {
   return {
     ACTIVE_KEY_ID: "1",
     EXECUTION_RATE_LIMITER: executionRateLimiter,
     LANDING_URL: "https://smartlinks.jonaslsa.com/",
     RUNTIME_HOSTNAMES: ["s.jonaslsa.com"],
     PRIVATE_KEY_1: pair.privateKeySecret,
+    TOKEN_MASTER_SECRET: "worker-test-master-secret",
   };
 }
 
@@ -62,6 +63,51 @@ describe("Worker routes", () => {
     expect(response.status).toBe(201);
     expect(response.headers.get("x-runtime")).toBe("quickjs");
     await expect(response.text()).resolves.toBe("Jonas:sealed-value");
+  });
+
+  it("round-trips guest tokens across executions of the same link only", async () => {
+    const source = `
+      if (ctx.params.t) {
+        const state = await ctx.crypto.open(ctx.params.t);
+        return { body: "opened:" + state.step };
+      }
+      return { body: await ctx.crypto.seal({ step: 7 }) };
+    `;
+    const created = await createSmartlink({
+      source,
+      service: origin,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+
+    const sealed = await worker.fetch(new Request(created.link), testEnv());
+    expect(sealed.status).toBe(200);
+    const token = await sealed.text();
+
+    const opened = await worker.fetch(new Request(`${created.link}?t=${token}`), testEnv());
+    expect(opened.status).toBe(200);
+    await expect(opened.text()).resolves.toBe("opened:7");
+
+    const foreign = await createSmartlink({
+      source: source.replace("opened:", "foreign:"),
+      service: origin,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const rejected = await worker.fetch(new Request(`${foreign.link}?t=${token}`), testEnv());
+    expect(rejected.status).toBe(422);
+  });
+
+  it("fails transparent tokens with 422 when the master secret is unset", async () => {
+    const created = await createSmartlink({
+      source: `return { body: await ctx.crypto.seal(1) }`,
+      service: origin,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const { TOKEN_MASTER_SECRET: _unset, ...env } = testEnv();
+    const response = await worker.fetch(new Request(created.link), env as Env);
+    expect(response.status).toBe(422);
   });
 
   it("blocks guest fetches to the active runtime and configured aliases", async () => {

@@ -36,6 +36,39 @@ export type ArtifactSecretBinding = {
 
 export type SecretBinding = LegacySecretBinding | ArtifactSecretBinding;
 
+export type ArtifactIdentity = Pick<
+  ArtifactSecretBinding,
+  "version" | "script" | "closures" | "notAfter" | "interstitial" | "interstitialNote"
+>;
+
+function artifactIdentityValues(identity: ArtifactIdentity): readonly unknown[] {
+  const values = [
+    identity.version,
+    identity.script,
+    identity.closures,
+    identity.notAfter ?? null,
+    identity.interstitial,
+  ];
+  return identity.interstitialNote === undefined ? values : [...values, identity.interstitialNote];
+}
+
+export function payloadArtifactIdentity(
+  decoded: Pick<DecodedPayload, "version" | "envelope">,
+): string {
+  return JSON.stringify(
+    artifactIdentityValues({
+      version: decoded.version,
+      script: decoded.envelope.s,
+      closures: decoded.envelope.c ?? [],
+      ...(decoded.envelope.notAfter === undefined ? {} : { notAfter: decoded.envelope.notAfter }),
+      interstitial: decoded.envelope.i === true,
+      ...(decoded.envelope.interstitialNote === undefined
+        ? {}
+        : { interstitialNote: decoded.envelope.interstitialNote }),
+    }),
+  );
+}
+
 export function artifactSecretBinding(
   version: PayloadVersion,
   envelope: Pick<Envelope, "s" | "c" | "i" | "notAfter" | "interstitialNote">,
@@ -100,26 +133,7 @@ async function aad(keyId: number, binding: SecretBinding): Promise<Uint8Array> {
     );
   }
 
-  const artifact = JSON.stringify(
-    binding.interstitialNote === undefined
-      ? [
-          binding.version,
-          binding.script,
-          binding.closures,
-          binding.notAfter ?? null,
-          binding.interstitial,
-          binding.secretName,
-        ]
-      : [
-          binding.version,
-          binding.script,
-          binding.closures,
-          binding.notAfter ?? null,
-          binding.interstitial,
-          binding.interstitialNote,
-          binding.secretName,
-        ],
-  );
+  const artifact = JSON.stringify([...artifactIdentityValues(binding), binding.secretName]);
   const artifactHash = await crypto.subtle.digest(
     "SHA-256",
     Uint8Array.from(utf8(artifact)).buffer,

@@ -59,6 +59,14 @@ type __SmartlinksContext = {
       signature: string,
       encoding?: "hex" | "base64",
     ): Promise<boolean>;
+    seal(
+      value: __SmartlinksJson,
+      options?: { key?: string; context?: string },
+    ): Promise<string>;
+    open<T extends __SmartlinksJson = __SmartlinksJson>(
+      token: string,
+      options?: { key?: string; context?: string },
+    ): Promise<T>;
   };
   compile: __SmartlinksCompile;
 };

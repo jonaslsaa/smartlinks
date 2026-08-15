@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createGuardedFetch } from "../../src/shared/guarded-fetch.js";
+import { createCryptoOperationBudget, createGuestCrypto } from "../../src/shared/guest-crypto.js";
 import { runScript, validateScript } from "../../src/shared/sandbox.js";
 import { minifyScriptBody } from "../../src/shared/script.js";
 
@@ -79,6 +80,40 @@ describe("QuickJS sandbox", () => {
         `await Promise.all(Array.from({ length: 17 }, (_, index) => ctx.crypto.sha256(String(index))))`,
       ),
     ).rejects.toThrow("at most 16 cryptographic operations");
+  });
+
+  it("seals and opens tokens inside the sandbox", async () => {
+    const cryptoBudget = createCryptoOperationBudget();
+    await expect(
+      runScript({
+        version: "2",
+        source: await minifyScriptBody(`
+          const token = await ctx.crypto.seal({ step: 2, list: [1, "two"] }, { context: "wizard" });
+          const state = await ctx.crypto.open(token, { context: "wizard" });
+          const voucher = await ctx.crypto.seal("prize", { key: "0123456789abcdef" });
+          const claim = await ctx.crypto.open(voucher, { key: "0123456789abcdef" });
+          return { body: [state.step, state.list.join("-"), claim].join(":") };
+        `),
+        context,
+        fetch: createGuardedFetch(),
+        crypto: createGuestCrypto(crypto, cryptoBudget, {
+          masterSecret: "sandbox-master",
+          artifactIdentity: "sandbox-artifact",
+        }),
+        cryptoBudget,
+      }),
+    ).resolves.toEqual({ body: "2:1-two:prize" });
+  });
+
+  it("reports missing transparent key configuration to the script", async () => {
+    await expect(run(`return { body: await ctx.crypto.seal("state") }`)).rejects.toThrow(
+      "transparent token key is not configured",
+    );
+  });
+
+  it("rejects non-JSON seal values and undefined keys at the guest bridge", async () => {
+    await expect(run(`await ctx.crypto.seal(() => 1)`)).rejects.toThrow("JSON-serializable");
+    await expect(run(`await ctx.crypto.seal(1, { key: undefined })`)).rejects.toThrow('omit "key"');
   });
 
   it("allows only one compile attempt, including after a rejected first attempt", async () => {
