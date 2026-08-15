@@ -71,6 +71,9 @@ describe("guest token seal/open", () => {
 
     await expect(local.open(productionToken)).rejects.toThrow("could not be opened");
     await expect(production.open(localToken)).rejects.toThrow("could not be opened");
+
+    const portableToken = await production.seal("portable", { key: EXPLICIT_KEY });
+    await expect(local.open(portableToken, { key: EXPLICIT_KEY })).resolves.toBe("portable");
   });
 
   it("round-trips explicit-key tokens between different links", async () => {

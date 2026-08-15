@@ -213,7 +213,8 @@ patterns are in the [agent guide](public/smartlinks-for-agents.md).
 Local runs use an ephemeral token key by default. Set the same high-entropy
 `SMARTLINKS_LOCAL_TOKEN_KEY` for each `smartlinks run` process when scripting a multi-step flow;
 tokens remain bound to the exact script artifact. `run --serve` already keeps one key for its
-whole server session, and local tokens never interoperate with production.
+whole server session. Transparent local tokens never interoperate with production; tokens using an
+explicit `options.key` remain intentionally portable between runtimes.
 
 ## The CLI
 

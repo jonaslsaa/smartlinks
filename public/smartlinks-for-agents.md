@@ -94,7 +94,8 @@ timestamp in the value and check it after opening. Local executions derive token
 ephemeral per-process key by default. For a scripted multi-process walkthrough, set the same
 high-entropy `SMARTLINKS_LOCAL_TOKEN_KEY` (at least 16 bytes) on every `run`; alternatively use
 `run --serve`, whose key is stable for the server session. Tokens remain bound to the exact
-artifact, and local and production tokens never interoperate; behavior is otherwise identical.
+artifact. Transparent local tokens never interoperate with production; tokens using an explicit
+`options.key` remain intentionally portable between runtimes. Behavior is otherwise identical.
 
 The canonical shape — a wizard whose whole session lives in one query parameter:
 
