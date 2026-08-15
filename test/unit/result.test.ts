@@ -1,21 +1,45 @@
 import { describe, expect, it } from "vitest";
+import { RUNTIME_CONTENT_SECURITY_POLICY } from "../../src/shared/response-security.js";
 import {
   InvalidScriptResponseError,
   MAX_BINARY_RESPONSE_BYTES,
   mapScriptResult,
 } from "../../src/shared/result.js";
 
+function expectRuntimeSecurityHeaders(response: Response): void {
+  expect(response.headers.get("content-security-policy")).toContain(
+    RUNTIME_CONTENT_SECURITY_POLICY,
+  );
+  expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(response.headers.get("x-frame-options")).toBe("DENY");
+}
+
 describe("script result mapping", () => {
   it("turns strings into redirects", () => {
     const response = mapScriptResult("https://example.com/path");
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("https://example.com/path");
+    expectRuntimeSecurityHeaders(response);
   });
 
-  it("turns literal results into responses", async () => {
-    const response = mapScriptResult({ status: 202, headers: { "x-test": "yes" }, body: "done" });
+  it("preserves author headers without letting them weaken the runtime security floor", async () => {
+    const authorPolicy = "img-src https://images.example";
+    const response = mapScriptResult({
+      status: 202,
+      headers: {
+        "content-security-policy": authorPolicy,
+        "referrer-policy": "unsafe-url",
+        "x-content-type-options": "off",
+        "x-frame-options": "SAMEORIGIN",
+        "x-test": "yes",
+      },
+      body: "done",
+    });
     expect(response.status).toBe(202);
     expect(response.headers.get("x-test")).toBe("yes");
+    expect(response.headers.get("content-security-policy")).toContain(authorPolicy);
+    expectRuntimeSecurityHeaders(response);
     await expect(response.text()).resolves.toBe("done");
   });
 
@@ -26,6 +50,7 @@ describe("script result mapping", () => {
 
     expect(response.status).toBe(201);
     expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    expectRuntimeSecurityHeaders(response);
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
 
     const unpadded = mapScriptResult({ bodyBase64: bodyBase64.replace(/=+$/u, "") });
@@ -58,6 +83,7 @@ describe("script result mapping", () => {
   it("returns the default done page for undefined", async () => {
     const response = mapScriptResult(undefined);
     expect(response.status).toBe(200);
+    expectRuntimeSecurityHeaders(response);
     await expect(response.text()).resolves.toContain("✓ done");
   });
 
