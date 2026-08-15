@@ -4,7 +4,7 @@ import packageJson from "./package.json" with { type: "json" };
 export default defineConfig({
   entry: ["src/cli/index.ts"],
   format: ["esm"],
-  target: "node18",
+  target: "node24",
   dts: true,
   clean: true,
   sourcemap: true,

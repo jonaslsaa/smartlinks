@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { webcrypto } from "node:crypto";
 import { chmod, stat, writeFile } from "node:fs/promises";
 import * as p from "@clack/prompts";
 import clipboard from "clipboardy";
@@ -24,24 +23,6 @@ import { fail, startUi } from "./ui.js";
 import { collect, normalizeServiceUrl, resolveSecrets, splitAssignment } from "./values.js";
 
 declare const __SMARTLINKS_VERSION__: string;
-
-// Node 18 exposes Web Crypto from node:crypto, but not as a global by default.
-// HPKE and the shared Worker code use the standard global Web Crypto interface.
-if (!globalThis.crypto) {
-  Object.defineProperty(globalThis, "crypto", { value: webcrypto });
-}
-
-// Node 18 marks X25519 Web Crypto as experimental even though it is the supported
-// implementation behind our RFC 9180 suite. Suppress only that known warning; preserve all others.
-const originalEmitWarning = process.emitWarning.bind(process) as (...args: unknown[]) => void;
-process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
-  const message = typeof warning === "string" ? warning : warning.message;
-  const type = warning instanceof Error ? warning.name : args[0];
-  if (type === "ExperimentalWarning" && message.includes("X25519 Web Crypto API")) {
-    return;
-  }
-  originalEmitWarning(warning, ...args);
-}) as typeof process.emitWarning;
 
 const DEFAULT_SERVICE_URL = "https://s.jonaslsa.com";
 const publicKeySchema = z.object({

@@ -229,7 +229,7 @@ which describes the format, CLI, runtime contract, and limitations.
 
 ## Development
 
-Smartlinks requires Node.js 18.18 or newer.
+Smartlinks requires Node.js 24 or newer.
 
 ```sh
 npm ci
