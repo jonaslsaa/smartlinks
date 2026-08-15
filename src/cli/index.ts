@@ -6,16 +6,12 @@ import clipboard from "clipboardy";
 import { Command, Option } from "commander";
 import { z } from "zod";
 import {
-  type DecodedPayload,
   decodePayload,
   formatNotAfter,
   isExpired,
   MAX_PAYLOAD_LENGTH,
   payloadFromInput,
 } from "../shared/codec.js";
-import { createGuardedFetch, type GuestFetch } from "../shared/guarded-fetch.js";
-import { createCryptoOperationBudget, createGuestCrypto } from "../shared/guest-crypto.js";
-import { createSmartlinkCompiler } from "../shared/mint.js";
 import {
   createRequestId,
   localRequestBody,
@@ -23,20 +19,13 @@ import {
   userParams,
   userParamValues,
 } from "../shared/request-context.js";
-import { mapScriptResult, type ScriptResult } from "../shared/result.js";
-import { runScript, type SandboxContext, validateScript } from "../shared/sandbox.js";
+import { mapScriptResult } from "../shared/result.js";
+import type { SandboxContext } from "../shared/sandbox.js";
 import { formatStoredScript } from "../shared/script.js";
-import {
-  artifactSecretBinding,
-  type GeneratedKeyPair,
-  generateKeyPair,
-  openSecret,
-  sealedSecretKeyId,
-} from "../shared/seal.js";
+import { generateKeyPair } from "../shared/seal.js";
 import { createSmartlink, prepareSmartlinkProgram } from "./build.js";
-import { encodePayloadForCli } from "./encode.js";
 import { parseExpiry } from "./expiry.js";
-import { createNodeFetch } from "./node-fetch.js";
+import { runLocalProgram } from "./local-run.js";
 import { readScriptSource } from "./source.js";
 import { fail, startUi } from "./ui.js";
 import { collect, normalizeServiceUrl, resolveSecrets, splitAssignment } from "./values.js";
@@ -62,8 +51,6 @@ process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
 }) as typeof process.emitWarning;
 
 const DEFAULT_SERVICE_URL = "https://s.jonaslsa.com";
-const LOCAL_SERVICE_URL = "https://smartlinks.local";
-const MAX_LOCAL_COMPILE_REDIRECTS = 10;
 const publicKeySchema = z.object({
   keyId: z.number().int().min(1).max(255),
   publicKey: z.string().min(1),
@@ -282,106 +269,14 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
   }
 }
 
-async function decryptLocalSecrets(
-  decoded: DecodedPayload,
-  getLocalKey: () => Promise<GeneratedKeyPair>,
-): Promise<Record<string, string>> {
-  const sealed = decoded.envelope.k;
-  if (!sealed) {
-    return {};
-  }
-  if (decoded.envelope.c?.length && decoded.envelope.a !== 1) {
-    throw new Error("Sealed compile closures require complete-artifact binding.");
-  }
-  const localKey = await getLocalKey();
-
-  return Object.fromEntries(
-    await Promise.all(
-      Object.entries(sealed).map(async ([name, blob]) => {
-        if (sealedSecretKeyId(blob) !== localKey.keyId) {
-          throw new Error(`The compiled local Smartlink requires a different encryption key.`);
-        }
-        const binding =
-          decoded.envelope.a === 1
-            ? artifactSecretBinding(decoded.version, decoded.envelope, name)
-            : decoded.envelope.notAfter === undefined
-              ? { script: decoded.envelope.s }
-              : { script: decoded.envelope.s, notAfter: decoded.envelope.notAfter };
-        return [name, await openSecret(blob, binding, localKey.privateKeySecret)] as const;
-      }),
-    ),
-  );
-}
-
-async function executeLocalSmartlink(options: {
-  decoded: DecodedPayload;
-  context: SandboxContext;
-  secrets: Readonly<Record<string, string>>;
-  createGuestFetch: () => GuestFetch;
-  getLocalKey: () => Promise<GeneratedKeyPair>;
-}): Promise<ScriptResult> {
-  const cryptoBudget = createCryptoOperationBudget();
-  const compile = createSmartlinkCompiler({
-    parent: options.decoded,
-    parentSecrets: options.secrets,
-    service: LOCAL_SERVICE_URL,
-    getPublicKey: options.getLocalKey,
-    encode: async (envelope, version) => encodePayloadForCli(envelope, version),
-    validate: async (version, childSource) => validateScript(version, childSource),
-    cryptoBudget,
-  });
-  return runScript({
-    version: options.decoded.version,
-    source: options.decoded.envelope.s,
-    context: { ...options.context, secrets: { ...options.secrets } },
-    fetch: options.createGuestFetch(),
-    crypto: createGuestCrypto(crypto, cryptoBudget),
-    cryptoBudget,
-    compile,
-  });
-}
-
-function compiledLocalUrl(result: ScriptResult): URL | undefined {
-  if (typeof result !== "string") {
-    return undefined;
-  }
-  try {
-    const url = new URL(result);
-    return url.origin === LOCAL_SERVICE_URL && /^\/r\/[^/]+$/u.test(url.pathname) ? url : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 async function runCommand(file: string, options: RunOptions): Promise<void> {
   const interactive = startUi("smartlinks run", options.json === true);
   const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
   const { source, closures } = await prepareSmartlinkProgram(originalSource, options.minify);
   const method = options.method.toUpperCase();
   const parameters = options.param.map((value) => splitAssignment(value, "Parameter"));
-  const nodeFetch = options.allowNetwork ? createNodeFetch() : undefined;
-  const createGuestFetch = (): GuestFetch =>
-    nodeFetch
-      ? createGuardedFetch({ fetchImpl: nodeFetch })
-      : async () => {
-          throw new Error(
-            "Network access is disabled. Re-run with --allow-network to enable fetch.",
-          );
-        };
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
-  let localKey: Promise<GeneratedKeyPair> | undefined;
-  const getLocalKey = () => {
-    localKey ??= generateKeyPair(1);
-    return localKey;
-  };
-  const parent = {
-    version: "2" as const,
-    envelope: {
-      s: source,
-      ...(closures.length ? { c: closures } : {}),
-    },
-  };
-  let context: SandboxContext = {
+  const context: SandboxContext = {
     params: userParams(parameters),
     paramValues: userParamValues(parameters),
     method,
@@ -393,47 +288,12 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     secrets,
     requestId: createRequestId(),
   };
-  let result = await executeLocalSmartlink({
-    decoded: parent,
+  const result = await runLocalProgram({
+    source,
+    closures,
     context,
-    secrets,
-    createGuestFetch,
-    getLocalKey,
+    allowNetwork: options.allowNetwork === true,
   });
-  let followed = 0;
-  while (true) {
-    const url = compiledLocalUrl(result);
-    if (!url) {
-      break;
-    }
-    if (followed >= MAX_LOCAL_COMPILE_REDIRECTS) {
-      throw new Error(
-        `Local execution followed more than ${MAX_LOCAL_COMPILE_REDIRECTS} compiled Smartlinks.`,
-      );
-    }
-    followed += 1;
-    const decoded = decodePayload(payloadFromInput(url.href));
-    if (isExpired(decoded.envelope.notAfter)) {
-      throw new Error("The compiled local Smartlink has expired.");
-    }
-    const childSecrets = await decryptLocalSecrets(decoded, getLocalKey);
-    context = {
-      params: userParams(url.searchParams),
-      paramValues: userParamValues(url.searchParams),
-      method: "GET",
-      headers: {},
-      body: null,
-      secrets: childSecrets,
-      requestId: createRequestId(),
-    };
-    result = await executeLocalSmartlink({
-      decoded,
-      context,
-      secrets: childSecrets,
-      createGuestFetch,
-      getLocalKey,
-    });
-  }
   const response = mapScriptResult(result);
   const output = {
     status: response.status,

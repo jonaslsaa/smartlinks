@@ -1,6 +1,6 @@
 import { Aes128Gcm, CipherSuite, DhkemX25519HkdfSha256, HkdfSha256 } from "@hpke/core";
 import { concatBytes, fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
-import type { Envelope, PayloadVersion } from "./codec.js";
+import type { DecodedPayload, Envelope, PayloadVersion } from "./codec.js";
 
 const suite = new CipherSuite({
   kem: new DhkemX25519HkdfSha256(),
@@ -49,6 +49,28 @@ export function artifactSecretBinding(
     interstitial: envelope.i === true,
     secretName,
   };
+}
+
+function payloadSecretBinding(decoded: DecodedPayload, secretName: string): SecretBinding {
+  if (decoded.envelope.a === 1) {
+    return artifactSecretBinding(decoded.version, decoded.envelope, secretName);
+  }
+  if (decoded.envelope.c?.length) {
+    throw new Error("Sealed compile closures require complete-artifact binding.");
+  }
+  return decoded.envelope.notAfter === undefined
+    ? { script: decoded.envelope.s }
+    : { script: decoded.envelope.s, notAfter: decoded.envelope.notAfter };
+}
+
+export function boundSealedSecrets(
+  decoded: DecodedPayload,
+): Array<{ name: string; blob: string; binding: SecretBinding }> {
+  return Object.entries(decoded.envelope.k ?? {}).map(([name, blob]) => ({
+    name,
+    blob,
+    binding: payloadSecretBinding(decoded, name),
+  }));
 }
 
 function assertKeyId(keyId: number): void {

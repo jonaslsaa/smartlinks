@@ -12,7 +12,7 @@ import {
 } from "../shared/request-context.js";
 import { mapScriptResult, type ScriptResult } from "../shared/result.js";
 import {
-  artifactSecretBinding,
+  boundSealedSecrets,
   openSecret,
   publicKeyFromPrivateSecret,
   sealedSecretKeyId,
@@ -53,30 +53,23 @@ function routePayload(pathname: string, route: "r" | "d"): string | undefined {
 }
 
 async function decryptSecrets(decoded: DecodedPayload, env: Env): Promise<Record<string, string>> {
-  const sealed = decoded.envelope.k;
-  if (!sealed) {
+  if (!decoded.envelope.k) {
     return {};
   }
-  if (decoded.envelope.c?.length && decoded.envelope.a !== 1) {
-    throw new HttpError(400, "Sealed compile closures require complete-artifact binding.");
+  let sealed: ReturnType<typeof boundSealedSecrets>;
+  try {
+    sealed = boundSealedSecrets(decoded);
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : "Invalid sealed secrets.", {
+      cause: error,
+    });
   }
 
   const entries = await Promise.all(
-    Object.entries(sealed).map(async ([name, blob]) => {
+    sealed.map(async ({ name, blob, binding }) => {
       const keyId = sealedSecretKeyId(blob);
       try {
-        return [
-          name,
-          await openSecret(
-            blob,
-            decoded.envelope.a === 1
-              ? artifactSecretBinding(decoded.version, decoded.envelope, name)
-              : decoded.envelope.notAfter === undefined
-                ? { script: decoded.envelope.s }
-                : { script: decoded.envelope.s, notAfter: decoded.envelope.notAfter },
-            privateKey(env, keyId),
-          ),
-        ] as const;
+        return [name, await openSecret(blob, binding, privateKey(env, keyId))] as const;
       } catch (error) {
         if (error instanceof HttpError) {
           throw error;
