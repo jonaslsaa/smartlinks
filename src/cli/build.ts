@@ -1,3 +1,4 @@
+import { type AuthorCertificate, type AuthorKeyPair, signEnvelope } from "../shared/author.js";
 import { interstitialNoteSchema } from "../shared/codec.js";
 import { compiledChildSource } from "../shared/mint.js";
 import { validateScript } from "../shared/sandbox.js";
@@ -16,6 +17,10 @@ export type CreateSmartlinkOptions = {
   publicKey?: PublicKey;
   minify?: boolean;
   validate?: (version: "2", source: string) => Promise<void>;
+  author?: {
+    certificate: AuthorCertificate;
+    key: AuthorKeyPair;
+  };
 };
 
 export type CreatedSmartlink = {
@@ -84,10 +89,14 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
         ),
       )
     : [];
-  const payload = encodePayloadForCli({
+  const unsignedEnvelope = {
     ...envelope,
     ...(sealedEntries.length ? { k: Object.fromEntries(sealedEntries) } : {}),
-  });
+  };
+  const signedEnvelope = options.author
+    ? await signEnvelope("2", unsignedEnvelope, options.author.certificate, options.author.key)
+    : unsignedEnvelope;
+  const payload = encodePayloadForCli(signedEnvelope);
 
   return {
     payload,

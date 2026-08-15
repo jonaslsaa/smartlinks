@@ -1,4 +1,6 @@
+import type { AuthorVerification } from "../shared/author.js";
 import type { DecodedPayload } from "../shared/codec.js";
+import { formatNotAfter } from "../shared/codec.js";
 import { payloadFacts } from "../shared/payload-facts.js";
 import { formatStoredScript } from "../shared/script.js";
 import { escapeHtml, html } from "./http.js";
@@ -13,6 +15,8 @@ const PAGE_STYLE = `
   .system { border-color:#5b4821; background:#17130b } .system h2 { color:#f3d58b }
   .author-note { border-color:#34516b; background:#0d151c } .eyebrow { display:block; color:#8fbde5; font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin:0 0 6px }
   .author-note p,.system p { margin:0 }
+  .author { border-color:#315f45; background:#0d1812 } .author h2 { color:#8fe0ad }
+  .author.expired { border-color:#66562f; background:#18150d } .author.expired h2 { color:#e8cf85 }
   dl { display:grid; grid-template-columns:max-content 1fr; gap:8px 20px; margin:0 } dt { color:#888 } dd { margin:0; overflow-wrap:anywhere }
   form { margin-top:24px }
   code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace }
@@ -40,6 +44,20 @@ function authorNoteHtml(decoded: DecodedPayload): string {
   return note === undefined
     ? ""
     : `<section class="panel author-note" aria-labelledby="author-note-heading"><h2 class="eyebrow" id="author-note-heading">Author-provided note</h2><p>${escapeHtml(note)}</p></section>`;
+}
+
+function authorHtml(author: AuthorVerification): string {
+  if (author.status === "unsigned") {
+    return `<section class="panel" aria-labelledby="author-heading"><h2 class="eyebrow" id="author-heading">Author</h2><p>Unsigned</p></section>`;
+  }
+  if (author.status === "invalid") {
+    return `<section class="panel system" aria-labelledby="author-heading"><h2 class="eyebrow" id="author-heading">Author</h2><p>Invalid author signature</p></section>`;
+  }
+  const expired = author.status === "expired";
+  const detail = expired
+    ? `Author certificate expired ${formatNotAfter(author.expiresAt)}`
+    : `Identity verified by Smartlinks · certificate expires ${formatNotAfter(author.expiresAt)}`;
+  return `<section class="panel author${expired ? " expired" : ""}" aria-labelledby="author-heading"><h2 class="eyebrow" id="author-heading">Author</h2><p><strong>github.com/${escapeHtml(author.githubLogin)}</strong><br>${escapeHtml(detail)}</p></section>`;
 }
 
 function factsHtml(decoded: DecodedPayload): string {
@@ -75,20 +93,24 @@ export function expiredPage(): Response {
   );
 }
 
-export function interstitialPage(decoded: DecodedPayload, action: string): Response {
+export function interstitialPage(
+  decoded: DecodedPayload,
+  author: AuthorVerification,
+  action: string,
+): Response {
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
   const closures = compileClosureHtml(decoded);
 
   return html(
     page(
       "Confirm smartlink",
-      `<h1>Review before running</h1><section class="panel system" aria-labelledby="system-warning-heading"><h2 id="system-warning-heading">This link runs a program.</h2><p>Review its note, facts, and source before continuing.</p></section>${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
+      `<h1>Review before running</h1><section class="panel system" aria-labelledby="system-warning-heading"><h2 id="system-warning-heading">This link runs a program.</h2><p>Review its author, note, facts, and source before continuing.</p></section>${authorHtml(author)}${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
     ),
     { headers: { "cache-control": "no-store" } },
   );
 }
 
-export function decoderPage(decoded: DecodedPayload): Response {
+export function decoderPage(decoded: DecodedPayload, author: AuthorVerification): Response {
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
   const closures = compileClosureHtml(decoded);
   const notAfter = decoded.envelope.notAfter;
@@ -96,7 +118,7 @@ export function decoderPage(decoded: DecodedPayload): Response {
   return html(
     page(
       "Decode smartlink",
-      `<h1>Decoded smartlink</h1>${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<p>The encrypted secret values are intentionally not displayed.</p>`,
+      `<h1>Decoded smartlink</h1>${authorHtml(author)}${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<p>The encrypted secret values are intentionally not displayed.</p>`,
     ),
     {
       headers: {

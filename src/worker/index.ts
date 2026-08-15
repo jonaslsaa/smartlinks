@@ -1,4 +1,5 @@
 import { ZodError } from "zod";
+import { type AuthorVerification, verifyAuthorProof } from "../shared/author.js";
 import { isPreviewRequest } from "../shared/bots.js";
 import { type DecodedPayload, isExpired } from "../shared/codec.js";
 import { createGuardedFetch } from "../shared/guarded-fetch.js";
@@ -24,6 +25,7 @@ import {
 } from "../shared/seal.js";
 import { decodeWorkerPayload, encodeWorkerPayload } from "./codec.js";
 import { HttpError, json, readBoundedBody } from "./http.js";
+import { certificateRequestSchema, exchangeGithubIdentity } from "./identity.js";
 import { decoderPage, expiredPage, interstitialPage, previewPage } from "./pages.js";
 import { runWorkerScript, validateWorkerScript } from "./sandbox.js";
 
@@ -44,6 +46,22 @@ function privateKey(env: Env, keyId: number): string {
   const secret = readStringBinding(env, `PRIVATE_KEY_${keyId}`);
   if (!secret) {
     throw new HttpError(503, `Encryption key ${keyId} is unavailable.`);
+  }
+  return secret;
+}
+
+function authorIssuerKeyId(env: Env): number {
+  const keyId = Number(env.AUTHOR_CA_KEY_ID);
+  if (!Number.isInteger(keyId) || keyId < 1 || keyId > 255) {
+    throw new HttpError(503, "Author certificate signing is not configured.");
+  }
+  return keyId;
+}
+
+function authorIssuerPrivateKey(env: Env, keyId: number): string {
+  const secret = readStringBinding(env, `AUTHOR_CA_PRIVATE_KEY_${keyId}`);
+  if (!secret) {
+    throw new HttpError(503, "Author certificate signing is unavailable.");
   }
   return secret;
 }
@@ -96,6 +114,34 @@ async function enforceExecutionRateLimit(request: Request, env: Env): Promise<vo
   }
 }
 
+async function enforceIdentityRateLimit(request: Request, env: Env): Promise<void> {
+  const key = request.headers.get("cf-connecting-ip") ?? "unknown-client";
+  const { success } = await env.IDENTITY_RATE_LIMITER.limit({ key });
+  if (!success) {
+    throw new HttpError(429, "Too many authentication attempts. Try again shortly.", {
+      headers: { "retry-after": "60" },
+    });
+  }
+}
+
+async function verifiedAuthor(decoded: DecodedPayload, env: Env): Promise<AuthorVerification> {
+  const issuerKeyId = decoded.envelope.u?.[0][1];
+  const issuerPublicKey =
+    issuerKeyId === undefined
+      ? undefined
+      : readStringBinding(env, `AUTHOR_CA_PUBLIC_KEY_${issuerKeyId}`);
+  const author = await verifyAuthorProof(decoded, {
+    issuerPublicKeys:
+      issuerKeyId === undefined || issuerPublicKey === undefined
+        ? {}
+        : { [issuerKeyId]: issuerPublicKey },
+  });
+  if (author.status === "invalid") {
+    throw new HttpError(400, "The Smartlink author signature is invalid.");
+  }
+  return author;
+}
+
 async function runRoute(request: Request, env: Env, payload: string): Promise<Response> {
   if (isPreviewRequest(request)) {
     return previewPage(request.method === "HEAD");
@@ -109,6 +155,7 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
       cause: error,
     });
   }
+  const author = await verifiedAuthor(decoded, env);
 
   const url = new URL(request.url);
   if (isExpired(decoded.envelope.notAfter)) {
@@ -118,7 +165,7 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
     if (request.method === "GET") {
       const action = new URL(url);
       action.searchParams.set("__confirm", "1");
-      return interstitialPage(decoded, `${action.pathname}${action.search}`);
+      return interstitialPage(decoded, author, `${action.pathname}${action.search}`);
     }
     if (request.method !== "POST" || url.searchParams.get("__confirm") !== "1") {
       throw new HttpError(405, "This smartlink requires browser confirmation.");
@@ -206,6 +253,35 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     return request.method === "HEAD" ? new Response(null, response) : response;
   }
 
+  if (url.pathname === "/auth/github/certificate") {
+    if (request.method !== "POST") {
+      throw new HttpError(405, "Method not allowed.");
+    }
+    await enforceIdentityRateLimit(request, env);
+    const body = await readBoundedBody(request, 4_096);
+    let input: ReturnType<typeof certificateRequestSchema.parse>;
+    try {
+      input = certificateRequestSchema.parse(JSON.parse(body ?? ""));
+    } catch (error) {
+      throw new HttpError(400, "The certificate request is invalid.", { cause: error });
+    }
+    const keyId = authorIssuerKeyId(env);
+    const issuerPublicKey = readStringBinding(env, `AUTHOR_CA_PUBLIC_KEY_${keyId}`);
+    if (!issuerPublicKey) {
+      throw new HttpError(503, "Author certificate verification is unavailable.");
+    }
+    const result = await exchangeGithubIdentity({
+      authorPublicKey: input.publicKey,
+      deviceCode: input.deviceCode,
+      issuerKeyId: keyId,
+      issuerPrivateKey: authorIssuerPrivateKey(env, keyId),
+      issuerPublicKey,
+    });
+    return result.status === "pending"
+      ? json(result, { status: 202 })
+      : json({ certificate: result.certificate });
+  }
+
   const runnerPayload = routePayload(url.pathname, "r");
   if (runnerPayload) {
     return runRoute(request, env, runnerPayload);
@@ -224,7 +300,7 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
         cause: error,
       });
     }
-    const response = decoderPage(decoded);
+    const response = decoderPage(decoded, await verifiedAuthor(decoded, env));
     return request.method === "HEAD" ? new Response(null, response) : response;
   }
 

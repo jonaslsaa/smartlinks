@@ -2,28 +2,47 @@ import { deflateRawSync } from "node:zlib";
 import { deflateSync } from "fflate";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { createSmartlink } from "../../src/cli/build.js";
+import {
+  generateAuthorKeyPair,
+  issueAuthorCertificate,
+  signEnvelope,
+  verifyAuthorProof,
+} from "../../src/shared/author.js";
 import { toBase64Url } from "../../src/shared/bytes.js";
 import { encodePayload, MAX_DECOMPRESSED_LENGTH } from "../../src/shared/codec.js";
 import { generateKeyPair, sealSecret } from "../../src/shared/seal.js";
 import { decodeWorkerPayload, inflateRawWithLimit } from "../../src/worker/codec.js";
+import { exchangeGithubIdentity } from "../../src/worker/identity.js";
 import worker from "../../src/worker/index.js";
 import { validateWorkerScript } from "../../src/worker/sandbox.js";
 
 const origin = "https://runtime.example";
 let pair: Awaited<ReturnType<typeof generateKeyPair>>;
+let authorIssuer: Awaited<ReturnType<typeof generateAuthorKeyPair>>;
+let authorKey: Awaited<ReturnType<typeof generateAuthorKeyPair>>;
 
 beforeAll(async () => {
   pair = await generateKeyPair(1);
+  authorIssuer = await generateAuthorKeyPair();
+  authorKey = await generateAuthorKeyPair();
 });
 
 function testEnv(
   executionRateLimiter: RateLimit = {
     limit: async () => ({ success: true }),
   },
-): Env & { PRIVATE_KEY_1: string; TOKEN_MASTER_SECRET: string } {
+): Env & {
+  AUTHOR_CA_PRIVATE_KEY_1: string;
+  PRIVATE_KEY_1: string;
+  TOKEN_MASTER_SECRET: string;
+} {
   return {
     ACTIVE_KEY_ID: "1",
+    AUTHOR_CA_KEY_ID: "1",
+    AUTHOR_CA_PRIVATE_KEY_1: authorIssuer.privateKey,
+    AUTHOR_CA_PUBLIC_KEY_1: authorIssuer.publicKey as Env["AUTHOR_CA_PUBLIC_KEY_1"],
     EXECUTION_RATE_LIMITER: executionRateLimiter,
+    IDENTITY_RATE_LIMITER: { limit: async () => ({ success: true }) },
     LANDING_URL: "https://smartlinks.jonaslsa.com/",
     RUNTIME_HOSTNAMES: ["s.jonaslsa.com"],
     PRIVATE_KEY_1: pair.privateKeySecret,
@@ -108,6 +127,114 @@ describe("Worker routes", () => {
     const { TOKEN_MASTER_SECRET: _unset, ...env } = testEnv();
     const response = await worker.fetch(new Request(created.link), env as Env);
     expect(response.status).toBe(422);
+  });
+
+  it("executes a link with a locally verified GitHub author certificate", async () => {
+    const now = Math.floor(Date.now() / 1_000);
+    const certificate = await issueAuthorCertificate({
+      authorPublicKey: authorKey.publicKey,
+      identity: { githubId: 123456, githubLogin: "jonaslsaa" },
+      issuerKeyId: 1,
+      issuerPrivateKey: authorIssuer.privateKey,
+      issuedAt: now,
+      expiresAt: now + 3_600,
+    });
+    const created = await createSmartlink({
+      source: 'return { body: "signed:" + ctx.secrets.SIGNED_TOKEN }',
+      service: origin,
+      interstitial: true,
+      secrets: { SIGNED_TOKEN: "sealed-authority" },
+      publicKey: pair,
+      author: { certificate, key: authorKey },
+      validate: validateWorkerScript,
+    });
+
+    const interstitial = await worker.fetch(new Request(created.link), testEnv());
+    expect(interstitial.status).toBe(200);
+    await expect(interstitial.text()).resolves.toContain("github.com/jonaslsaa");
+
+    const run = await worker.fetch(
+      new Request(`${created.link}?__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    expect(run.status).toBe(200);
+    await expect(run.text()).resolves.toBe("signed:sealed-authority");
+  });
+
+  it("exchanges an authorized device code without returning the GitHub token", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ access_token: "temporary-github-token" }))
+      .mockResolvedValueOnce(Response.json({ id: 123456, login: "jonaslsaa" }));
+
+    const result = await exchangeGithubIdentity({
+      authorPublicKey: authorKey.publicKey,
+      deviceCode: "device-code-with-enough-entropy",
+      issuerKeyId: 1,
+      issuerPrivateKey: authorIssuer.privateKey,
+      issuerPublicKey: authorIssuer.publicKey,
+      fetchImpl,
+      nowSeconds: 2_000_000_000,
+    });
+
+    expect(result.status).toBe("issued");
+    expect(JSON.stringify(result)).not.toContain("temporary-github-token");
+    if (result.status !== "issued") {
+      throw new Error("Expected an issued author certificate.");
+    }
+    await expect(
+      verifyAuthorProof(
+        {
+          version: "2",
+          envelope: await signEnvelope(
+            "2",
+            { s: 'async ctx=>({body:"signed"})' },
+            result.certificate,
+            authorKey,
+            2_000_000_000,
+          ),
+        },
+        { issuerPublicKeys: { 1: authorIssuer.publicKey }, nowSeconds: 2_000_000_001 },
+      ),
+    ).resolves.toMatchObject({ status: "valid", githubLogin: "jonaslsaa" });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/user",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer temporary-github-token" }),
+      }),
+    );
+  });
+
+  it("preserves GitHub's device polling interval without issuing a certificate", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ error: "authorization_pending", interval: 7 }));
+    await expect(
+      exchangeGithubIdentity({
+        authorPublicKey: authorKey.publicKey,
+        deviceCode: "device-code-with-enough-entropy",
+        issuerKeyId: 1,
+        issuerPrivateKey: authorIssuer.privateKey,
+        issuerPublicKey: authorIssuer.publicKey,
+        fetchImpl,
+      }),
+    ).resolves.toEqual({ status: "pending", interval: 7 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("rate-limits certificate polling before parsing or contacting GitHub", async () => {
+    const env = testEnv({ limit: async () => ({ success: true }) });
+    env.IDENTITY_RATE_LIMITER = { limit: async () => ({ success: false }) };
+    const response = await worker.fetch(
+      new Request(`${origin}/auth/github/certificate`, {
+        method: "POST",
+        body: "not-json",
+      }),
+      env,
+    );
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
   });
 
   it("blocks guest fetches to the active runtime and configured aliases", async () => {

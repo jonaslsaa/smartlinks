@@ -3,3 +3,6 @@
 PRIVATE_KEY_1=replace-with-base64url-private-key
 # Any long random string; ctx.crypto.seal without an explicit key needs it.
 TOKEN_MASTER_SECRET=replace-with-long-random-string
+# Generate with the internal `node dist/index.js author-keygen --key-id 1` command and keep
+# AUTHOR_CA_PUBLIC_KEY_1 in wrangler.jsonc synchronized with the printed public key.
+AUTHOR_CA_PRIVATE_KEY_1=replace-with-base64url-pkcs8-private-key

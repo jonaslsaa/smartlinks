@@ -1,5 +1,6 @@
 import { deflateSync, Inflate } from "fflate";
 import { z } from "zod";
+import { authorProofSchema } from "./author.js";
 import { fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
 
 export const CURRENT_PAYLOAD_VERSION = "2" as const;
@@ -55,6 +56,7 @@ const envelopeObjectSchema = z
     k: sealedSecretSchema.optional(),
     notAfter: notAfterSchema.optional(),
     interstitialNote: interstitialNoteSchema.optional(),
+    u: authorProofSchema.optional(),
   })
   .strict();
 
