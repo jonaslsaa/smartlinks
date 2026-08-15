@@ -153,7 +153,9 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
         secrets,
         requestId: createRequestId(request.headers.get("cf-ray")),
       },
-      fetch: createGuardedFetch(),
+      fetch: createGuardedFetch({
+        blockedHostnames: [url.hostname, ...env.RUNTIME_HOSTNAMES],
+      }),
       crypto: createGuestCrypto(crypto, cryptoBudget),
       cryptoBudget,
       compile,

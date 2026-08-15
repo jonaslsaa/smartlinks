@@ -28,6 +28,7 @@ type LocalProgram = {
   closures: readonly string[];
   context: SandboxContext;
   allowNetwork: boolean;
+  blockedHostnames: readonly string[];
 };
 
 async function decryptSecrets(
@@ -94,7 +95,7 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
   const nodeFetch = program.allowNetwork ? createNodeFetch() : undefined;
   const createGuestFetch = (): GuestFetch =>
     nodeFetch
-      ? createGuardedFetch({ fetchImpl: nodeFetch })
+      ? createGuardedFetch({ fetchImpl: nodeFetch, blockedHostnames: program.blockedHostnames })
       : async () => {
           throw new Error(
             "Network access is disabled. Re-run with --allow-network to enable fetch.",

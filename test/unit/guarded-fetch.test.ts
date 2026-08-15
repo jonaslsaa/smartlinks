@@ -3,6 +3,34 @@ import { createNodeFetch } from "../../src/cli/node-fetch.js";
 import { assertPublicUrl, createGuardedFetch } from "../../src/shared/guarded-fetch.js";
 
 describe("guarded fetch", () => {
+  it("blocks every configured runtime hostname before making a request", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response("unreachable"));
+    const guarded = createGuardedFetch({
+      fetchImpl,
+      blockedHostnames: ["runtime.example", "alias.example"],
+    });
+
+    for (const url of [
+      "https://runtime.example/",
+      "https://runtime.example/r/payload",
+      "https://runtime.example/d/payload",
+      "https://ALIAS.EXAMPLE./pk",
+    ]) {
+      await expect(guarded(url)).rejects.toThrow("Smartlinks runtime");
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("blocks a redirect to a configured runtime hostname before following it", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      Response.redirect("https://runtime.example/r/payload", 302),
+    );
+    const guarded = createGuardedFetch({ fetchImpl, blockedHostnames: ["runtime.example"] });
+
+    await expect(guarded("https://public.example/start")).rejects.toThrow("Smartlinks runtime");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     "http://localhost/admin",
     "http://127.0.0.1/admin",

@@ -207,11 +207,12 @@ decode the public source and build a separate link without that deadline.
 - One `ctx.compile` attempt is allowed per execution on the hosted Workers Free runtime. This
   separate limit was chosen from production CPU measurements; a second near-limit sealed mint
   crossed the platform CPU boundary.
-- `fetch` permits HTTP(S), blocks local hostnames and private/local/reserved IP literals,
-  limits same-origin redirects to three, total requests to five, request and response bodies to
-  1 MiB, and each fetch to ten seconds. Cross-origin redirects are rejected. Local
-  `smartlinks run --allow-network` additionally resolves and pins DNS connections to validated
-  public addresses.
+- `fetch` permits HTTP(S), blocks Smartlinks runtime hostnames, local hostnames, and
+  private/local/reserved IP literals, limits same-origin redirects to three, total requests to
+  five, request and response bodies to 1 MiB, and each fetch to ten seconds. A Smartlink cannot
+  invoke the runtime by HTTP; use `ctx.compile` to create a child link. Cross-origin redirects are
+  rejected. Local `smartlinks run --allow-network` additionally resolves and pins DNS connections
+  to validated public addresses.
 - Known crawler, preview, prefetch, and `HEAD` requests do not execute scripts. Detection is
   intentionally best-effort.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.

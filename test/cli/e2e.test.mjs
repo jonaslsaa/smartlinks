@@ -145,6 +145,28 @@ return {
   });
 });
 
+test("run blocks fetches to the configured runtime before using the network", async () => {
+  const source = `
+try {
+  await fetch("https://runtime.example/r/payload");
+  return { body: "unexpected success" };
+} catch (error) {
+  return { body: String(error) };
+}
+`;
+
+  await withTemporaryScript("js", source, async (script) => {
+    const result = await runCli(["run", script, "--allow-network", "--json"], {
+      env: { ...process.env, SMARTLINKS_URL: "https://runtime.example" },
+    });
+    const response = JSON.parse(result.stdout);
+
+    assert.equal(response.status, 200);
+    assert.match(response.body, /Fetches to the Smartlinks runtime are blocked\./u);
+    assert.equal(result.stderr, "");
+  });
+});
+
 test("run locally executes a sealed child with typed tuple arguments", async () => {
   const source = `
 const leaf = async (name: string) => ({

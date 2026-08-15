@@ -194,11 +194,12 @@ executions per minute per client IP at each Cloudflare location; excess executio
 429. Source code is intentionally decodable. Use an interstitial for human-triggered side effects
 and scoped secrets for authenticated actions.
 
-The runtime blocks local hostname suffixes, private/local/reserved IP literals, cross-origin
-redirects, and oversized bodies. Local `run --allow-network` is stricter: it also resolves and
-pins DNS connections to validated public addresses. Known crawler, prefetch, and `HEAD` requests
-do not execute scripts. This is a carefully constrained hobby service, not a general-purpose
-hostile-code platform.
+The runtime blocks its own hostnames, local hostname suffixes, private/local/reserved IP literals,
+cross-origin redirects, and oversized bodies. A Smartlink cannot invoke the Smartlinks runtime by
+HTTP; use `ctx.compile` to create a child link. Local `run --allow-network` is stricter: it also
+resolves and pins DNS connections to validated public addresses. Known crawler, prefetch, and
+`HEAD` requests do not execute scripts. This is a carefully constrained hobby service, not a
+general-purpose hostile-code platform.
 
 ## Build with an agent
 
@@ -241,7 +242,8 @@ npm run dev
 
 To deploy your own runtime, run `npx wrangler deploy`, then provision its key with the internal
 `node dist/index.js keygen --key-id 1 --set-worker` command. Set `SMARTLINKS_URL` to the new
-Worker URL when building links. Never commit `.dev.vars`.
+Worker URL when building links. Keep `RUNTIME_HOSTNAMES` in `wrangler.jsonc` synchronized with
+every public hostname that can reach the Worker. Never commit `.dev.vars`.
 
 ---
 

@@ -288,11 +288,16 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     secrets,
     requestId: createRequestId(),
   };
+  const blockedHostnames =
+    options.allowNetwork === true
+      ? [new URL(normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL)).hostname]
+      : [];
   const result = await runLocalProgram({
     source,
     closures,
     context,
     allowNetwork: options.allowNetwork === true,
+    blockedHostnames,
   });
   const response = mapScriptResult(result);
   const binary = isBinaryLiteralResponse(result);
