@@ -16,6 +16,7 @@ const sealedSecretSchema = z.record(
   z.string().regex(SECRET_NAME, "Secret names must look like environment variables."),
   z.string().min(1).max(2_048),
 );
+const notAfterSchema = z.number().int().positive().max(MAX_NOT_AFTER);
 
 export const envelopeSchema = z
   .object({
@@ -24,9 +25,25 @@ export const envelopeSchema = z
     a: z.literal(1).optional(),
     c: z.array(z.string().min(1).max(MAX_SCRIPT_LENGTH)).max(MAX_COMPILE_CLOSURES).optional(),
     k: sealedSecretSchema.optional(),
-    notAfter: z.number().int().positive().max(MAX_NOT_AFTER).optional(),
+    notAfter: notAfterSchema.optional(),
   })
   .strict();
+
+const wireEnvelopeSchema = envelopeSchema
+  .omit({ notAfter: true })
+  .extend({
+    n: notAfterSchema.optional(),
+    // Decode links authored before expiry received its compact wire key.
+    notAfter: notAfterSchema.optional(),
+  })
+  .superRefine((envelope, context) => {
+    if (envelope.n !== undefined && envelope.notAfter !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: 'The payload cannot contain both "n" and "notAfter".',
+      });
+    }
+  });
 
 export type Envelope = z.infer<typeof envelopeSchema>;
 export type PayloadVersion = "1" | "2";
@@ -41,7 +58,13 @@ export type RawDeflates = readonly [RawDeflate, ...RawDeflate[]];
 
 export function serializeEnvelope(input: Envelope): Uint8Array {
   const envelope = envelopeSchema.parse(input);
-  const serialized = utf8(JSON.stringify(envelope));
+  const { notAfter, ...wireEnvelope } = envelope;
+  const serialized = utf8(
+    JSON.stringify({
+      ...wireEnvelope,
+      ...(notAfter === undefined ? {} : { n: notAfter }),
+    }),
+  );
   if (serialized.byteLength > MAX_DECOMPRESSED_LENGTH) {
     throw new Error("The serialized payload is too large.");
   }
@@ -143,9 +166,17 @@ export function parseDecompressedPayload(
   version: PayloadVersion,
   decompressed: Uint8Array,
 ): DecodedPayload {
+  const {
+    n,
+    notAfter: legacyNotAfter,
+    ...wireEnvelope
+  } = wireEnvelopeSchema.parse(JSON.parse(text(decompressed)));
   return {
     version,
-    envelope: envelopeSchema.parse(JSON.parse(text(decompressed))),
+    envelope: envelopeSchema.parse({
+      ...wireEnvelope,
+      ...(n === undefined && legacyNotAfter === undefined ? {} : { notAfter: n ?? legacyNotAfter }),
+    }),
   };
 }
 

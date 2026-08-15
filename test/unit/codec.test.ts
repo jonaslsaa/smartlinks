@@ -7,7 +7,9 @@ import {
   encodePayload,
   encodePayloadWith,
   MAX_SCRIPT_LENGTH,
+  parseDecompressedPayload,
   payloadFromInput,
+  serializeEnvelope,
 } from "../../src/shared/codec.js";
 import { formatStoredScript, minifyScriptBody, wrapScriptBody } from "../../src/shared/script.js";
 
@@ -26,6 +28,31 @@ describe("payload codec", () => {
     expect(payload[0]).toBe(CURRENT_PAYLOAD_VERSION);
     expect(decodePayload(payload)).toEqual({ version: "2", envelope });
     expect(payload).toMatch(/^[A-Za-z0-9_-]+$/u);
+  });
+
+  it("uses a compact expiry key on the wire", () => {
+    const envelope = { s: "async()=>1", notAfter: 2_000_000_000 };
+    const serialized = new TextDecoder().decode(serializeEnvelope(envelope));
+
+    expect(JSON.parse(serialized)).toEqual({ s: envelope.s, n: envelope.notAfter });
+    expect(serialized).not.toContain("notAfter");
+    expect(decodePayload(encodePayload(envelope)).envelope).toEqual(envelope);
+  });
+
+  it("decodes the previous expiry key without accepting an ambiguous expiry", () => {
+    const legacy = new TextEncoder().encode(
+      JSON.stringify({ s: "async()=>1", notAfter: 2_000_000_000 }),
+    );
+
+    expect(parseDecompressedPayload("2", legacy).envelope.notAfter).toBe(2_000_000_000);
+    expect(() =>
+      parseDecompressedPayload(
+        "2",
+        new TextEncoder().encode(
+          JSON.stringify({ s: "async()=>1", n: 2_000_000_000, notAfter: 2_000_000_001 }),
+        ),
+      ),
+    ).toThrow(/cannot contain both/u);
   });
 
   it("keeps version 1 decoding stable", () => {
