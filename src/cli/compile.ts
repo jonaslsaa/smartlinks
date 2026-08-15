@@ -1,99 +1,39 @@
 import {
-  type ArrowFunctionExpression,
   type AssignmentExpression,
   type AssignmentPattern,
   type BlockStatement,
   type CallExpression,
   type Expression,
-  type FunctionDeclaration,
-  type FunctionExpression,
-  type Identifier,
-  type Literal,
   type MemberExpression,
   type Node,
-  type ObjectPattern,
   type Program,
   parse,
-  type TemplateLiteral,
   type VariableDeclarator,
 } from "acorn";
 import { analyze, type Scope, type ScopeManager, type Variable } from "eslint-scope";
+import {
+  applyReplacements,
+  type CompileClosure,
+  destructuresCompile,
+  isCompileClosure,
+  isIdentifier,
+  type Replacement,
+  staticPropertyName,
+  walkAst,
+} from "./compile-ast.js";
+import {
+  createClosurePackager,
+  createTopLevelDeclarationCatalog,
+  type TopLevelDeclarationCatalog,
+} from "./compile-dependencies.js";
 
 const WRAPPER_PREFIX = "async ctx=>{";
 const WRAPPER_SUFFIX = "\n}";
 const INDIRECT_COMPILE_ERROR =
   "Call ctx.compile(...) directly; the compile method cannot be aliased, destructured, or passed as a value.";
 
-const ALLOWED_GLOBALS = new Set([
-  "Array",
-  "ArrayBuffer",
-  "BigInt",
-  "Boolean",
-  "Date",
-  "Error",
-  "EvalError",
-  "Function",
-  "Infinity",
-  "JSON",
-  "Map",
-  "Math",
-  "NaN",
-  "Number",
-  "Object",
-  "Promise",
-  "Proxy",
-  "RangeError",
-  "ReferenceError",
-  "Reflect",
-  "RegExp",
-  "Set",
-  "String",
-  "Symbol",
-  "SyntaxError",
-  "TypeError",
-  "URIError",
-  "Uint8Array",
-  "WeakMap",
-  "WeakSet",
-  "decodeURI",
-  "decodeURIComponent",
-  "encodeURI",
-  "encodeURIComponent",
-  "escape",
-  "eval",
-  "fetch",
-  "globalThis",
-  "isFinite",
-  "isNaN",
-  "parseFloat",
-  "parseInt",
-  "undefined",
-  "unescape",
-]);
-
-type CompileClosure = ArrowFunctionExpression | FunctionExpression | FunctionDeclaration;
-type WrapperFunction = ArrowFunctionExpression & { body: BlockStatement };
-
-type Replacement = {
-  start: number;
-  end: number;
-  value: string;
-};
-
-type NamedClosure = {
-  name: string;
-  closure: CompileClosure;
-  binding: Variable;
-  mutable: boolean;
-};
-
-type StaticDependency = {
-  name: string;
-  binding: Variable;
-  declaration: FunctionDeclaration | VariableDeclarator;
-  function?: CompileClosure;
-  kind?: "function" | "primitive";
-  reason?: string;
+type WrapperFunction = Extract<Expression, { type: "ArrowFunctionExpression" }> & {
+  body: BlockStatement;
 };
 
 export type ExtractedCompileSource = {
@@ -101,217 +41,12 @@ export type ExtractedCompileSource = {
   closures: string[];
 };
 
-function childNodes(node: Node): Node[] {
-  const children: Node[] = [];
-  for (const [key, value] of Object.entries(node)) {
-    if (key === "loc" || key === "range" || key === "start" || key === "end") {
-      continue;
-    }
-    if (Array.isArray(value)) {
-      for (const entry of value) {
-        if (typeof entry === "object" && entry !== null && "type" in entry) {
-          children.push(entry);
-        }
-      }
-    } else if (typeof value === "object" && value !== null && "type" in value) {
-      children.push(value);
-    }
-  }
-  return children;
-}
-
-function walk(
-  node: Node,
-  visit: (node: Node, parent: Node | undefined) => boolean | undefined,
-  parent?: Node,
-): void {
-  if (visit(node, parent) === false) {
-    return;
-  }
-  for (const child of childNodes(node)) {
-    walk(child, visit, node);
-  }
-}
-
-function isFunction(node: Node): node is CompileClosure {
-  return (
-    node.type === "ArrowFunctionExpression" ||
-    node.type === "FunctionExpression" ||
-    node.type === "FunctionDeclaration"
-  );
-}
-
-function isIdentifier(node: Node | null | undefined): node is Identifier {
-  return node?.type === "Identifier";
-}
-
-function functionFromExpression(
-  expression: Expression | null | undefined,
-): CompileClosure | undefined {
-  return expression && isFunction(expression) ? expression : undefined;
-}
-
 function wrapperScope(program: Program, scopes: ScopeManager): Scope {
   const scope = scopes.acquire(wrapperFunction(program), true);
   if (!scope) {
     throw new Error("Could not analyze the Smartlinks entry scope.");
   }
   return scope;
-}
-
-function isReassigned(binding: Variable): boolean {
-  return binding.references.some((reference) => reference.isWrite() && !reference.init);
-}
-
-function namedClosures(program: Program, scopes: ScopeManager): Map<string, NamedClosure> {
-  const wrapper = wrapperFunction(program);
-  const scope = wrapperScope(program, scopes);
-
-  const closures = new Map<string, NamedClosure>();
-  for (const statement of wrapper.body.body) {
-    if (statement.type === "FunctionDeclaration" && statement.id) {
-      const binding = scope.set.get(statement.id.name);
-      if (!binding) {
-        throw new Error(`Could not analyze compile closure ${statement.id.name}.`);
-      }
-      closures.set(statement.id.name, {
-        name: statement.id.name,
-        closure: statement,
-        binding,
-        mutable: isReassigned(binding),
-      });
-      continue;
-    }
-    if (statement.type !== "VariableDeclaration") {
-      continue;
-    }
-    for (const declaration of statement.declarations) {
-      if (declaration.id.type !== "Identifier") {
-        continue;
-      }
-      const closure = functionFromExpression(declaration.init);
-      if (closure) {
-        const binding = scope.set.get(declaration.id.name);
-        if (!binding) {
-          throw new Error(`Could not analyze compile closure ${declaration.id.name}.`);
-        }
-        closures.set(declaration.id.name, {
-          name: declaration.id.name,
-          closure,
-          binding,
-          mutable: statement.kind !== "const" || isReassigned(binding),
-        });
-      }
-    }
-  }
-  return closures;
-}
-
-function primitiveInitializer(expression: Expression | null | undefined): boolean {
-  if (!expression) {
-    return false;
-  }
-  if (expression.type === "TemplateLiteral") {
-    return expression.expressions.length === 0;
-  }
-  if (expression.type === "Literal") {
-    return (
-      expression.regex === undefined &&
-      (expression.value === null ||
-        typeof expression.value === "string" ||
-        typeof expression.value === "number" ||
-        typeof expression.value === "boolean" ||
-        typeof expression.value === "bigint")
-    );
-  }
-  if (
-    expression.type === "UnaryExpression" &&
-    (expression.operator === "+" || expression.operator === "-") &&
-    expression.argument.type === "Literal" &&
-    (typeof expression.argument.value === "number" || typeof expression.argument.value === "bigint")
-  ) {
-    return true;
-  }
-  return false;
-}
-
-function dependencyReason(expression: Expression | null | undefined): string {
-  if (!expression) {
-    return "has no initializer";
-  }
-  if (
-    expression.type === "ArrayExpression" ||
-    expression.type === "ObjectExpression" ||
-    (expression.type === "Literal" && expression.regex !== undefined)
-  ) {
-    return "has a mutable object initializer";
-  }
-  if (expression.type === "FunctionExpression" && expression.id) {
-    return "uses a named function expression";
-  }
-  return "has a computed initializer";
-}
-
-function staticDependencies(
-  program: Program,
-  scopes: ScopeManager,
-): ReadonlyMap<Variable, StaticDependency> {
-  const wrapper = wrapperFunction(program);
-  const scope = wrapperScope(program, scopes);
-  const dependencies = new Map<Variable, StaticDependency>();
-
-  for (const statement of wrapper.body.body) {
-    if (statement.type === "FunctionDeclaration" && statement.id) {
-      const binding = scope.set.get(statement.id.name);
-      if (!binding) {
-        throw new Error(`Could not analyze top-level declaration ${statement.id.name}.`);
-      }
-      dependencies.set(binding, {
-        name: statement.id.name,
-        binding,
-        declaration: statement,
-        function: statement,
-        ...(isReassigned(binding) ? { reason: "is reassigned" } : { kind: "function" as const }),
-      });
-      continue;
-    }
-    if (statement.type !== "VariableDeclaration") {
-      continue;
-    }
-    for (const declaration of statement.declarations) {
-      if (declaration.id.type !== "Identifier") {
-        continue;
-      }
-      const binding = scope.set.get(declaration.id.name);
-      if (!binding) {
-        throw new Error(`Could not analyze top-level declaration ${declaration.id.name}.`);
-      }
-      const candidate = functionFromExpression(declaration.init);
-      const common = {
-        name: declaration.id.name,
-        binding,
-        declaration,
-      };
-      if (statement.kind !== "const" || isReassigned(binding)) {
-        dependencies.set(binding, { ...common, reason: "is mutable or reassigned" });
-      } else if (candidate && !(candidate.type === "FunctionExpression" && candidate.id)) {
-        dependencies.set(binding, {
-          ...common,
-          function: candidate,
-          kind: "function",
-        });
-      } else if (primitiveInitializer(declaration.init)) {
-        dependencies.set(binding, { ...common, kind: "primitive" });
-      } else {
-        dependencies.set(binding, {
-          ...common,
-          reason: dependencyReason(declaration.init),
-        });
-      }
-    }
-  }
-
-  return dependencies;
 }
 
 function wrapperFunction(program: Program): WrapperFunction {
@@ -326,8 +61,8 @@ function wrapperFunction(program: Program): WrapperFunction {
   return expression.expression as WrapperFunction;
 }
 
-function contextBinding(program: Program, scopes: ScopeManager): Variable {
-  const context = wrapperScope(program, scopes).set.get("ctx");
+function contextBinding(scope: Scope): Variable {
+  const context = scope.set.get("ctx");
   if (!context) {
     throw new Error("Could not analyze the Smartlinks context binding.");
   }
@@ -346,7 +81,7 @@ function resolvedReferences(scopes: ScopeManager): ReadonlyMap<object, Variable 
 
 function nodeParents(program: Program): ReadonlyMap<object, Node | undefined> {
   const parents = new Map<object, Node | undefined>();
-  walk(program, (node, parent) => {
+  walkAst(program, (node, parent) => {
     parents.set(node, parent);
     return undefined;
   });
@@ -360,7 +95,7 @@ function assertNoDirectEvalWithCompile(
 ): void {
   let directEval = false;
   let compile = false;
-  walk(program, (node) => {
+  walkAst(program, (node) => {
     if (node.type !== "CallExpression") {
       return undefined;
     }
@@ -408,23 +143,6 @@ function compileMember(
   );
 }
 
-function staticPropertyName(node: Node, computed: boolean): string | undefined {
-  if (!computed && isIdentifier(node)) {
-    return node.name;
-  }
-  if (node.type === "Literal") {
-    const value = (node as Literal).value;
-    return typeof value === "string" ? value : undefined;
-  }
-  if (node.type === "TemplateLiteral") {
-    const template = node as TemplateLiteral;
-    return template.expressions.length === 0 && template.quasis.length === 1
-      ? (template.quasis[0]?.value.cooked ?? undefined)
-      : undefined;
-  }
-  return undefined;
-}
-
 function compileCall(
   node: Node,
   context: Variable,
@@ -435,21 +153,6 @@ function compileCall(
   }
   const call = node as CallExpression;
   return compileMember(call.callee, context, references) && !call.callee.computed;
-}
-
-function destructuresCompile(node: Node): boolean {
-  if (node.type === "AssignmentPattern") {
-    return destructuresCompile((node as AssignmentPattern).left);
-  }
-  if (node.type !== "ObjectPattern") {
-    return false;
-  }
-  const pattern = node as ObjectPattern;
-  return pattern.properties.some(
-    (property) =>
-      property.type === "Property" &&
-      staticPropertyName(property.key, property.computed) === "compile",
-  );
 }
 
 function destructuresContextCompile(
@@ -518,265 +221,32 @@ function closureContextBinding(
 
 function resolveClosure(
   argument: Expression,
-  available: ReadonlyMap<string, NamedClosure>,
+  declarations: TopLevelDeclarationCatalog,
   references: ReadonlyMap<object, Variable | null>,
 ): CompileClosure {
-  if (isFunction(argument)) {
+  if (isCompileClosure(argument)) {
     return argument;
   }
   if (!isIdentifier(argument)) {
     throw new Error("ctx.compile requires a function reference as its first argument.");
   }
-  const named = available.get(argument.name);
-  if (!named) {
+  const declaration = declarations.byName.get(argument.name);
+  if (!declaration || declaration.root.kind === "not-function") {
     throw new Error(
       `Could not statically resolve compile closure ${argument.name}. Pass an inline function or a top-level const/function declaration.`,
     );
   }
-  if (references.get(argument) !== named.binding) {
+  if (references.get(argument) !== declaration.binding) {
     throw new Error(
       `Compile closure ${argument.name} is shadowed or is not the top-level declaration with that name.`,
     );
   }
-  if (named.mutable) {
+  if (declaration.root.kind === "mutable") {
     throw new Error(
       `Compile closure ${argument.name} must be a top-level const or an unmodified function declaration.`,
     );
   }
-  return named.closure;
-}
-
-function insideNestedReplacement(
-  range: [number, number] | undefined,
-  closure: CompileClosure,
-  replacements: readonly Replacement[],
-): boolean {
-  return (
-    range !== undefined &&
-    replacements.some(
-      (replacement) =>
-        replacement.start >= closure.start &&
-        replacement.end <= closure.end &&
-        !(replacement.start === closure.start && replacement.end === closure.end) &&
-        range[0] >= replacement.start &&
-        range[1] <= replacement.end,
-    )
-  );
-}
-
-function directCallReference(identifier: object, parent: Node | undefined): boolean {
-  return parent?.type === "CallExpression" && (parent as CallExpression).callee === identifier;
-}
-
-function dependencyDeclarationSource(
-  dependency: StaticDependency,
-  source: string,
-  replacements: readonly Replacement[],
-): string {
-  const declaration = applyReplacements(
-    source,
-    dependency.declaration.start,
-    dependency.declaration.end,
-    replacements,
-  );
-  return dependency.declaration.type === "FunctionDeclaration"
-    ? declaration
-    : `const ${declaration};`;
-}
-
-function packageClosure(
-  closure: CompileClosure,
-  named: NamedClosure | undefined,
-  source: string,
-  replacements: readonly Replacement[],
-  scopes: ScopeManager,
-  dependencies: ReadonlyMap<Variable, StaticDependency>,
-  parents: ReadonlyMap<object, Node | undefined>,
-  compileArguments: ReadonlySet<object>,
-  parentContext: Variable,
-): string {
-  const selected = new Map<Variable, StaticDependency>();
-  const visiting = new Set<Variable>();
-  const visited = new Set<CompileClosure>();
-  const captures = new Set<string>();
-  const rootBinding = named?.binding;
-  const rootLabel = named?.name ?? "inline closure";
-
-  function assertCallOnly(dependency: StaticDependency): void {
-    for (const reference of dependency.binding.references) {
-      if (!reference.isRead()) {
-        continue;
-      }
-      const identifier = reference.identifier;
-      if (
-        directCallReference(identifier, parents.get(identifier)) ||
-        compileArguments.has(identifier)
-      ) {
-        continue;
-      }
-      const line = identifier.loc?.start.line;
-      throw new Error(
-        `Packaged function ${dependency.name} must only be called directly${line === undefined ? "" : `; found a non-call reference on line ${line}`}.`,
-      );
-    }
-  }
-
-  function assertDependencyHelperBody(dependency: StaticDependency): void {
-    if (!dependency.function) {
-      return;
-    }
-    const scope = scopes.acquire(dependency.function, true);
-    const argumentsBinding = scope?.set.get("arguments");
-    if (argumentsBinding?.references.some((reference) => reference.isRead())) {
-      throw new Error(
-        `Packaged helper ${dependency.name} cannot use arguments; declare parameters or a rest parameter instead.`,
-      );
-    }
-    walk(dependency.function, (node) => {
-      const member = node.type === "MemberExpression" ? (node as MemberExpression) : undefined;
-      if (
-        (member && staticPropertyName(member.property, member.computed) === "compile") ||
-        destructuresCompile(node)
-      ) {
-        throw new Error(
-          `Packaged helper ${dependency.name} cannot access a .compile property; call ctx.compile directly inside the compile closure.`,
-        );
-      }
-      return undefined;
-    });
-  }
-
-  function rejectDependency(path: readonly string[], dependency: StaticDependency): never {
-    const chain = [...path, dependency.name].join(" -> ");
-    throw new Error(
-      `Compile closure dependency ${chain} is unavailable because ${dependency.name} ${dependency.reason ?? "is not statically packageable"}.`,
-    );
-  }
-
-  function includeDependency(dependency: StaticDependency, path: readonly string[]): void {
-    if (!dependency.kind) {
-      if (path.length === 1) {
-        captures.add(dependency.name);
-        return;
-      }
-      rejectDependency(path, dependency);
-    }
-
-    selected.set(dependency.binding, dependency);
-    if (dependency.kind !== "function" || !dependency.function) {
-      return;
-    }
-    assertCallOnly(dependency);
-    if (dependency.binding !== rootBinding) {
-      assertDependencyHelperBody(dependency);
-    }
-    if (visiting.has(dependency.binding)) {
-      return;
-    }
-    visiting.add(dependency.binding);
-    inspectFunction(dependency.function, [...path, dependency.name]);
-    visiting.delete(dependency.binding);
-  }
-
-  function inspectFunction(current: CompileClosure, path: readonly string[]): void {
-    if (visited.has(current)) {
-      return;
-    }
-    visited.add(current);
-    const scope = scopes.acquire(current, true);
-    if (!scope) {
-      throw new Error("Could not analyze a compile closure's lexical scope.");
-    }
-    for (const reference of scope.through) {
-      if (insideNestedReplacement(reference.identifier.range, current, replacements)) {
-        continue;
-      }
-      if (reference.resolved === null && ALLOWED_GLOBALS.has(reference.identifier.name)) {
-        continue;
-      }
-      if (reference.resolved === parentContext) {
-        if (path.length === 1) {
-          captures.add(reference.identifier.name);
-          continue;
-        }
-        throw new Error(
-          `Compile closure dependency ${path.join(" -> ")} references the parent ctx.`,
-        );
-      }
-      const dependency =
-        reference.resolved === null ? undefined : dependencies.get(reference.resolved);
-      if (!dependency) {
-        if (path.length === 1) {
-          captures.add(reference.identifier.name);
-          continue;
-        }
-        throw new Error(
-          `Compile closure dependency ${path.join(" -> ")} captures ${reference.identifier.name}, which is not statically packageable.`,
-        );
-      }
-      includeDependency(dependency, path);
-    }
-  }
-
-  if (rootBinding) {
-    visiting.add(rootBinding);
-  }
-  inspectFunction(closure, [rootLabel]);
-  if (rootBinding) {
-    visiting.delete(rootBinding);
-  }
-
-  if (captures.size) {
-    throw new Error(
-      `Compile closures cannot capture outer variables: ${[...captures].sort().join(", ")}. Pass them in the argument tuple instead.`,
-    );
-  }
-
-  const closureSource = applyReplacements(source, closure.start, closure.end, replacements);
-  if (!selected.size) {
-    return closureSource;
-  }
-
-  const rootDependency = rootBinding ? dependencies.get(rootBinding) : undefined;
-  const packageRootByName = rootDependency?.kind === "function";
-  if (packageRootByName && rootDependency) {
-    selected.set(rootDependency.binding, rootDependency);
-  }
-  const declarations = [...selected.values()]
-    .sort((left, right) => left.declaration.start - right.declaration.start)
-    .map((dependency) => dependencyDeclarationSource(dependency, source, replacements));
-  const result = packageRootByName && named ? named.name : closureSource;
-  return `(()=>{${declarations.join("\n")}\nreturn ${result};})()`;
-}
-
-function applyReplacements(
-  source: string,
-  rangeStart: number,
-  rangeEnd: number,
-  replacements: readonly Replacement[],
-): string {
-  let result = source.slice(rangeStart, rangeEnd);
-  const contained = replacements.filter(
-    (replacement) =>
-      replacement.start >= rangeStart &&
-      replacement.end <= rangeEnd &&
-      !(replacement.start === rangeStart && replacement.end === rangeEnd),
-  );
-  const outermost = contained
-    .filter(
-      (candidate) =>
-        !contained.some(
-          (other) =>
-            other !== candidate && candidate.start >= other.start && candidate.end <= other.end,
-        ),
-    )
-    .sort((left, right) => right.start - left.start);
-  for (const replacement of outermost) {
-    const start = replacement.start - rangeStart;
-    const end = replacement.end - rangeStart;
-    result = `${result.slice(0, start)}${replacement.value}${result.slice(end)}`;
-  }
-  return result;
+  return declaration.root.closure;
 }
 
 export async function extractCompileClosures(source: string): Promise<ExtractedCompileSource> {
@@ -793,15 +263,13 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     optimistic: false,
     ignoreEval: false,
   });
-  const context = contextBinding(program, scopes);
+  const wrapper = wrapperFunction(program);
+  const scope = wrapperScope(program, scopes);
+  const context = contextBinding(scope);
   const references = resolvedReferences(scopes);
   const parents = nodeParents(program);
   assertNoDirectEvalWithCompile(program, context, references);
-  const available = namedClosures(program, scopes);
-  const namedByClosure = new Map(
-    [...available.values()].map((named) => [named.closure, named] as const),
-  );
-  const dependencies = staticDependencies(program, scopes);
+  const declarations = createTopLevelDeclarationCatalog(wrapper.body, scope);
   const closures: CompileClosure[] = [];
   const indexes = new Map<CompileClosure, number>();
   const replacements: Replacement[] = [];
@@ -817,7 +285,7 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     indexes.set(closure, index);
     const childContext = closureContextBinding(closure, scopes);
     if (childContext) {
-      walk(closure, (node, parent) => {
+      walkAst(closure, (node, parent) => {
         processCompileNode(node, parent, childContext);
         return undefined;
       });
@@ -836,7 +304,7 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     if (!argument || argument.type === "SpreadElement") {
       throw new Error("ctx.compile requires a closure as its first argument.");
     }
-    const closure = resolveClosure(argument, available, references);
+    const closure = resolveClosure(argument, declarations, references);
     if (isIdentifier(argument)) {
       compileArguments.add(argument);
     }
@@ -856,27 +324,26 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     processCompileCall(node, currentContext);
   }
 
-  walk(program, (node, parent) => {
+  walkAst(program, (node, parent) => {
     processCompileNode(node, parent, context);
     return undefined;
   });
 
   const bodyStart = WRAPPER_PREFIX.length;
   const bodyEnd = bodyStart + source.length;
+  const packageClosure = createClosurePackager({
+    source: wrapped,
+    replacements,
+    scopes,
+    declarations,
+    parents,
+    compileArguments,
+    parentContext: context,
+  });
   return {
     source: applyReplacements(wrapped, bodyStart, bodyEnd, replacements),
     closures: closures.map((closure) =>
-      packageClosure(
-        closure,
-        namedByClosure.get(closure),
-        wrapped,
-        replacements,
-        scopes,
-        dependencies,
-        parents,
-        compileArguments,
-        context,
-      ),
+      packageClosure(closure, declarations.byClosure.get(closure)),
     ),
   };
 }
