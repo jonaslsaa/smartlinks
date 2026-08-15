@@ -27,7 +27,7 @@ The script receives `ctx` with:
 - `params`: query parameters, excluding names beginning with `__`.
 - `paramValues`: every value for repeated query parameters, same exclusion.
 - `method`: the incoming HTTP method.
-- `headers`: incoming headers with lowercase names.
+- `headers`: incoming headers with lowercase names; `cookie` is omitted.
 - `body`: the request body as a string or `null`.
 - `secrets`: decrypted values keyed by the names supplied during build.
 - `requestId`: an opaque per-execution correlation ID.
@@ -59,7 +59,8 @@ not supply a content type; `content-disposition` remains author-controlled. Ever
 receives the runtime's fixed Content Security Policy, `Referrer-Policy: no-referrer`,
 `X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`. An author CSP is enforced in
 addition to the runtime policy, so it may tighten but cannot weaken the floor; other headers remain
-author-controlled.
+author-controlled except `set-cookie` and `clear-site-data`. Browser cookie state is deliberately
+unsupported: responses cannot mutate it and requests never expose it to guest code.
 
 A response can be a complete HTML document. The script cannot read its own URL, but relative
 references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the

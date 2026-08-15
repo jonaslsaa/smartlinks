@@ -7,7 +7,7 @@ import { createCryptoOperationBudget, createGuestCrypto } from "../shared/guest-
 import { createSmartlinkCompiler } from "../shared/mint.js";
 import {
   createRequestId,
-  lowercaseHeaders,
+  guestRequestHeaders,
   userParams,
   userParamValues,
 } from "../shared/request-context.js";
@@ -195,7 +195,7 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
         params: userParams(url.searchParams),
         paramValues: userParamValues(url.searchParams),
         method: request.method,
-        headers: lowercaseHeaders(request.headers),
+        headers: guestRequestHeaders(request.headers),
         body: await readBoundedBody(request),
         secrets,
         requestId: createRequestId(request.headers.get("cf-ray")),

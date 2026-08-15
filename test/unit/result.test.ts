@@ -24,12 +24,14 @@ describe("script result mapping", () => {
   });
 
   it("preserves author headers without letting them weaken the runtime security floor", async () => {
-    const authorPolicy = "img-src https://images.example";
+    const authorPolicy = "default-src *; script-src *";
     const response = mapScriptResult({
       status: 202,
       headers: {
+        "clear-site-data": '"*"',
         "content-security-policy": authorPolicy,
         "referrer-policy": "unsafe-url",
+        "set-cookie": "ambient=state; Path=/r/",
         "x-content-type-options": "off",
         "x-frame-options": "SAMEORIGIN",
         "x-test": "yes",
@@ -38,7 +40,11 @@ describe("script result mapping", () => {
     });
     expect(response.status).toBe(202);
     expect(response.headers.get("x-test")).toBe("yes");
-    expect(response.headers.get("content-security-policy")).toContain(authorPolicy);
+    expect(response.headers.get("clear-site-data")).toBeNull();
+    expect(response.headers.get("content-security-policy")).toBe(
+      `${authorPolicy}, ${RUNTIME_CONTENT_SECURITY_POLICY}`,
+    );
+    expect(response.headers.get("set-cookie")).toBeNull();
     expectRuntimeSecurityHeaders(response);
     await expect(response.text()).resolves.toBe("done");
   });
@@ -85,6 +91,14 @@ describe("script result mapping", () => {
     expect(response.status).toBe(200);
     expectRuntimeSecurityHeaders(response);
     await expect(response.text()).resolves.toContain("✓ done");
+  });
+
+  it.each([204, 205, 304])("hardens bodyless status %i", (status) => {
+    const response = mapScriptResult({ status, body: "ignored" });
+
+    expect(response.status).toBe(status);
+    expect(response.body).toBeNull();
+    expectRuntimeSecurityHeaders(response);
   });
 
   it("rejects invalid redirects and response objects", () => {

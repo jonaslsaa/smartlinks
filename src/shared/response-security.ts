@@ -7,10 +7,15 @@ const RUNTIME_SECURITY_HEADERS = {
   "x-frame-options": "DENY",
 } as const;
 
+const RESERVED_RESPONSE_HEADERS = ["clear-site-data", "set-cookie"] as const;
+
 /** Applies the security policy owned by the Smartlinks runtime to a final response. */
 export function hardenResponse(response: Response): Response {
   const headers = new Headers(response.headers);
 
+  for (const name of RESERVED_RESPONSE_HEADERS) {
+    headers.delete(name);
+  }
   // Separate CSP policies are enforced together, so an author can tighten the runtime policy
   // without weakening it.
   headers.append("content-security-policy", RUNTIME_CONTENT_SECURITY_POLICY);

@@ -75,7 +75,7 @@ describe("Worker routes", () => {
       source: `return {
         status: 201,
         headers: {
-          "content-security-policy": "img-src https://images.example",
+          "content-security-policy": "default-src *; script-src *",
           "referrer-policy": "unsafe-url",
           "x-content-type-options": "off",
           "x-frame-options": "SAMEORIGIN",
@@ -92,11 +92,8 @@ describe("Worker routes", () => {
 
     expect(response.status).toBe(201);
     expect(response.headers.get("x-runtime")).toBe("quickjs");
-    expect(response.headers.get("content-security-policy")).toContain(
-      "img-src https://images.example",
-    );
-    expect(response.headers.get("content-security-policy")).toContain(
-      RUNTIME_CONTENT_SECURITY_POLICY,
+    expect(response.headers.get("content-security-policy")).toBe(
+      `default-src *; script-src *, ${RUNTIME_CONTENT_SECURITY_POLICY}`,
     );
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
@@ -118,6 +115,30 @@ describe("Worker routes", () => {
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     await expect(response.text()).resolves.toContain("✓ done");
+  });
+
+  it("does not share browser cookie state between Smartlinks", async () => {
+    const created = await createSmartlink({
+      source: `return {
+        headers: {
+          "clear-site-data": "*",
+          "set-cookie": "ambient=state; Path=/r/",
+          "x-author": "preserved"
+        },
+        body: ctx.headers.cookie ?? "no cookie"
+      }`,
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(
+      new Request(created.link, { headers: { cookie: "ambient=state" } }),
+      testEnv(),
+    );
+
+    expect(response.headers.get("clear-site-data")).toBeNull();
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("x-author")).toBe("preserved");
+    await expect(response.text()).resolves.toBe("no cookie");
   });
 
   it("round-trips guest tokens across executions of the same link only", async () => {

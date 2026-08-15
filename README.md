@@ -86,7 +86,7 @@ Smartlink scripts receive one small `ctx` object:
 | `ctx.params` | Query parameters |
 | `ctx.paramValues` | Every value for repeated query parameters |
 | `ctx.method` | Incoming HTTP method |
-| `ctx.headers` | Incoming headers with lowercase names |
+| `ctx.headers` | Incoming headers with lowercase names, excluding `cookie` |
 | `ctx.body` | Request body as a string, or `null` |
 | `ctx.secrets` | Decrypted plaintext values, keyed by secret name |
 | `ctx.requestId` | Opaque ID for correlating one execution |
@@ -111,9 +111,10 @@ Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? 
 response, return `{ status?, headers?, bodyBase64 }` for bytes, or return nothing for a small
 success page. `body` and `bodyBase64` are mutually exclusive. Binary responses are limited to
 1 MiB after decoding and default to `application/octet-stream` when no content type is supplied.
-Every response receives a runtime-owned browser-security floor. An author-provided Content
-Security Policy can tighten that floor but cannot replace it; other response headers remain under
-the author's control. Top-level `await` works.
+Every response receives the runtime's fixed Content Security Policy, `Referrer-Policy: no-referrer`,
+`X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`. An author CSP can tighten but not
+replace that floor. Other headers remain author-controlled except `Set-Cookie` and
+`Clear-Site-Data`; browser cookie state is deliberately unsupported. Top-level `await` works.
 
 ## Mint a link from a link
 

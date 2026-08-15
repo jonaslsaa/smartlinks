@@ -197,7 +197,9 @@ test("build --sign fails instead of silently producing an unsigned link", async 
     );
 
     await assert.rejects(
-      runCli(["build", join(dirname(script), "missing.ts"), "--sign", "--secret", "TOKEN"]),
+      runCli(["build", join(dirname(script), "missing.ts"), "--sign", "--secret", "TOKEN"], {
+        env: { ...process.env, SMARTLINKS_CONFIG_DIR: configDirectory },
+      }),
       (error) => {
         assert.equal(error.stdout, "");
         assert.match(error.stderr, /Run smartlinks login first/u);
@@ -283,7 +285,12 @@ const received: Record<string, unknown> = {
 
 return {
   status: 201,
-  headers: { "content-type": "application/json", "x-smartlinks-e2e": "run" },
+  headers: {
+    "clear-site-data": "*",
+    "content-type": "application/json",
+    "set-cookie": "ambient=state; Path=/r/",
+    "x-smartlinks-e2e": "run",
+  },
   body: JSON.stringify(received),
 };
 `;
@@ -304,6 +311,8 @@ return {
       "E2E_TOKEN=sealed",
       "--header",
       "X-Trace=trace-123",
+      "--header",
+      "Cookie=ambient-state",
       "--method",
       "post",
       "--body",
@@ -313,7 +322,9 @@ return {
     const response = JSON.parse(result.stdout);
 
     assert.equal(response.status, 201);
+    assert.equal(response.headers["clear-site-data"], undefined);
     assert.equal(response.headers["content-type"], "application/json");
+    assert.equal(response.headers["set-cookie"], undefined);
     assert.equal(response.headers["x-smartlinks-e2e"], "run");
     assertRuntimeSecurityHeaders(response.headers);
     const received = JSON.parse(response.body);
