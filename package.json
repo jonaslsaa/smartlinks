@@ -1,6 +1,6 @@
 {
   "name": "@jonaslsa/smartlinks",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Turn small JavaScript programs into self-contained, executable URLs.",
   "license": "MIT",
   "type": "module",
