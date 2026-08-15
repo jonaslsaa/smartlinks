@@ -57,6 +57,9 @@ async function decryptSecrets(decoded: DecodedPayload, env: Env): Promise<Record
   if (!sealed) {
     return {};
   }
+  if (decoded.envelope.c?.length && decoded.envelope.a !== 1) {
+    throw new HttpError(400, "Sealed compile closures require complete-artifact binding.");
+  }
 
   const entries = await Promise.all(
     Object.entries(sealed).map(async ([name, blob]) => {

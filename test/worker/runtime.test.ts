@@ -391,6 +391,23 @@ describe("Worker routes", () => {
     }
   });
 
+  it("does not let legacy sealed links gain unauthenticated compile closures", async () => {
+    const source = "async ctx=>ctx.compile(0,[])";
+    const blob = await sealSecret("legacy-secret", { script: source }, pair);
+    const payload = encodePayload({
+      s: source,
+      c: ["async()=>({body:ctx.secrets.TOKEN})"],
+      k: { TOKEN: blob },
+    });
+
+    const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Sealed compile closures require complete-artifact binding.",
+    });
+  });
+
   it("returns bounded errors for malformed links and missing routes", async () => {
     const malformed = await worker.fetch(new Request(`${origin}/r/2broken`), testEnv());
     expect(malformed.status).toBe(400);
