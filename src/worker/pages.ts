@@ -16,6 +16,19 @@ function page(title: string, content: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${PAGE_STYLE}</style></head><body>${content}</body></html>`;
 }
 
+function compileClosureHtml(decoded: DecodedPayload): string {
+  const closures = decoded.envelope.c ?? [];
+  if (!closures.length) {
+    return "";
+  }
+  return `<h2>Compile closures</h2>${closures
+    .map(
+      (closure, index) =>
+        `<h3>Closure ${index}</h3><pre><code>${escapeHtml(formatStoredScript("2", closure))}</code></pre>`,
+    )
+    .join("")}`;
+}
+
 export function previewPage(head = false): Response {
   const response = html(
     page(
@@ -39,6 +52,7 @@ export function expiredPage(): Response {
 
 export function interstitialPage(decoded: DecodedPayload, action: string): Response {
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
+  const closures = compileClosureHtml(decoded);
   const secretNames = Object.keys(decoded.envelope.k ?? {});
   const secretText = secretNames.length
     ? `<p>Sealed secrets available to this script: <code>${secretNames.map(escapeHtml).join("</code>, <code>")}</code>.</p>`
@@ -47,7 +61,7 @@ export function interstitialPage(decoded: DecodedPayload, action: string): Respo
   return html(
     page(
       "Confirm smartlink",
-      `<h1>Review before running</h1><p class="warning">This link will run the script shown below. Continue only if you trust where it came from and understand what it will do.</p><pre><code>${escapeHtml(script)}</code></pre>${secretText}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
+      `<h1>Review before running</h1><p class="warning">This link will run the script shown below. Continue only if you trust where it came from and understand what it will do.</p><pre><code>${escapeHtml(script)}</code></pre>${closures}${secretText}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
     ),
     { headers: { "cache-control": "no-store" } },
   );
@@ -55,11 +69,13 @@ export function interstitialPage(decoded: DecodedPayload, action: string): Respo
 
 export function decoderPage(decoded: DecodedPayload): Response {
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
+  const closures = compileClosureHtml(decoded);
   const secretNames = Object.keys(decoded.envelope.k ?? {});
   const notAfter = decoded.envelope.notAfter;
   const metadata = [
     `Payload version: ${decoded.version}`,
     `Confirmation required: ${decoded.envelope.i === true ? "yes" : "no"}`,
+    `Compile closures: ${decoded.envelope.c?.length ?? 0}`,
     `Sealed secrets: ${secretNames.length ? secretNames.join(", ") : "none"}`,
     `Expiry: ${notAfter === undefined ? "never" : `${formatNotAfter(notAfter)}${isExpired(notAfter) ? " (expired)" : ""}`}`,
   ];
@@ -67,7 +83,7 @@ export function decoderPage(decoded: DecodedPayload): Response {
   return html(
     page(
       "Decode smartlink",
-      `<h1>Decoded smartlink</h1><p>${metadata.map(escapeHtml).join("<br>")}</p><pre><code>${escapeHtml(script)}</code></pre><p>The encrypted secret values are intentionally not displayed.</p>`,
+      `<h1>Decoded smartlink</h1><p>${metadata.map(escapeHtml).join("<br>")}</p><pre><code>${escapeHtml(script)}</code></pre>${closures}<p>The encrypted secret values are intentionally not displayed.</p>`,
     ),
     {
       headers: {

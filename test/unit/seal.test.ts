@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  artifactSecretBinding,
   generateKeyPair,
   openSecret,
   publicKeyFromPrivateSecret,
@@ -46,6 +47,30 @@ describe("sealed secrets", () => {
         pair.privateKeySecret,
       ),
     ).rejects.toThrow();
+  });
+
+  it("binds every authority-bearing artifact field and the secret name", async () => {
+    const pair = await generateKeyPair(1);
+    const envelope = {
+      s: "async()=>1",
+      c: ["async value=>value"],
+      i: true as const,
+      notAfter: 2_000_000_000,
+    };
+    const binding = artifactSecretBinding("2", envelope, "TOKEN");
+    const blob = await sealSecret("top secret", binding, pair);
+
+    await expect(openSecret(blob, binding, pair.privateKeySecret)).resolves.toBe("top secret");
+    const tampered = [
+      artifactSecretBinding("2", { ...envelope, s: "async()=>2" }, "TOKEN"),
+      artifactSecretBinding("2", { ...envelope, c: ["async value=>String(value)"] }, "TOKEN"),
+      artifactSecretBinding("2", { ...envelope, i: undefined }, "TOKEN"),
+      artifactSecretBinding("2", { ...envelope, notAfter: envelope.notAfter + 1 }, "TOKEN"),
+      artifactSecretBinding("2", envelope, "RENAMED_TOKEN"),
+    ];
+    for (const changedBinding of tampered) {
+      await expect(openSecret(blob, changedBinding, pair.privateKeySecret)).rejects.toThrow();
+    }
   });
 
   it("validates the one-byte rotation key ID", async () => {

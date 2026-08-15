@@ -79,6 +79,7 @@ Smartlink scripts receive one small `ctx` object:
 | `ctx.secrets` | Decrypted plaintext values, keyed by secret name |
 | `ctx.requestId` | Opaque ID for correlating one execution |
 | `ctx.crypto` | SHA-256 and HMAC-SHA256 helpers backed by Web Crypto |
+| `ctx.compile` | Mint one immutable child Smartlink from build-time-approved code |
 
 Scripts also have a global, guarded `fetch(url, options)`. It accepts familiar string URL,
 method, header, and string-body options and returns a Response-like value with `status`, `ok`,
@@ -90,10 +91,39 @@ use lowercase hex by default, and can use Base64 when passed `"base64"`.
 Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? }` for a response,
 or return nothing for a small success page. Top-level `await` works.
 
+## Mint a link from a link
+
+A private parent Smartlink can mint one smaller, purpose-built child per execution. The CLI
+extracts the child closure at build time; runtime values enter only through a typed positional
+tuple:
+
+```ts
+const release = async (version: string) => ({
+  body: `${version}:${ctx.secrets.RELEASE_TOKEN}`,
+});
+
+return ctx.compile(release, [ctx.params.version ?? "latest"], {
+  ttlSeconds: 3600,
+  seal: { RELEASE_TOKEN: ctx.secrets.RELEASE_TOKEN! },
+});
+```
+
+Compile closures must be inline or top-level `const`/function declarations and cannot capture
+outer variables; pass those values in the tuple instead. A child can carry its own statically
+approved closures and mint another ordinary Smartlink—there is no stored link tree or generation
+metadata.
+
+`ttlSeconds` is optional and can never extend an existing parent expiry. `interstitial` may be
+explicitly enabled or disabled; omission inherits the parent. `seal` accepts strings deliberately
+chosen by the parent, whether directly delegated, derived, or generated. Parent links that expose
+a mint path are unauthenticated administrative endpoints unless their own code verifies a request,
+so keep them private or gate that branch cryptographically.
+
 ## Sealed secrets
 
-Secrets are encrypted locally with the runtime's public key and bound to the exact emitted
-program. Only ciphertext and a key ID enter the URL.
+Secrets are encrypted locally with the runtime's public key and bound to the complete immutable
+program: its entry function, compile closures, baked child data, expiry, execution policy, and
+secret name. Only ciphertext and a key ID enter the URL.
 
 ```sh
 export GITHUB_TOKEN=github_pat_…
@@ -124,6 +154,10 @@ and `--no-type-check`. `--expires` accepts a duration such as `30m`, `1h`, or `7
 absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
 running the script; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
 Local networking is off by default; opt in with `smartlinks run --allow-network`.
+Local `ctx.compile` uses an ephemeral in-process key and a clearly non-production
+`https://smartlinks.local/...` artifact. `run` follows compiled local links and executes their
+final response in the same process, so dry-runs verify sealed delegation without publishing a
+bearer link or needing the production private key.
 
 Generated links are opaque bearer artifacts. `--copy` sends the link to the clipboard without
 printing it, while `--out link.txt` writes it to a file with owner-only POSIX permissions; both
@@ -143,7 +177,8 @@ response contract, then transpiled from the `.ts` extension before validation an
    and body sizes.
 4. The return value becomes the HTTP response.
 
-The leading payload character identifies the format; current links use payload v2. Payloads are
+The leading payload character identifies the format; current links use payload v2. Compile
+closures live in compact optional v2 metadata and are displayed by `decode`. Payloads are
 capped at 7,800 characters to remain comfortably below common URL limits.
 
 ## Know the boundary

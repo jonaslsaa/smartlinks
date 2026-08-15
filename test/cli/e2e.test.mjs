@@ -79,6 +79,7 @@ test("keygen emits a usable key pair for the requested key ID", async () => {
   assert.match(key.publicKey, /^[A-Za-z0-9_-]+$/u);
   assert.match(key.privateKeySecret, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
   assert.equal(key.privateKeySecret.split(".")[1], key.publicKey);
+  assert.doesNotMatch(result.stderr, /ExperimentalWarning/u);
 });
 
 test("run passes request values and secrets through the production sandbox", async () => {
@@ -144,6 +145,39 @@ return {
   });
 });
 
+test("run locally executes a sealed child with typed tuple arguments", async () => {
+  const source = `
+const leaf = async (name: string) => ({
+  body: name + ":" + ctx.secrets.CHILD_TOKEN,
+});
+const child = async (name: string) => ctx.compile(leaf, [name], {
+  seal: { CHILD_TOKEN: ctx.secrets.CHILD_TOKEN! },
+});
+return ctx.compile(child, [ctx.params.name ?? "world"], {
+  seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN! },
+  ttlSeconds: 60,
+});
+`;
+
+  await withTemporaryScript("ts", source, async (script) => {
+    const result = await runCli([
+      "run",
+      script,
+      "--param",
+      "name=Jonas",
+      "--secret",
+      "PARENT_TOKEN=local-secret",
+      "--json",
+    ]);
+    const response = JSON.parse(result.stdout);
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body, "Jonas:local-secret");
+    assert.equal(response.headers.location, undefined);
+    assert.equal(result.stderr, "");
+  });
+});
+
 test("build output round-trips through decode as a URL and raw payload", async () => {
   const keyResult = await runCli(["keygen", "--key-id", "9", "--json"]);
   const key = JSON.parse(keyResult.stdout);
@@ -206,6 +240,7 @@ test("build output round-trips through decode as a URL and raw payload", async (
         const decodedFromUrl = JSON.parse((await runCli(["decode", built.link, "--json"])).stdout);
         assert.equal(decodedFromUrl.payloadVersion, 2);
         assert.equal(decodedFromUrl.interstitial, true);
+        assert.equal(decodedFromUrl.compileClosures, 0);
         assert.deepEqual(decodedFromUrl.sealedSecrets, ["E2E_TOKEN"]);
         assert.equal(decodedFromUrl.notAfter, built.notAfter);
         assert.equal(decodedFromUrl.expiresAt, built.expiresAt);

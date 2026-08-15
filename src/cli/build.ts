@@ -1,6 +1,8 @@
+import { compiledChildSource } from "../shared/mint.js";
 import { validateScript } from "../shared/sandbox.js";
-import { minifyScriptBody, wrapScriptBody } from "../shared/script.js";
-import { type PublicKey, sealSecret } from "../shared/seal.js";
+import { minifyFunctionExpression, minifyScriptBody, wrapScriptBody } from "../shared/script.js";
+import { artifactSecretBinding, type PublicKey, sealSecret } from "../shared/seal.js";
+import { extractCompileClosures } from "./compile.js";
 import { encodePayloadForCli } from "./encode.js";
 
 export type CreateSmartlinkOptions = {
@@ -19,47 +21,65 @@ export type CreatedSmartlink = {
   decoder: string;
   payload: string;
   source: string;
+  closures: string[];
 };
 
+export async function prepareSmartlinkProgram(
+  source: string,
+  minify = true,
+  validate: (version: "2", source: string) => Promise<void> = validateScript,
+): Promise<{ source: string; closures: string[] }> {
+  const extracted = await extractCompileClosures(source);
+  const storedSource = minify
+    ? await minifyScriptBody(extracted.source)
+    : wrapScriptBody(extracted.source);
+  const closures = minify
+    ? await Promise.all(extracted.closures.map(minifyFunctionExpression))
+    : extracted.closures;
+  await validate("2", storedSource);
+  await Promise.all(closures.map((closure) => validate("2", compiledChildSource(closure, "[]"))));
+  return { source: storedSource, closures };
+}
+
 export async function createSmartlink(options: CreateSmartlinkOptions): Promise<CreatedSmartlink> {
-  const source =
-    options.minify === false
-      ? wrapScriptBody(options.source)
-      : await minifyScriptBody(options.source);
-  await (options.validate ?? validateScript)("2", source);
+  const { source, closures } = await prepareSmartlinkProgram(
+    options.source,
+    options.minify !== false,
+    options.validate ?? validateScript,
+  );
   const secretEntries = Object.entries(options.secrets ?? {});
   if (secretEntries.length > 0 && !options.publicKey) {
     throw new Error("A service public key is required to seal secrets.");
   }
 
   const publicKey = options.publicKey;
+  const envelope = {
+    s: source,
+    ...(options.interstitial ? { i: true as const } : {}),
+    ...(closures.length ? { c: closures } : {}),
+    ...(secretEntries.length ? { a: 1 as const } : {}),
+    ...(options.notAfter !== undefined ? { notAfter: options.notAfter } : {}),
+  };
   const sealedEntries = publicKey
     ? await Promise.all(
         secretEntries.map(
           async ([name, value]) =>
             [
               name,
-              await sealSecret(
-                value,
-                options.notAfter === undefined
-                  ? { script: source }
-                  : { script: source, notAfter: options.notAfter },
-                publicKey,
-              ),
+              await sealSecret(value, artifactSecretBinding("2", envelope, name), publicKey),
             ] as const,
         ),
       )
     : [];
   const payload = encodePayloadForCli({
-    s: source,
-    ...(options.interstitial ? { i: true as const } : {}),
+    ...envelope,
     ...(sealedEntries.length ? { k: Object.fromEntries(sealedEntries) } : {}),
-    ...(options.notAfter !== undefined ? { notAfter: options.notAfter } : {}),
   });
 
   return {
     payload,
     source,
+    closures,
     link: `${options.service}/r/${payload}`,
     decoder: `${options.service}/d/${payload}`,
   };

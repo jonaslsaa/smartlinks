@@ -81,6 +81,93 @@ describe("QuickJS sandbox", () => {
     ).rejects.toThrow("at most 16 cryptographic operations");
   });
 
+  it("allows only one compile attempt, including after a rejected first attempt", async () => {
+    const compile = vi.fn(async () => {
+      throw new Error("first compile rejected");
+    });
+    await expect(
+      runScript({
+        version: "2",
+        source: await minifyScriptBody(`
+          try { await ctx.compile(0, []); } catch {}
+          return ctx.compile(0, []);
+        `),
+        context,
+        fetch: createGuardedFetch(),
+        compile,
+      }),
+    ).rejects.toThrow("at most once per execution");
+    expect(compile).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["non-finite numbers", "[NaN]", "finite numbers"],
+    ["undefined", "[undefined]", "JSON-serializable"],
+    ["functions", "[() => 1]", "JSON-serializable"],
+    ["symbols", "[Symbol('value')]", "JSON-serializable"],
+    ["nested undefined", "[{ value: undefined }]", "JSON-serializable"],
+  ])("rejects %s before QuickJS can coerce compile args", async (_name, args, message) => {
+    const compile = vi.fn(async () => "https://smartlinks.local/r/unused");
+
+    await expect(
+      runScript({
+        version: "2",
+        source: await minifyScriptBody(`return ctx.compile(0, ${args});`),
+        context,
+        fetch: createGuardedFetch(),
+        compile,
+      }),
+    ).rejects.toThrow(message);
+    expect(compile).not.toHaveBeenCalled();
+  });
+
+  it("charges the compile attempt before guest argument validation", async () => {
+    const compile = vi.fn(async () => "https://smartlinks.local/r/unused");
+
+    await expect(
+      runScript({
+        version: "2",
+        source: await minifyScriptBody(`
+          try { await ctx.compile(0, [NaN]); } catch {}
+          return ctx.compile(0, []);
+        `),
+        context,
+        fetch: createGuardedFetch(),
+        compile,
+      }),
+    ).rejects.toThrow("at most once per execution");
+    expect(compile).not.toHaveBeenCalled();
+  });
+
+  it("serializes an intrinsic-safe snapshot of compile arguments", async () => {
+    const compile = vi.fn(async () => "https://example.com/compiled");
+
+    await expect(
+      runScript({
+        version: "2",
+        source: await minifyScriptBody(`
+          const value = {};
+          Object.defineProperty(value, "a", {
+            enumerable: true,
+            get() {
+              value.injected = NaN;
+              return "snapshot";
+            },
+          });
+          Number.isFinite = () => true;
+          JSON.stringify = () => "tampered";
+          Reflect.ownKeys = () => [];
+          Array.prototype[Symbol.iterator] = function* () {};
+          return ctx.compile(0, [value]);
+        `),
+        context,
+        fetch: createGuardedFetch(),
+        compile,
+      }),
+    ).resolves.toBe("https://example.com/compiled");
+    expect(compile).toHaveBeenCalledWith(0, [{ a: "snapshot" }], undefined);
+  });
+
   it("interrupts runaway synchronous code", async () => {
     await expect(run("while (true) {}")).rejects.toThrow();
   });

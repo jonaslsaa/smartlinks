@@ -60,11 +60,29 @@ type __SmartlinksContext = {
       encoding?: "hex" | "base64",
     ): Promise<boolean>;
   };
+  compile: __SmartlinksCompile;
 };
 type __SmartlinksResult =
   | string
   | { status?: number; headers?: Record<string, string>; body?: string; text?: never }
   | void;
+type __SmartlinksJson =
+  | string
+  | number
+  | boolean
+  | null
+  | __SmartlinksJson[]
+  | { [name: string]: __SmartlinksJson };
+type __SmartlinksCompileOptions = {
+  seal?: Record<string, string>;
+  ttlSeconds?: number;
+  interstitial?: boolean;
+};
+type __SmartlinksCompile = <const Args extends readonly __SmartlinksJson[]>(
+  closure: (...args: Args) => __SmartlinksResult | Promise<__SmartlinksResult>,
+  args: Args,
+  options?: __SmartlinksCompileOptions,
+) => Promise<string>;
 async function __smartlinks_entry(ctx: __SmartlinksContext): Promise<__SmartlinksResult> {
 `;
 

@@ -9,6 +9,7 @@ export const MAX_SCRIPT_LENGTH = 1_000_000;
 // (for example, a lone surrogate). Keep extra room for envelope metadata and secrets.
 export const MAX_DECOMPRESSED_LENGTH = MAX_SCRIPT_LENGTH * 6 + 64_000;
 export const MAX_NOT_AFTER = 8_640_000_000_000;
+export const MAX_COMPILE_CLOSURES = 64;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
 
 const sealedSecretSchema = z.record(
@@ -20,6 +21,8 @@ export const envelopeSchema = z
   .object({
     s: z.string().min(1).max(MAX_SCRIPT_LENGTH),
     i: z.literal(true).optional(),
+    a: z.literal(1).optional(),
+    c: z.array(z.string().min(1).max(MAX_SCRIPT_LENGTH)).max(MAX_COMPILE_CLOSURES).optional(),
     k: sealedSecretSchema.optional(),
     notAfter: z.number().int().positive().max(MAX_NOT_AFTER).optional(),
   })
@@ -35,6 +38,28 @@ export type DecodedPayload = {
 
 export type RawDeflate = (input: Uint8Array) => Uint8Array;
 export type RawDeflates = readonly [RawDeflate, ...RawDeflate[]];
+
+export function serializeEnvelope(input: Envelope): Uint8Array {
+  const envelope = envelopeSchema.parse(input);
+  const serialized = utf8(JSON.stringify(envelope));
+  if (serialized.byteLength > MAX_DECOMPRESSED_LENGTH) {
+    throw new Error("The serialized payload is too large.");
+  }
+  return serialized;
+}
+
+export function payloadFromCompressed(
+  compressed: Uint8Array,
+  version: PayloadVersion = CURRENT_PAYLOAD_VERSION,
+): string {
+  const payload = `${version}${toBase64Url(compressed)}`;
+  if (payload.length > MAX_PAYLOAD_LENGTH) {
+    throw new Error(
+      `The encoded payload is ${payload.length.toLocaleString()} characters; the limit is ${MAX_PAYLOAD_LENGTH.toLocaleString()}.`,
+    );
+  }
+  return payload;
+}
 
 export function isExpired(
   notAfter: number | undefined,
@@ -77,12 +102,7 @@ export function encodePayloadWith(
   deflates: RawDeflates,
   version: PayloadVersion = CURRENT_PAYLOAD_VERSION,
 ): string {
-  const envelope = envelopeSchema.parse(input);
-  const json = JSON.stringify(envelope);
-  const serialized = utf8(json);
-  if (serialized.byteLength > MAX_DECOMPRESSED_LENGTH) {
-    throw new Error("The serialized payload is too large.");
-  }
+  const serialized = serializeEnvelope(input);
   const payload = deflates
     .map((deflate) => `${version}${toBase64Url(deflate(serialized))}`)
     .reduce((shortest, candidate) => (candidate.length < shortest.length ? candidate : shortest));

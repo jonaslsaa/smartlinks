@@ -69,15 +69,21 @@ const script = join(directory, "global-fetch.js");
 try {
   await writeFile(
     script,
-    `const response = await fetch(${JSON.stringify(landingUrl.href)});
-const html = await response.text();
-if (!response.ok || !html.includes("<title>Smartlinks</title>")) {
-  return { status: 502, body: "Landing fetch failed" };
-}
-return {
-  headers: { "x-smartlinks-smoke": "sealed-expiry" },
-  body: \`global-fetch-ok:\${ctx.secrets.SMARTLINKS_SMOKE_SECRET}\`,
+    `const child = async (landing) => {
+  const response = await fetch(landing);
+  const html = await response.text();
+  if (!response.ok || !html.includes("<title>Smartlinks</title>")) {
+    return { status: 502, body: "Landing fetch failed" };
+  }
+  return {
+    headers: { "x-smartlinks-smoke": "compiled-child" },
+    body: \`compile-ok:\${ctx.secrets.CHILD_SECRET}\`,
+  };
 };
+return ctx.compile(child, [${JSON.stringify(landingUrl.href)}], {
+  ttlSeconds: 120,
+  seal: { CHILD_SECRET: ctx.secrets.SMARTLINKS_SMOKE_SECRET },
+});
 `,
   );
 
@@ -110,20 +116,31 @@ return {
     "Expected the smoke link to include a future notAfter value.",
   );
 
-  await retry("sealed expiry and global fetch smoke", async () => {
+  const childLink = await retry("runtime compile smoke", async () => {
     const response = await fetch(built.link, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(30_000),
+    });
+    assert(response.status === 302, `Expected parent status 302, received ${response.status}.`);
+    const location = response.headers.get("location");
+    assert(location?.startsWith(`${runtimeUrl.origin}/r/2`), "Expected a compiled child URL.");
+    return location;
+  });
+
+  await retry("sealed compiled child and global fetch smoke", async () => {
+    const response = await fetch(childLink, {
       redirect: "manual",
       signal: AbortSignal.timeout(30_000),
     });
     const body = await response.text();
     assert(response.status === 200, `Expected Smartlink status 200, received ${response.status}.`);
     assert(
-      response.headers.get("x-smartlinks-smoke") === "sealed-expiry",
-      "Expected the sealed expiry smoke response header.",
+      response.headers.get("x-smartlinks-smoke") === "compiled-child",
+      "Expected the compiled-child smoke response header.",
     );
     assert(
-      body === "global-fetch-ok:sealed-smoke-ok",
-      `Unexpected sealed expiry smoke body: ${body}`,
+      body === "compile-ok:sealed-smoke-ok",
+      `Unexpected compiled child smoke body: ${body}`,
     );
   });
 } finally {

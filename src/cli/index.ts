@@ -12,7 +12,6 @@ import {
   MAX_PAYLOAD_LENGTH,
   payloadFromInput,
 } from "../shared/codec.js";
-import { createGuardedFetch } from "../shared/guarded-fetch.js";
 import {
   createRequestId,
   localRequestBody,
@@ -21,12 +20,12 @@ import {
   userParamValues,
 } from "../shared/request-context.js";
 import { mapScriptResult } from "../shared/result.js";
-import { runScript } from "../shared/sandbox.js";
-import { formatStoredScript, minifyScriptBody, wrapScriptBody } from "../shared/script.js";
+import type { SandboxContext } from "../shared/sandbox.js";
+import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
-import { createSmartlink } from "./build.js";
+import { createSmartlink, prepareSmartlinkProgram } from "./build.js";
 import { parseExpiry } from "./expiry.js";
-import { createNodeFetch } from "./node-fetch.js";
+import { runLocalProgram } from "./local-run.js";
 import { readScriptSource } from "./source.js";
 import { fail, startUi } from "./ui.js";
 import { collect, normalizeServiceUrl, resolveSecrets, splitAssignment } from "./values.js";
@@ -38,6 +37,18 @@ declare const __SMARTLINKS_VERSION__: string;
 if (!globalThis.crypto) {
   Object.defineProperty(globalThis, "crypto", { value: webcrypto });
 }
+
+// Node 18 marks X25519 Web Crypto as experimental even though it is the supported
+// implementation behind our RFC 9180 suite. Suppress only that known warning; preserve all others.
+const originalEmitWarning = process.emitWarning.bind(process) as (...args: unknown[]) => void;
+process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
+  const message = typeof warning === "string" ? warning : warning.message;
+  const type = warning instanceof Error ? warning.name : args[0];
+  if (type === "ExperimentalWarning" && message.includes("X25519 Web Crypto API")) {
+    return;
+  }
+  originalEmitWarning(warning, ...args);
+}) as typeof process.emitWarning;
 
 const DEFAULT_SERVICE_URL = "https://s.jonaslsa.com";
 const publicKeySchema = z.object({
@@ -219,6 +230,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
 async function decodeCommand(input: string, options: { json?: boolean }): Promise<void> {
   const decoded = decodePayload(payloadFromInput(input));
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
+  const closures = (decoded.envelope.c ?? []).map((closure) => formatStoredScript("2", closure));
   const notAfter = decoded.envelope.notAfter;
   const expiresAt = notAfter === undefined ? null : formatNotAfter(notAfter);
   const expired = isExpired(notAfter);
@@ -226,25 +238,33 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
     payloadVersion: Number(decoded.version),
     interstitial: decoded.envelope.i === true,
     sealedSecrets: Object.keys(decoded.envelope.k ?? {}),
+    compileClosures: decoded.envelope.c?.length ?? 0,
     notAfter: notAfter ?? null,
     expiresAt,
     expired,
   };
 
   if (options.json) {
-    console.log(JSON.stringify({ ...metadata, script }, null, 2));
+    console.log(JSON.stringify({ ...metadata, script, closures }, null, 2));
     return;
   }
   const interactive = startUi("smartlinks decode", false);
   if (interactive) {
     p.note(script, "Script");
+    closures.forEach((closure, index) => {
+      p.note(closure, `Compile closure ${index}`);
+    });
     p.note(
-      `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}\nExpiry: ${expiresAt === null ? "never" : `${expiresAt}${expired ? " (expired)" : ""}`}`,
+      `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nCompile closures: ${metadata.compileClosures}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}\nExpiry: ${expiresAt === null ? "never" : `${expiresAt}${expired ? " (expired)" : ""}`}`,
       "Metadata",
     );
     p.outro("Decoded without executing");
   } else {
-    console.log(script);
+    console.log(
+      [script, ...closures.map((closure, index) => `// Compile closure ${index}\n${closure}`)].join(
+        "\n\n",
+      ),
+    );
     console.error(JSON.stringify(metadata));
   }
 }
@@ -252,32 +272,27 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
 async function runCommand(file: string, options: RunOptions): Promise<void> {
   const interactive = startUi("smartlinks run", options.json === true);
   const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
-  const source = options.minify
-    ? await minifyScriptBody(originalSource)
-    : wrapScriptBody(originalSource);
+  const { source, closures } = await prepareSmartlinkProgram(originalSource, options.minify);
   const method = options.method.toUpperCase();
   const parameters = options.param.map((value) => splitAssignment(value, "Parameter"));
-  const guestFetch = options.allowNetwork
-    ? createGuardedFetch({ fetchImpl: createNodeFetch() })
-    : async () => {
-        throw new Error("Network access is disabled. Re-run with --allow-network to enable fetch.");
-      };
-  const result = await runScript({
-    version: "2",
+  const secrets = await resolveSecrets(options.secret, { prompt: interactive });
+  const context: SandboxContext = {
+    params: userParams(parameters),
+    paramValues: userParamValues(parameters),
+    method,
+    headers: lowercaseHeaders(
+      options.header.map((value) => splitAssignment(value, "Header")),
+      true,
+    ),
+    body: localRequestBody(method, options.body),
+    secrets,
+    requestId: createRequestId(),
+  };
+  const result = await runLocalProgram({
     source,
-    context: {
-      params: userParams(parameters),
-      paramValues: userParamValues(parameters),
-      method,
-      headers: lowercaseHeaders(
-        options.header.map((value) => splitAssignment(value, "Header")),
-        true,
-      ),
-      body: localRequestBody(method, options.body),
-      secrets: await resolveSecrets(options.secret, { prompt: interactive }),
-      requestId: createRequestId(),
-    },
-    fetch: guestFetch,
+    closures,
+    context,
+    allowNetwork: options.allowNetwork === true,
   });
   const response = mapScriptResult(result);
   const output = {

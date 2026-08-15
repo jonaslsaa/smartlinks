@@ -29,6 +29,7 @@ The script receives `ctx` with:
 - `secrets`: decrypted values keyed by the names supplied during build.
 - `requestId`: an opaque per-execution correlation ID.
 - `crypto`: SHA-256, HMAC-SHA256, and constant-time HMAC verification helpers.
+- `compile`: mint one child Smartlink from a statically packaged closure.
 
 `ctx.crypto.sha256(message, encoding?)`, `hmacSha256(key, message, encoding?)`, and
 `verifyHmacSha256(key, message, signature, encoding?)` accept strings. Encoding defaults to
@@ -42,6 +43,38 @@ returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirec
 
 Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` for a literal
 response, or `undefined` for the default completion page.
+
+### Runtime compilation
+
+`ctx.compile(closure, args, options?)` returns a child execution URL. `args` is a positional JSON
+tuple whose TypeScript types must match the closure parameters. The closure must be inline or a
+top-level `const`/function declaration and may use its parameters, `ctx`, `fetch`, and supported
+JavaScript globals, but it cannot capture other outer variables. Pass runtime values explicitly in
+the tuple. The CLI extracts and type-checks every closure before minification, replaces the guest
+reference with an internal table index, and packages the finite closure table in the link.
+
+Options are:
+
+- `ttlSeconds?: number`: optional positive integer seconds. The child deadline is
+  `min(now + ttlSeconds, parent notAfter)`; omission inherits the parent deadline, and a parent
+  without a deadline may mint a child without one. Children shared outside the parent's audience
+  should usually expire; prefer hours, not days.
+- `interstitial?: boolean`: explicit `true` or `false` overrides the parent; omission inherits it.
+- `seal?: Record<string, string>`: strings to encrypt for the child's `ctx.secrets`. Direct parent
+  secrets, deliberately derived values, and generated values are all supported.
+
+One `ctx.compile` attempt is allowed per execution, including failed attempts. Tuple data is
+canonical JSON with a 64 KB encoded limit, 32-level depth limit, 10,000-value limit, and no
+`__proto__` keys. The runtime rejects any decrypted parent-secret bytes found in child source,
+packaged closures, or tuple data; move intentional delegation through `seal`. Each sealed value
+also consumes one of the execution's 16 shared cryptographic operations.
+
+A child carrying another build-time-approved closure may mint another ordinary Smartlink. There
+is no stored ancestry, generation counter, or depth policy. Each execution independently reapplies
+the same one-mint budget, validation, expiry resolution, sealing, and payload limits.
+
+A parent whose mint branch is reachable by anyone holding its URL is an unauthenticated admin
+endpoint. Keep parent links private or make their code verify a signed request before compiling.
 
 A literal response can be a complete HTML document. The script cannot read its own URL, but
 relative references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter
@@ -122,7 +155,12 @@ Use this as the local dry-run before building a final link.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
 
 Local execution uses the same wrapper, QuickJS engine, request-context normalization, general
-URL/method/header/body/count/redirect policy, and response mapping as production.
+URL/method/header/body/count/redirect policy, response mapping, and compile validation as
+production. Local compile sealing uses an ephemeral in-process keypair and returns a local-only
+`https://smartlinks.local/r/<payload>` URL. `run` follows compiled local links, decrypts them with
+that ephemeral key, and executes the final response in the same process, with a ten-hop local
+follow limit. It does not contact `/pk`, use production private-key material, or publish a durable
+bearer link.
 
 ## Other commands
 
@@ -133,8 +171,11 @@ links whose deadline has passed.
 ## Secrets and authority
 
 The CLI fetches the runtime's public key and encrypts each requested secret locally. Ciphertext is
-bound to the active key ID and the exact emitted script, so it cannot be moved to a modified
-script. The private key remains a Worker secret.
+bound to the active key ID, target secret name, and complete immutable authority-bearing artifact:
+the entry script, ordered compile table, baked program data, expiry, and execution-policy flags.
+Changing any of those fields makes decryption fail. Dynamic request parameters remain variable
+input to the authenticated program and are not part of this binding. The private key remains a
+Worker secret.
 
 Encryption hides values from URL inspection; it does not make the execution URL private. Anyone
 with the complete URL can invoke the script with its sealed authority until `notAfter`, when
@@ -157,6 +198,9 @@ decode the public source and build a separate link without that deadline.
 - Each request gets a fresh QuickJS runtime with a 16 MiB heap, 512 KiB stack, deterministic
   1,500-interrupt-poll budget, and 15-second host-wait deadline. Interrupt polls are not CPU-time
   measurements.
+- One `ctx.compile` attempt is allowed per execution on the hosted Workers Free runtime. This
+  separate limit was chosen from production CPU measurements; a second near-limit sealed mint
+  crossed the platform CPU boundary.
 - `fetch` permits HTTP(S), blocks local hostnames and private/local/reserved IP literals,
   limits same-origin redirects to three, total requests to five, request and response bodies to
   1 MiB, and each fetch to ten seconds. Cross-origin redirects are rejected. Local

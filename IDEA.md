@@ -39,11 +39,13 @@ be fixed, anyone with a link can run it, etc.).
    - `undefined` → default "✓ done" page
 5. **Sealed secrets**: secrets are encrypted by the CLI with **HPKE
    (RFC 9180, X25519 + ChaCha20-Poly1305 or AES-GCM — use `@hpke/core`)** to
-   the service's public key. Critically, the AAD is
-   `keyId || SHA-256(script source) || UTF-8("smartlinks/not-after/" + expiry)`
-   where `expiry` is the exact integer `notAfter` value or `none`. A sealed blob
-   only decrypts for the exact script and expiry state it was sealed for —
-   stolen blobs are useless in other scripts and cannot have expiry removed.
+   the service's public key. Modern v2 links mark complete-artifact binding with
+   `a: 1`; their AAD covers the key ID plus a canonical hash of the payload
+   version, entry script, ordered compile table, baked program data, exact
+   `notAfter`/no-expiry state, execution-policy flags, and target secret name. A
+   sealed blob therefore decrypts only for the immutable program and authority
+   the author built. The Worker retains the earlier script-and-expiry AAD reader
+   only so links produced during the deployment transition continue to run.
    Private key lives in a worker secret (`wrangler secret`). A **key ID**
    prefixes every sealed blob so the keypair can be rotated additively.
 6. **Versioned encoding**: the payload starts with a version character; current
@@ -75,6 +77,12 @@ be fixed, anyone with a link can run it, etc.).
     Preview, prefetch, and `HEAD` handling stays non-executing and returns the
     preview. Expiry is cryptographically bound when secrets are sealed and
     advisory for secret-free links, whose public source can be rebuilt.
+12. **Runtime minting**: `ctx.compile(closure, args, options?)` may mint one
+    child link per execution. The CLI statically extracts inline or top-level
+    constant closures, rejects outer captures, and replaces function references
+    with compact table indexes. Args are a typed positional JSON tuple. Children
+    are ordinary links and may carry their own approved compile closures; there
+    is no stored tree, generation field, or depth rule.
 
 ## URL and envelope format
 
@@ -91,13 +99,17 @@ https://<domain>/r/<payload>?<user params...>
 {
   "s": "<script source>",
   "i": true,
+  "a": 1,
+  "c": ["<compile closure>"],
   "k": { "TOKEN": "<base64url sealed blob>" },
   "notAfter": 2000000000
 }
 ```
 
-  `s` = script, `i` = interstitial flag (optional), `k` = sealed secrets by
-  name (optional), `notAfter` = expiry as integer Unix seconds (optional).
+  `s` = script, `i` = interstitial flag (optional), `a` = complete-artifact AAD
+  marker (optional), `c` = ordered compile closure table (optional), `k` =
+  sealed secrets by name (optional), `notAfter` = expiry as integer Unix seconds
+  (optional).
 - Query params starting with `__` are reserved for the service
   (`__confirm`); all others belong to the script.
 - Sealed blob layout: `keyId (1 byte) || hpke enc || ciphertext`.
@@ -116,6 +128,7 @@ ctx.body      // string | null (request body, if any)
 ctx.secrets   // object: decrypted secrets by name (plaintext strings)
 ctx.requestId // opaque execution correlation ID
 ctx.crypto    // SHA-256 and HMAC-SHA256 helpers
+ctx.compile   // one runtime child mint from a packaged closure + positional tuple
 
 fetch(url, opts) // guarded global fetch bridge (see decision #9); returns a
                  // bounded Response-like object with text() and json()
@@ -128,8 +141,8 @@ Host↔guest boundary passes plain JSON-able values only.
 | Route | Behavior |
 |---|---|
 | `GET /` | Temporary redirect to the public landing page |
-| `ALL /r/<payload>` | Runner: preview check → decode → expiry check → interstitial → rate limit → decrypt secrets (verify script-and-expiry AAD) → read body → sandbox → map return value to response |
-| `GET /d/<payload>` | Decoder: pretty-printed script source + envelope metadata, "audit before you click" page |
+| `ALL /r/<payload>` | Runner: preview check → decode → expiry check → interstitial → rate limit → decrypt secrets (verify complete-artifact AAD for modern links) → read body → sandbox, including one optional mint → map return value to response |
+| `GET /d/<payload>` | Decoder: pretty-printed entry script, compile closures, and envelope metadata; "audit before you click" page |
 | `GET /pk` | Current public key + key ID (JSON) — the CLI uses this to seal |
 
 ## Landing page
@@ -160,7 +173,8 @@ smartlinks decode <link | payload>
 smartlinks run <script.js|script.ts> [--param a=1 ...] [--method POST] [--body ...]
     # type-check .ts input and execute locally in the same QuickJS sandbox as
     # production, with fake ctx; secrets provided via env. Prints the mapped
-    # response.
+    # response. ctx.compile uses ephemeral local encryption; run follows and
+    # executes local-only compiled links rather than publishing them.
 ```
 
 Both TypeScript commands accept `--no-type-check` to transpile without semantic checking.
@@ -182,11 +196,13 @@ self-hosters can override it with `SMARTLINKS_URL`.
 7. `src/cli/` — the CLI (`build` / `decode` / `run`), sharing `src/shared/`
    codec, seal, and sandbox modules with the worker. Round-trip test: link
    built by the CLI executes correctly in the worker.
-8. Internal keygen command that prints a keypair or provisions
+8. Runtime minting — static closure extraction, complete-artifact AAD, shared
+   local/Worker mint pipeline, one-attempt CPU guard, and parent→child→leaf tests.
+9. Internal keygen command that prints a keypair or provisions
    `PRIVATE_KEY_<id>` through Wrangler; self-hosting instructions stay in the README.
-9. README: what it is, the honest downsides list, CLI usage, example links
+10. README: what it is, the honest downsides list, CLI usage, example links
    (redirect, badge, webhook adapter, GitHub workflow_dispatch).
-10. Tests runnable via `vitest` with `@cloudflare/vitest-pool-workers`;
+11. Tests runnable via `vitest` with `@cloudflare/vitest-pool-workers`;
     `wrangler dev` works locally.
 
 ## Explicit non-goals for v1

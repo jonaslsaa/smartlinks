@@ -63,6 +63,109 @@ describe("Worker routes", () => {
     await expect(response.text()).resolves.toBe("Jonas:sealed-value");
   });
 
+  it("mints and executes a sealed child through the real guest bridge", async () => {
+    const parentNotAfter = Math.floor(Date.now() / 1_000) + 60 * 60;
+    const created = await createSmartlink({
+      source: `
+        const child = async (name) => ({
+          headers: { "x-smartlinks-child": "yes" },
+          body: name + ":" + ctx.secrets.CHILD_TOKEN,
+        });
+        return ctx.compile(child, [ctx.params.name ?? "world"], {
+          seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN },
+          ttlSeconds: 120,
+          interstitial: false,
+        });
+      `,
+      service: origin,
+      interstitial: true,
+      notAfter: parentNotAfter,
+      secrets: { PARENT_TOKEN: "delegated-value" },
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const parent = await worker.fetch(
+      new Request(`${created.link}?name=Jonas&__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    const childUrl = parent.headers.get("location");
+
+    expect(parent.status).toBe(302);
+    expect(childUrl).toMatch(/^https:\/\/runtime\.example\/r\/2/u);
+    if (!childUrl) {
+      throw new Error("Expected the parent to return a child URL.");
+    }
+    const decodedChild = await decodeWorkerPayload(new URL(childUrl).pathname.slice(3));
+    expect(decodedChild.envelope.i).toBeUndefined();
+    expect(decodedChild.envelope.notAfter).toBeLessThanOrEqual(parentNotAfter);
+    expect(decodedChild.envelope.notAfter).toBeGreaterThan(Math.floor(Date.now() / 1_000));
+    expect(decodedChild.envelope.a).toBe(1);
+    expect(decodedChild.envelope.c).toHaveLength(1);
+
+    const child = await worker.fetch(new Request(childUrl), testEnv());
+    expect(child.status).toBe(200);
+    expect(child.headers.get("x-smartlinks-child")).toBe("yes");
+    await expect(child.text()).resolves.toBe("Jonas:delegated-value");
+  });
+
+  it("allows a child to mint another ordinary smartlink without generation metadata", async () => {
+    const created = await createSmartlink({
+      source: `
+        const leaf = async (name) => ({ body: "leaf:" + name });
+        const child = async (name) => ctx.compile(leaf, [name]);
+        return ctx.compile(child, ["Jonas"]);
+      `,
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const parent = await worker.fetch(new Request(created.link), testEnv());
+    const childUrl = parent.headers.get("location");
+    expect(childUrl).toBeTruthy();
+
+    const child = await worker.fetch(new Request(childUrl ?? ""), testEnv());
+    const leafUrl = child.headers.get("location");
+    expect(leafUrl).toBeTruthy();
+
+    const leaf = await worker.fetch(new Request(leafUrl ?? ""), testEnv());
+    expect(leaf.status).toBe(200);
+    await expect(leaf.text()).resolves.toBe("leaf:Jonas");
+    const decodedLeaf = await decodeWorkerPayload(new URL(leafUrl ?? "").pathname.slice(3));
+    expect(Object.keys(decodedLeaf.envelope)).not.toContain("generation");
+  });
+
+  it("charges the single mint budget before failed compile work", async () => {
+    const created = await createSmartlink({
+      source: `
+        const child = async () => ({ body: "unused" });
+        try { await ctx.compile(child, [], { bogus: true }); } catch {}
+        return ctx.compile(child, []);
+      `,
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({ error: "The smartlink script failed." });
+  });
+
+  it("rejects parent secret plaintext in child arguments", async () => {
+    const created = await createSmartlink({
+      source: `
+        const child = async (value) => ({ body: value });
+        return ctx.compile(child, [ctx.secrets.PARENT_TOKEN]);
+      `,
+      service: origin,
+      secrets: { PARENT_TOKEN: "must-not-leak" },
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({ error: "The smartlink script failed." });
+  });
+
   it("executes a link before its expiry", async () => {
     const created = await createSmartlink({
       source: 'return { body: "still valid" }',
@@ -252,6 +355,57 @@ describe("Worker routes", () => {
         error: "Sealed secret TOKEN could not be decrypted.",
       });
     }
+  });
+
+  it("rejects compile-capable seals after closure or secret-name tampering", async () => {
+    const created = await createSmartlink({
+      source: `
+        const child = async () => ({ body: ctx.secrets.CHILD_TOKEN });
+        return ctx.compile(child, [], { seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN } });
+      `,
+      service: origin,
+      secrets: { PARENT_TOKEN: "bound-authority" },
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const original = await decodeWorkerPayload(created.payload);
+    const changedClosure = encodePayload({
+      ...original.envelope,
+      c: ["async()=>({body:'attacker-controlled'})"],
+    });
+    const originalBlob = original.envelope.k?.PARENT_TOKEN;
+    if (!originalBlob) {
+      throw new Error("Expected a sealed parent secret.");
+    }
+    const renamedSecret = encodePayload({
+      ...original.envelope,
+      k: { RENAMED_TOKEN: originalBlob },
+    });
+
+    for (const payload of [changedClosure, renamedSecret]) {
+      const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        error: expect.stringContaining("could not be decrypted"),
+      });
+    }
+  });
+
+  it("does not let legacy sealed links gain unauthenticated compile closures", async () => {
+    const source = "async ctx=>ctx.compile(0,[])";
+    const blob = await sealSecret("legacy-secret", { script: source }, pair);
+    const payload = encodePayload({
+      s: source,
+      c: ["async()=>({body:ctx.secrets.TOKEN})"],
+      k: { TOKEN: blob },
+    });
+
+    const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Sealed compile closures require complete-artifact binding.",
+    });
   });
 
   it("returns bounded errors for malformed links and missing routes", async () => {

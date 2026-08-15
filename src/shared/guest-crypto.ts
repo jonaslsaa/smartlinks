@@ -16,6 +16,10 @@ export type GuestCrypto = {
   ): Promise<boolean>;
 };
 
+export type CryptoOperationBudget = {
+  consume(count?: number): void;
+};
+
 const encoder = new TextEncoder();
 
 function encode(bytes: ArrayBuffer, encoding: GuestCryptoEncoding): string {
@@ -55,16 +59,26 @@ async function hmacKey(cryptoImpl: Crypto, key: string): Promise<CryptoKey> {
   );
 }
 
+export function createCryptoOperationBudget(
+  maxOperations = MAX_CRYPTO_OPERATIONS,
+): CryptoOperationBudget {
+  let operations = 0;
+  return {
+    consume(count = 1) {
+      operations += count;
+      if (operations > maxOperations) {
+        throw new Error(`A script may perform at most ${maxOperations} cryptographic operations.`);
+      }
+    },
+  };
+}
+
 export function createGuestCrypto(
   cryptoImpl: Crypto = crypto,
-  maxOperations = MAX_CRYPTO_OPERATIONS,
+  budget: CryptoOperationBudget = createCryptoOperationBudget(),
 ): GuestCrypto {
-  let operations = 0;
   const guard = (...values: string[]) => {
-    operations += 1;
-    if (operations > maxOperations) {
-      throw new Error(`A script may perform at most ${maxOperations} cryptographic operations.`);
-    }
+    budget.consume();
     const bytes = values.reduce((total, value) => total + encoder.encode(value).byteLength, 0);
     if (bytes > MAX_CRYPTO_INPUT_BYTES) {
       throw new Error("Cryptographic input exceeds the 1 MB limit.");
