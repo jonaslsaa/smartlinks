@@ -1,3 +1,5 @@
+import { RequestBodyTooLargeError, readBoundedRequestBody } from "../shared/request-context.js";
+
 type HttpErrorOptions = ErrorOptions & {
   headers?: HeadersInit;
 };
@@ -52,41 +54,12 @@ export async function readBoundedBody(
   request: Request,
   limitBytes = 1_048_576,
 ): Promise<string | null> {
-  if (request.method === "GET" || request.method === "HEAD" || !request.body) {
-    return null;
-  }
-
-  const declaredLength = request.headers.get("content-length");
-  if (declaredLength && Number(declaredLength) > limitBytes) {
-    throw new HttpError(413, "Request body exceeds the 1 MB limit.");
-  }
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        break;
-      }
-      length += value.byteLength;
-      if (length > limitBytes) {
-        throw new HttpError(413, "Request body exceeds the 1 MB limit.");
-      }
-      chunks.push(value);
-    }
+    return await readBoundedRequestBody(request, limitBytes);
   } catch (error) {
-    await reader.cancel().catch(() => undefined);
+    if (error instanceof RequestBodyTooLargeError) {
+      throw new HttpError(413, error.message, { cause: error });
+    }
     throw error;
   }
-
-  const bytes = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
 }

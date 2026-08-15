@@ -164,6 +164,13 @@ bearer link or needing the production private key.
 For binary responses, `run --json` emits `bodyBase64` instead of `body`. Redirected plain `run`
 stdout receives the exact bytes; an interactive terminal shows a byte-count receipt.
 
+For browser-based iteration, use `smartlinks run script.ts --serve`. It serves the script on
+`http://127.0.0.1:8787`, re-reads and checks the file on every request, and passes the browser's
+query parameters, method, headers, and body through the same local QuickJS execution path. Use
+`--port` to choose another port, including `--port 0` for an available port. Serve mode stays on
+loopback, never builds a link or contacts production, and still requires `--allow-network` for
+guarded outbound fetches.
+
 Generated links are opaque bearer artifacts. `--copy` sends the link to the clipboard without
 printing it, while `--out link.txt` writes it to a file with owner-only POSIX permissions; both
 print only a compact size and payload-budget receipt. Plain `--json` includes the execution URL
