@@ -2,6 +2,8 @@ import { ZodError } from "zod";
 import { isPreviewRequest } from "../shared/bots.js";
 import { type DecodedPayload, isExpired } from "../shared/codec.js";
 import { createGuardedFetch } from "../shared/guarded-fetch.js";
+import { createCryptoOperationBudget, createGuestCrypto } from "../shared/guest-crypto.js";
+import { createSmartlinkCompiler } from "../shared/mint.js";
 import {
   createRequestId,
   lowercaseHeaders,
@@ -9,11 +11,16 @@ import {
   userParamValues,
 } from "../shared/request-context.js";
 import { mapScriptResult, type ScriptResult } from "../shared/result.js";
-import { openSecret, publicKeyFromPrivateSecret, sealedSecretKeyId } from "../shared/seal.js";
-import { decodeWorkerPayload } from "./codec.js";
+import {
+  artifactSecretBinding,
+  openSecret,
+  publicKeyFromPrivateSecret,
+  sealedSecretKeyId,
+} from "../shared/seal.js";
+import { decodeWorkerPayload, encodeWorkerPayload } from "./codec.js";
 import { HttpError, json, readBoundedBody } from "./http.js";
 import { decoderPage, expiredPage, interstitialPage, previewPage } from "./pages.js";
-import { runWorkerScript } from "./sandbox.js";
+import { runWorkerScript, validateWorkerScript } from "./sandbox.js";
 
 function readStringBinding(env: Env, name: string): string | undefined {
   const value: unknown = Object.getOwnPropertyDescriptor(env, name)?.value;
@@ -45,12 +52,8 @@ function routePayload(pathname: string, route: "r" | "d"): string | undefined {
   return payload && !payload.includes("/") ? payload : undefined;
 }
 
-async function decryptSecrets(
-  sealed: Record<string, string> | undefined,
-  source: string,
-  notAfter: number | undefined,
-  env: Env,
-): Promise<Record<string, string>> {
+async function decryptSecrets(decoded: DecodedPayload, env: Env): Promise<Record<string, string>> {
+  const sealed = decoded.envelope.k;
   if (!sealed) {
     return {};
   }
@@ -63,7 +66,11 @@ async function decryptSecrets(
           name,
           await openSecret(
             blob,
-            notAfter === undefined ? { script: source } : { script: source, notAfter },
+            decoded.envelope.a === 1
+              ? artifactSecretBinding(decoded.version, decoded.envelope, name)
+              : decoded.envelope.notAfter === undefined
+                ? { script: decoded.envelope.s }
+                : { script: decoded.envelope.s, notAfter: decoded.envelope.notAfter },
             privateKey(env, keyId),
           ),
         ] as const;
@@ -118,12 +125,20 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
   }
 
   await enforceExecutionRateLimit(request, env);
-  const secrets = await decryptSecrets(
-    decoded.envelope.k,
-    decoded.envelope.s,
-    decoded.envelope.notAfter,
-    env,
-  );
+  const secrets = await decryptSecrets(decoded, env);
+  const cryptoBudget = createCryptoOperationBudget();
+  const compile = createSmartlinkCompiler({
+    parent: decoded,
+    parentSecrets: secrets,
+    service: url.origin,
+    getPublicKey: () => {
+      const keyId = keyIdFromEnv(env);
+      return publicKeyFromPrivateSecret(keyId, privateKey(env, keyId));
+    },
+    encode: encodeWorkerPayload,
+    validate: validateWorkerScript,
+    cryptoBudget,
+  });
   let result: ScriptResult;
   try {
     result = await runWorkerScript({
@@ -139,6 +154,9 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
         requestId: createRequestId(request.headers.get("cf-ray")),
       },
       fetch: createGuardedFetch(),
+      crypto: createGuestCrypto(crypto, cryptoBudget),
+      cryptoBudget,
+      compile,
     });
   } catch (error) {
     throw new HttpError(422, "The smartlink script failed.", { cause: error });

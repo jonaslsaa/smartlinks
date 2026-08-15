@@ -16,6 +16,8 @@ describe("payload codec", () => {
     const envelope = {
       s: "async a=>a.params.to",
       i: true as const,
+      a: 1 as const,
+      c: ["async value=>value"],
       k: { TOKEN: "AQID" },
       notAfter: 2_000_000_000,
     };

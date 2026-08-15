@@ -89,6 +89,42 @@ describe("CLI script input", () => {
     );
   });
 
+  it("type-checks compile closures against their positional argument tuples", async () => {
+    await expect(
+      transpileScriptSource(
+        `
+          const child = async (name: string, count: number) => ({ body: name.repeat(count) });
+          return ctx.compile(child, ["Jonas", 2], {
+            ttlSeconds: 3600,
+            interstitial: false,
+            seal: { TOKEN: ctx.secrets.TOKEN! },
+          });
+        `,
+        "compile.ts",
+      ),
+    ).resolves.toContain('ctx.compile(child, ["Jonas", 2]');
+
+    await expect(
+      transpileScriptSource(
+        `
+          const child = async (count: number) => ({ body: String(count) });
+          return ctx.compile(child, ["wrong"]);
+        `,
+        "compile-mismatch.ts",
+      ),
+    ).rejects.toThrow("Type 'string' is not assignable to type 'number'");
+
+    await expect(
+      transpileScriptSource(
+        `
+          const child = async () => ({ body: 123 });
+          return ctx.compile(child, []);
+        `,
+        "compile-result.ts",
+      ),
+    ).rejects.toThrow("Type 'number' is not assignable to type 'string'");
+  });
+
   it("can explicitly skip semantic type checking", async () => {
     const transpiled = await transpileScriptSource(
       'const value: number = "runtime";\nreturn value;',

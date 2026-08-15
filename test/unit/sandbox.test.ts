@@ -81,6 +81,25 @@ describe("QuickJS sandbox", () => {
     ).rejects.toThrow("at most 16 cryptographic operations");
   });
 
+  it("allows only one compile attempt, including after a rejected first attempt", async () => {
+    const compile = vi.fn(async () => {
+      throw new Error("first compile rejected");
+    });
+    await expect(
+      runScript({
+        version: "2",
+        source: await minifyScriptBody(`
+          try { await ctx.compile(0, []); } catch {}
+          return ctx.compile(0, []);
+        `),
+        context,
+        fetch: createGuardedFetch(),
+        compile,
+      }),
+    ).rejects.toThrow("at most once per execution");
+    expect(compile).toHaveBeenCalledTimes(1);
+  });
+
   it("interrupts runaway synchronous code", async () => {
     await expect(run("while (true) {}")).rejects.toThrow();
   });

@@ -13,6 +13,8 @@ import {
   payloadFromInput,
 } from "../shared/codec.js";
 import { createGuardedFetch } from "../shared/guarded-fetch.js";
+import { createCryptoOperationBudget, createGuestCrypto } from "../shared/guest-crypto.js";
+import { createSmartlinkCompiler } from "../shared/mint.js";
 import {
   createRequestId,
   localRequestBody,
@@ -21,10 +23,11 @@ import {
   userParamValues,
 } from "../shared/request-context.js";
 import { mapScriptResult } from "../shared/result.js";
-import { runScript } from "../shared/sandbox.js";
-import { formatStoredScript, minifyScriptBody, wrapScriptBody } from "../shared/script.js";
+import { runScript, validateScript } from "../shared/sandbox.js";
+import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
-import { createSmartlink } from "./build.js";
+import { createSmartlink, prepareSmartlinkProgram } from "./build.js";
+import { encodePayloadForCli } from "./encode.js";
 import { parseExpiry } from "./expiry.js";
 import { createNodeFetch } from "./node-fetch.js";
 import { readScriptSource } from "./source.js";
@@ -219,6 +222,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
 async function decodeCommand(input: string, options: { json?: boolean }): Promise<void> {
   const decoded = decodePayload(payloadFromInput(input));
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
+  const closures = (decoded.envelope.c ?? []).map((closure) => formatStoredScript("2", closure));
   const notAfter = decoded.envelope.notAfter;
   const expiresAt = notAfter === undefined ? null : formatNotAfter(notAfter);
   const expired = isExpired(notAfter);
@@ -226,25 +230,33 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
     payloadVersion: Number(decoded.version),
     interstitial: decoded.envelope.i === true,
     sealedSecrets: Object.keys(decoded.envelope.k ?? {}),
+    compileClosures: decoded.envelope.c?.length ?? 0,
     notAfter: notAfter ?? null,
     expiresAt,
     expired,
   };
 
   if (options.json) {
-    console.log(JSON.stringify({ ...metadata, script }, null, 2));
+    console.log(JSON.stringify({ ...metadata, script, closures }, null, 2));
     return;
   }
   const interactive = startUi("smartlinks decode", false);
   if (interactive) {
     p.note(script, "Script");
+    closures.forEach((closure, index) => {
+      p.note(closure, `Compile closure ${index}`);
+    });
     p.note(
-      `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}\nExpiry: ${expiresAt === null ? "never" : `${expiresAt}${expired ? " (expired)" : ""}`}`,
+      `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nCompile closures: ${metadata.compileClosures}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}\nExpiry: ${expiresAt === null ? "never" : `${expiresAt}${expired ? " (expired)" : ""}`}`,
       "Metadata",
     );
     p.outro("Decoded without executing");
   } else {
-    console.log(script);
+    console.log(
+      [script, ...closures.map((closure, index) => `// Compile closure ${index}\n${closure}`)].join(
+        "\n\n",
+      ),
+    );
     console.error(JSON.stringify(metadata));
   }
 }
@@ -252,9 +264,7 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
 async function runCommand(file: string, options: RunOptions): Promise<void> {
   const interactive = startUi("smartlinks run", options.json === true);
   const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
-  const source = options.minify
-    ? await minifyScriptBody(originalSource)
-    : wrapScriptBody(originalSource);
+  const { source, closures } = await prepareSmartlinkProgram(originalSource, options.minify);
   const method = options.method.toUpperCase();
   const parameters = options.param.map((value) => splitAssignment(value, "Parameter"));
   const guestFetch = options.allowNetwork
@@ -262,6 +272,30 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     : async () => {
         throw new Error("Network access is disabled. Re-run with --allow-network to enable fetch.");
       };
+  const secrets = await resolveSecrets(options.secret, { prompt: interactive });
+  const localKey = closures.length ? await generateKeyPair(1) : undefined;
+  const cryptoBudget = createCryptoOperationBudget();
+  const parent = {
+    version: "2" as const,
+    envelope: {
+      s: source,
+      ...(closures.length ? { c: closures } : {}),
+    },
+  };
+  const compile = createSmartlinkCompiler({
+    parent,
+    parentSecrets: secrets,
+    service: "https://smartlinks.local",
+    getPublicKey: () => {
+      if (!localKey) {
+        throw new Error("Local compile encryption is unavailable for this script.");
+      }
+      return localKey;
+    },
+    encode: async (envelope, version) => encodePayloadForCli(envelope, version),
+    validate: async (version, childSource) => validateScript(version, childSource),
+    cryptoBudget,
+  });
   const result = await runScript({
     version: "2",
     source,
@@ -274,10 +308,13 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
         true,
       ),
       body: localRequestBody(method, options.body),
-      secrets: await resolveSecrets(options.secret, { prompt: interactive }),
+      secrets,
       requestId: createRequestId(),
     },
     fetch: guestFetch,
+    crypto: createGuestCrypto(crypto, cryptoBudget),
+    cryptoBudget,
+    compile,
   });
   const response = mapScriptResult(result);
   const output = {

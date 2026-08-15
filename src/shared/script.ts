@@ -20,6 +20,21 @@ export async function minifyScriptBody(source: string): Promise<string> {
   return code;
 }
 
+export async function minifyFunctionExpression(source: string): Promise<string> {
+  const assignment = "globalThis.__smartlinks_closure=";
+  const result = await minify(`${assignment}${source}`, {
+    compress: { passes: 2, side_effects: false },
+    mangle: true,
+    ecma: 2022,
+    format: { comments: false, semicolons: true },
+  });
+  const code = result.code?.replace(/;$/u, "");
+  if (!code?.startsWith(assignment)) {
+    throw new Error("A compile closure could not be minified.");
+  }
+  return code.slice(assignment.length);
+}
+
 export function assertScriptLength(source: string): void {
   if (source.length > MAX_SCRIPT_LENGTH) {
     throw new Error(

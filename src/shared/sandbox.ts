@@ -8,7 +8,13 @@ import {
 import { z } from "zod";
 import type { PayloadVersion } from "./codec.js";
 import type { GuestFetch } from "./guarded-fetch.js";
-import { createGuestCrypto, type GuestCrypto } from "./guest-crypto.js";
+import {
+  type CryptoOperationBudget,
+  createCryptoOperationBudget,
+  createGuestCrypto,
+  type GuestCrypto,
+} from "./guest-crypto.js";
+import type { GuestCompile } from "./mint.js";
 import { parseScriptResult, type ScriptResult } from "./result.js";
 import { executableSource } from "./script.js";
 
@@ -35,6 +41,8 @@ type RunScriptOptions = {
   context: SandboxContext;
   fetch: GuestFetch;
   crypto?: GuestCrypto;
+  cryptoBudget?: CryptoOperationBudget;
+  compile?: GuestCompile;
   timeoutMs?: number;
 };
 
@@ -198,6 +206,7 @@ export async function runScriptWithModule(
   const pendingHostCalls = new Set<Promise<void>>();
   let promiseHandle: QuickJSHandle | undefined;
   let executionTimer: ReturnType<typeof setTimeout> | undefined;
+  let compileAttempted = false;
   const timedOut = new Promise<never>((_resolve, reject) => {
     executionTimer = setTimeout(
       () => reject(new Error(`Script execution exceeded ${timeoutMs.toLocaleString()} ms.`)),
@@ -218,9 +227,9 @@ export async function runScriptWithModule(
   const asyncHostFunction = (
     name: string,
     operation: (...args: unknown[]) => Promise<unknown>,
+    beforeArguments?: () => void,
   ): QuickJSHandle =>
     vm.newFunction(name, (...argumentHandles) => {
-      const args = argumentHandles.map((handle) => vm.dump(handle));
       const deferred = vm.newPromise();
       pendingDeferreds.add(deferred);
 
@@ -233,6 +242,16 @@ export async function runScriptWithModule(
         deferred.reject(errorHandle);
         errorHandle.dispose();
       };
+
+      try {
+        beforeArguments?.();
+      } catch (error) {
+        rejectDeferred(error);
+        pendingDeferreds.delete(deferred);
+        return deferred.handle;
+      }
+
+      const args = argumentHandles.map((handle) => vm.dump(handle));
 
       let hostCall: Promise<void>;
       hostCall = operation(...args)
@@ -269,7 +288,8 @@ export async function runScriptWithModule(
     });
     vm.setProp(vm.global, "__smartlinks_host_fetch", fetchHandle);
 
-    const guestCrypto = options.crypto ?? createGuestCrypto();
+    const cryptoBudget = options.cryptoBudget ?? createCryptoOperationBudget();
+    const guestCrypto = options.crypto ?? createGuestCrypto(crypto, cryptoBudget);
     const cryptoHandle = vm.newObject();
     const sha256Handle = asyncHostFunction("sha256", async (message, encoding) => {
       if (typeof message !== "string") {
@@ -307,6 +327,20 @@ export async function runScriptWithModule(
     vm.setProp(cryptoHandle, "hmacSha256", hmacHandle);
     vm.setProp(cryptoHandle, "verifyHmacSha256", verifyHandle);
     vm.setProp(contextHandle, "crypto", cryptoHandle);
+    let compileHandle: QuickJSHandle | undefined;
+    if (options.compile) {
+      compileHandle = asyncHostFunction(
+        "compile",
+        async (closureIndex, args, rawOptions) => options.compile?.(closureIndex, args, rawOptions),
+        () => {
+          if (compileAttempted) {
+            throw new Error("A smartlink may call ctx.compile at most once per execution.");
+          }
+          compileAttempted = true;
+        },
+      );
+      vm.setProp(contextHandle, "compile", compileHandle);
+    }
     vm.setProp(vm.global, "__smartlinks_ctx", contextHandle);
     const bootstrap = vm.evalCode(webApiBootstrap, "smartlinks-web-api.js");
     if (bootstrap.error) {
@@ -319,6 +353,7 @@ export async function runScriptWithModule(
     hmacHandle.dispose();
     sha256Handle.dispose();
     cryptoHandle.dispose();
+    compileHandle?.dispose();
     fetchHandle.dispose();
     contextHandle.dispose();
 

@@ -144,6 +144,39 @@ return {
   });
 });
 
+test("run locally mints a private local-only child with typed tuple arguments", async () => {
+  const source = `
+const child = async (name: string) => ({
+  body: name + ":" + ctx.secrets.CHILD_TOKEN,
+});
+return ctx.compile(child, [ctx.params.name ?? "world"], {
+  seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN! },
+  ttlSeconds: 60,
+});
+`;
+
+  await withTemporaryScript("ts", source, async (script) => {
+    const result = await runCli([
+      "run",
+      script,
+      "--param",
+      "name=Jonas",
+      "--secret",
+      "PARENT_TOKEN=local-secret",
+      "--json",
+    ]);
+    const response = JSON.parse(result.stdout);
+    const location = response.headers.location;
+
+    assert.equal(response.status, 302);
+    assert.match(location, /^https:\/\/smartlinks\.local\/r\/2/u);
+    const decoded = JSON.parse((await runCli(["decode", location, "--json"])).stdout);
+    assert.equal(decoded.compileClosures, 1);
+    assert.deepEqual(decoded.sealedSecrets, ["CHILD_TOKEN"]);
+    assert.equal(typeof decoded.notAfter, "number");
+  });
+});
+
 test("build output round-trips through decode as a URL and raw payload", async () => {
   const keyResult = await runCli(["keygen", "--key-id", "9", "--json"]);
   const key = JSON.parse(keyResult.stdout);
@@ -206,6 +239,7 @@ test("build output round-trips through decode as a URL and raw payload", async (
         const decodedFromUrl = JSON.parse((await runCli(["decode", built.link, "--json"])).stdout);
         assert.equal(decodedFromUrl.payloadVersion, 2);
         assert.equal(decodedFromUrl.interstitial, true);
+        assert.equal(decodedFromUrl.compileClosures, 0);
         assert.deepEqual(decodedFromUrl.sealedSecrets, ["E2E_TOKEN"]);
         assert.equal(decodedFromUrl.notAfter, built.notAfter);
         assert.equal(decodedFromUrl.expiresAt, built.expiresAt);
