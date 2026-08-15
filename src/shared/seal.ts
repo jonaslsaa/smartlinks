@@ -24,24 +24,26 @@ export type LegacySecretBinding = {
   notAfter?: number;
 };
 
-export type ArtifactSecretBinding = {
-  authority: 1 | 2;
+type ArtifactIdentityFields = {
   version: PayloadVersion;
   script: string;
   closures: readonly string[];
   notAfter?: number;
   interstitial: boolean;
   interstitialNote?: string;
-  secretName: string;
-  authorCertificate?: AuthorCertificate;
 };
+
+type ArtifactSecretFields = ArtifactIdentityFields & {
+  secretName: string;
+};
+
+export type ArtifactSecretBinding =
+  | (ArtifactSecretFields & { authority: 1; authorCertificate?: never })
+  | (ArtifactSecretFields & { authority: 2; authorCertificate: AuthorCertificate });
 
 export type SecretBinding = LegacySecretBinding | ArtifactSecretBinding;
 
-export type ArtifactIdentity = Pick<
-  ArtifactSecretBinding,
-  "version" | "script" | "closures" | "notAfter" | "interstitial" | "interstitialNote"
->;
+export type ArtifactIdentity = ArtifactIdentityFields;
 
 function artifactIdentityValues(identity: ArtifactIdentity): readonly unknown[] {
   const values = [
@@ -81,8 +83,7 @@ export function artifactSecretBinding(
   if (signedAuthority !== (authorCertificate !== undefined)) {
     throw new Error("Signed sealed secrets require their author certificate.");
   }
-  return {
-    authority: signedAuthority ? 2 : 1,
+  const fields: ArtifactSecretFields = {
     version,
     script: envelope.s,
     closures: envelope.c ?? [],
@@ -92,8 +93,10 @@ export function artifactSecretBinding(
       ? {}
       : { interstitialNote: envelope.interstitialNote }),
     secretName,
-    ...(authorCertificate === undefined ? {} : { authorCertificate }),
   };
+  return authorCertificate === undefined
+    ? { ...fields, authority: 1 }
+    : { ...fields, authority: 2, authorCertificate };
 }
 
 function payloadSecretBinding(decoded: DecodedPayload, secretName: string): SecretBinding {
