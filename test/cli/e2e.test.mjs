@@ -26,9 +26,6 @@ function assertRuntimeSecurityHeaders(headers) {
   assert.equal(get("x-frame-options"), "DENY");
 }
 
-function toBase64Url(value) {
-  return Buffer.from(value).toString("base64url");
-}
 function fingerprint(value) {
   return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 12)}`;
 }

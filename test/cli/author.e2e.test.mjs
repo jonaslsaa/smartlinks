@@ -204,7 +204,9 @@ test("build --sign fails instead of silently producing an unsigned link", async 
     );
 
     await assert.rejects(
-      runCli(["build", join(dirname(script), "missing.ts"), "--sign", "--secret", "TOKEN"]),
+      runCli(["build", join(dirname(script), "missing.ts"), "--sign", "--secret", "TOKEN"], {
+        env: { ...process.env, SMARTLINKS_CONFIG_DIR: configDirectory },
+      }),
       (error) => {
         assert.equal(error.stdout, "");
         assert.match(error.stderr, /Run smartlinks login first/u);
