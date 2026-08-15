@@ -24,7 +24,7 @@ function testEnv(
   return {
     ACTIVE_KEY_ID: "1" as const,
     EXECUTION_RATE_LIMITER: executionRateLimiter,
-    LANDING_URL: "https://sl.jonaslsa.com/" as const,
+    LANDING_URL: "https://smartlinks.jonaslsa.com/" as const,
     PRIVATE_KEY_1: pair.privateKeySecret,
   };
 }
@@ -33,12 +33,12 @@ describe("Worker routes", () => {
   it("redirects only the root and serves the active public key", async () => {
     const root = await worker.fetch(new Request(origin), testEnv());
     expect(root.status).toBe(302);
-    expect(root.headers.get("location")).toBe("https://sl.jonaslsa.com/");
+    expect(root.headers.get("location")).toBe("https://smartlinks.jonaslsa.com/");
     expect(root.headers.get("cache-control")).toBe("no-store");
 
     const head = await worker.fetch(new Request(origin, { method: "HEAD" }), testEnv());
     expect(head.status).toBe(302);
-    expect(head.headers.get("location")).toBe("https://sl.jonaslsa.com/");
+    expect(head.headers.get("location")).toBe("https://smartlinks.jonaslsa.com/");
 
     const health = await worker.fetch(new Request(`${origin}/health`), testEnv());
     expect(health.status).toBe(404);

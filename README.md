@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://sl.jonaslsa.com">Website</a> ·
+  <a href="https://smartlinks.jonaslsa.com">Website</a> ·
   <a href="https://www.npmjs.com/package/@jonaslsa/smartlinks">npm</a> ·
   <a href="public/smartlinks-for-agents.md">Build with an agent</a>
 </p>
@@ -173,5 +173,5 @@ Worker URL when building links. Never commit `.dev.vars`.
 ---
 
 <p align="center">
-  <a href="https://sl.jonaslsa.com">Turn the tiny program into the product.</a>
+  <a href="https://smartlinks.jonaslsa.com">Turn the tiny program into the product.</a>
 </p>

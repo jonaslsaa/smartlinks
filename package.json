@@ -18,7 +18,7 @@
     "type": "git",
     "url": "git+https://github.com/jonaslsaa/smartlinks.git"
   },
-  "homepage": "https://sl.jonaslsa.com",
+  "homepage": "https://smartlinks.jonaslsa.com",
   "engines": {
     "node": ">=18.18"
   },

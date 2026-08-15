@@ -15,7 +15,7 @@
   ],
   "vars": {
     "ACTIVE_KEY_ID": "1",
-    "LANDING_URL": "https://sl.jonaslsa.com/"
+    "LANDING_URL": "https://smartlinks.jonaslsa.com/"
   },
   "ratelimits": [
     {
