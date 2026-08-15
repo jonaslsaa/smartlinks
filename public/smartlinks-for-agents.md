@@ -132,6 +132,7 @@ script. The private key remains a Worker secret.
 Encryption hides values from URL inspection; it does not make the execution URL private. Anyone
 with the complete URL can invoke the script with its sealed authority. Prefer narrowly scoped,
 revocable credentials. Avoid inline `NAME=value` secrets because shell history can retain them.
+If there is a frontend, be careful not to leak secrets to the client.
 
 ## Runtime and link limits
 
