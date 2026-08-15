@@ -105,14 +105,14 @@ delegation tool: it hands out smaller, purpose-built child links that carry only
 chose — narrower scope, shorter life, sealed credentials the child's holder never sees.
 
 ```ts
-const deploy = async (childCtx: typeof ctx, repo: string) => {
+const deploy = async (ctx: SmartlinksContext, repo: string) => {
   const response = await fetch(
     `https://api.github.com/repos/${repo}/actions/workflows/deploy.yml/dispatches`,
     {
       method: "POST",
       headers: {
         accept: "application/vnd.github+json",
-        authorization: `Bearer ${childCtx.secrets.GITHUB_TOKEN}`,
+        authorization: `Bearer ${ctx.secrets.GITHUB_TOKEN}`,
         "user-agent": "smartlinks",
         "x-github-api-version": "2022-11-28",
       },

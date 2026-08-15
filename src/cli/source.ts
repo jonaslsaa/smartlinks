@@ -73,6 +73,7 @@ type __SmartlinksContext = {
   };
   compile: __SmartlinksCompile;
 };
+type SmartlinksContext = __SmartlinksContext;
 type __SmartlinksLiteralResponse = {
   status?: number;
   headers?: Record<string, string>;
