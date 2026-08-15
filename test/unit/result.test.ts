@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { RUNTIME_CONTENT_SECURITY_POLICY } from "../../src/shared/response-security.js";
+import {
+  RUNTIME_CONTENT_SECURITY_POLICY,
+  SMARTLINKS_PREVIEW_HEADER,
+} from "../../src/shared/response-security.js";
 import {
   InvalidScriptResponseError,
   MAX_BINARY_RESPONSE_BYTES,
@@ -32,6 +35,7 @@ describe("script result mapping", () => {
         "content-security-policy": authorPolicy,
         "referrer-policy": "unsafe-url",
         "set-cookie": "ambient=state; Path=/r/",
+        [SMARTLINKS_PREVIEW_HEADER]: "1",
         "x-content-type-options": "off",
         "x-frame-options": "SAMEORIGIN",
         "x-test": "yes",
@@ -45,6 +49,7 @@ describe("script result mapping", () => {
       `${authorPolicy}, ${RUNTIME_CONTENT_SECURITY_POLICY}`,
     );
     expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBeNull();
     expectRuntimeSecurityHeaders(response);
     await expect(response.text()).resolves.toBe("done");
   });

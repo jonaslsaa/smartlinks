@@ -289,6 +289,7 @@ return {
     "clear-site-data": "*",
     "content-type": "application/json",
     "set-cookie": "ambient=state; Path=/r/",
+    "x-smartlinks-preview": "1",
     "x-smartlinks-e2e": "run",
   },
   body: JSON.stringify(received),
@@ -325,6 +326,7 @@ return {
     assert.equal(response.headers["clear-site-data"], undefined);
     assert.equal(response.headers["content-type"], "application/json");
     assert.equal(response.headers["set-cookie"], undefined);
+    assert.equal(response.headers["x-smartlinks-preview"], undefined);
     assert.equal(response.headers["x-smartlinks-e2e"], "run");
     assertRuntimeSecurityHeaders(response.headers);
     const received = JSON.parse(response.body);
@@ -552,11 +554,18 @@ return {
       await writeFile(script, 'throw new Error("HEAD must not execute");\n');
       const head = await fetch(server.origin, { method: "HEAD" });
       assert.equal(head.status, 200);
+      assert.equal(head.headers.get("x-smartlinks-preview"), "1");
       assert.equal(await head.text(), "");
+
+      const prefetch = await fetch(server.origin, { headers: { purpose: "prefetch" } });
+      assert.equal(prefetch.status, 200);
+      assert.equal(prefetch.headers.get("x-smartlinks-preview"), "1");
+      assert.equal(await prefetch.text(), "");
 
       await writeFile(script, "const completed = true;\n");
       const defaultPage = await fetch(server.origin, { headers: { accept: "text/html" } });
       assert.equal(defaultPage.status, 200);
+      assert.equal(defaultPage.headers.get("x-smartlinks-preview"), null);
       assertRuntimeSecurityHeaders(defaultPage.headers);
       assert.match(await defaultPage.text(), /Local Smartlinks preview/u);
 

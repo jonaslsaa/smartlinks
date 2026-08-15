@@ -59,8 +59,9 @@ not supply a content type; `content-disposition` remains author-controlled. Ever
 receives the runtime's fixed Content Security Policy, `Referrer-Policy: no-referrer`,
 `X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`. An author CSP is enforced in
 addition to the runtime policy, so it may tighten but cannot weaken the floor; other headers remain
-author-controlled except `set-cookie` and `clear-site-data`. Browser cookie state is deliberately
-unsupported: responses cannot mutate it and requests never expose it to guest code.
+author-controlled except `set-cookie`, `clear-site-data`, and `x-smartlinks-preview`. Browser
+cookie state is deliberately unsupported: responses cannot mutate it and requests never expose it
+to guest code. The preview marker is runtime-owned so an executed response cannot spoof it.
 
 A response can be a complete HTML document. The script cannot read its own URL, but relative
 references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the
@@ -302,7 +303,9 @@ fails open or closed.
   create a child link. Local `run --allow-network` additionally resolves and pins DNS connections
   to validated public addresses.
 - Known crawler, preview, prefetch, and `HEAD` requests do not execute scripts; they receive a
-  non-executing HTTP 200 preview, even after expiry. Detection is intentionally best-effort.
+  non-executing HTTP 200 preview with `x-smartlinks-preview: 1`, even after expiry. Its presence
+  confirms that guest code did not run; absence alone does not prove execution. Detection is
+  intentionally best-effort.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 
 ## Budgeting the payload
