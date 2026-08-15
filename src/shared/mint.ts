@@ -42,7 +42,7 @@ export type SmartlinkCompilerOptions = {
   parent: DecodedPayload;
   parentSecrets: Readonly<Record<string, string>>;
   service: string;
-  getPublicKey: () => PublicKey;
+  getPublicKey: () => PublicKey | Promise<PublicKey>;
   encode: MintEncoder;
   validate: (version: PayloadVersion, source: string) => Promise<void>;
   cryptoBudget: CryptoOperationBudget;
@@ -205,7 +205,7 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
       ...(secretEntries.length ? { a: 1 as const } : {}),
       ...(notAfter === undefined ? {} : { notAfter }),
     };
-    const publicKey = secretEntries.length ? options.getPublicKey() : undefined;
+    const publicKey = secretEntries.length ? await options.getPublicKey() : undefined;
     const sealedEntries = publicKey
       ? await Promise.all(
           secretEntries.map(

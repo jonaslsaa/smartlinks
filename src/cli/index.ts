@@ -49,6 +49,18 @@ if (!globalThis.crypto) {
   Object.defineProperty(globalThis, "crypto", { value: webcrypto });
 }
 
+// Node 18 marks X25519 Web Crypto as experimental even though it is the supported
+// implementation behind our RFC 9180 suite. Suppress only that known warning; preserve all others.
+const originalEmitWarning = process.emitWarning.bind(process) as (...args: unknown[]) => void;
+process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
+  const message = typeof warning === "string" ? warning : warning.message;
+  const type = warning instanceof Error ? warning.name : args[0];
+  if (type === "ExperimentalWarning" && message.includes("X25519 Web Crypto API")) {
+    return;
+  }
+  originalEmitWarning(warning, ...args);
+}) as typeof process.emitWarning;
+
 const DEFAULT_SERVICE_URL = "https://s.jonaslsa.com";
 const LOCAL_SERVICE_URL = "https://smartlinks.local";
 const MAX_LOCAL_COMPILE_REDIRECTS = 10;
@@ -272,18 +284,16 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
 
 async function decryptLocalSecrets(
   decoded: DecodedPayload,
-  localKey: GeneratedKeyPair | undefined,
+  getLocalKey: () => Promise<GeneratedKeyPair>,
 ): Promise<Record<string, string>> {
   const sealed = decoded.envelope.k;
   if (!sealed) {
     return {};
   }
-  if (!localKey) {
-    throw new Error("The compiled local Smartlink has no ephemeral decryption key.");
-  }
   if (decoded.envelope.c?.length && decoded.envelope.a !== 1) {
     throw new Error("Sealed compile closures require complete-artifact binding.");
   }
+  const localKey = await getLocalKey();
 
   return Object.fromEntries(
     await Promise.all(
@@ -308,19 +318,14 @@ async function executeLocalSmartlink(options: {
   context: SandboxContext;
   secrets: Readonly<Record<string, string>>;
   createGuestFetch: () => GuestFetch;
-  localKey: GeneratedKeyPair | undefined;
+  getLocalKey: () => Promise<GeneratedKeyPair>;
 }): Promise<ScriptResult> {
   const cryptoBudget = createCryptoOperationBudget();
   const compile = createSmartlinkCompiler({
     parent: options.decoded,
     parentSecrets: options.secrets,
     service: LOCAL_SERVICE_URL,
-    getPublicKey: () => {
-      if (!options.localKey) {
-        throw new Error("Local compile encryption is unavailable for this script.");
-      }
-      return options.localKey;
-    },
+    getPublicKey: options.getLocalKey,
     encode: async (envelope, version) => encodePayloadForCli(envelope, version),
     validate: async (version, childSource) => validateScript(version, childSource),
     cryptoBudget,
@@ -364,7 +369,11 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
           );
         };
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
-  const localKey = closures.length ? await generateKeyPair(1) : undefined;
+  let localKey: Promise<GeneratedKeyPair> | undefined;
+  const getLocalKey = () => {
+    localKey ??= generateKeyPair(1);
+    return localKey;
+  };
   const parent = {
     version: "2" as const,
     envelope: {
@@ -389,7 +398,7 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     context,
     secrets,
     createGuestFetch,
-    localKey,
+    getLocalKey,
   });
   let followed = 0;
   while (true) {
@@ -407,7 +416,7 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     if (isExpired(decoded.envelope.notAfter)) {
       throw new Error("The compiled local Smartlink has expired.");
     }
-    const childSecrets = await decryptLocalSecrets(decoded, localKey);
+    const childSecrets = await decryptLocalSecrets(decoded, getLocalKey);
     context = {
       params: userParams(url.searchParams),
       paramValues: userParamValues(url.searchParams),
@@ -422,7 +431,7 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
       context,
       secrets: childSecrets,
       createGuestFetch,
-      localKey,
+      getLocalKey,
     });
   }
   const response = mapScriptResult(result);

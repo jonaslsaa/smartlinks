@@ -79,6 +79,7 @@ test("keygen emits a usable key pair for the requested key ID", async () => {
   assert.match(key.publicKey, /^[A-Za-z0-9_-]+$/u);
   assert.match(key.privateKeySecret, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u);
   assert.equal(key.privateKeySecret.split(".")[1], key.publicKey);
+  assert.doesNotMatch(result.stderr, /ExperimentalWarning/u);
 });
 
 test("run passes request values and secrets through the production sandbox", async () => {
@@ -173,6 +174,7 @@ return ctx.compile(child, [ctx.params.name ?? "world"], {
     assert.equal(response.status, 200);
     assert.equal(response.body, "Jonas:local-secret");
     assert.equal(response.headers.location, undefined);
+    assert.equal(result.stderr, "");
   });
 });
 
