@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hardenResponse } from "./response-security.js";
 
 export const MAX_BINARY_RESPONSE_BYTES = 1_048_576;
 
@@ -98,9 +99,11 @@ function decodeBase64Body(value: string): Uint8Array<ArrayBuffer> {
 export function mapScriptResult(input: unknown): Response {
   const result = parseScriptResult(input);
   if (result === undefined) {
-    return new Response("<!doctype html><title>Done</title><p>✓ done</p>", {
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
+    return hardenResponse(
+      new Response("<!doctype html><title>Done</title><p>✓ done</p>", {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      }),
+    );
   }
   if (typeof result === "string") {
     let url: URL;
@@ -112,7 +115,7 @@ export function mapScriptResult(input: unknown): Response {
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       throw new Error("A redirect result must use http: or https:.");
     }
-    return Response.redirect(url.href, 302);
+    return hardenResponse(Response.redirect(url.href, 302));
   }
 
   const headers = new Headers(result.headers);
@@ -129,5 +132,5 @@ export function mapScriptResult(input: unknown): Response {
     status === 204 || status === 205 || status === 304
       ? null
       : (binaryBody?.buffer ?? ("body" in result ? result.body : undefined) ?? "");
-  return new Response(body, { status, headers });
+  return hardenResponse(new Response(body, { status, headers }));
 }

@@ -10,6 +10,10 @@ import {
 } from "../../src/shared/author.js";
 import { toBase64Url } from "../../src/shared/bytes.js";
 import { encodePayload, MAX_DECOMPRESSED_LENGTH } from "../../src/shared/codec.js";
+import {
+  RUNTIME_CONTENT_SECURITY_POLICY,
+  SMARTLINKS_PREVIEW_HEADER,
+} from "../../src/shared/response-security.js";
 import { generateKeyPair, sealSecret } from "../../src/shared/seal.js";
 import { decodeWorkerPayload, inflateRawWithLimit } from "../../src/worker/codec.js";
 import { exchangeGithubIdentity } from "../../src/worker/identity.js";
@@ -71,7 +75,18 @@ describe("Worker routes", () => {
 
   it("executes a CLI-built link with params and sealed secrets", async () => {
     const created = await createSmartlink({
-      source: `return { status: 201, headers: { "x-runtime": "quickjs" }, body: \`\${ctx.params.name}:\${ctx.secrets.TOKEN}\` }`,
+      source: `return {
+        status: 201,
+        headers: {
+          "content-security-policy": "default-src *; script-src *",
+          "referrer-policy": "unsafe-url",
+          "x-smartlinks-preview": "1",
+          "x-content-type-options": "off",
+          "x-frame-options": "SAMEORIGIN",
+          "x-runtime": "quickjs"
+        },
+        body: \`\${ctx.params.name}:\${ctx.secrets.TOKEN}\`
+      }`,
       service: origin,
       secrets: { TOKEN: "sealed-value" },
       publicKey: pair,
@@ -81,7 +96,55 @@ describe("Worker routes", () => {
 
     expect(response.status).toBe(201);
     expect(response.headers.get("x-runtime")).toBe("quickjs");
+    expect(response.headers.get("content-security-policy")).toBe(
+      `default-src *; script-src *, ${RUNTIME_CONTENT_SECURITY_POLICY}`,
+    );
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBeNull();
     await expect(response.text()).resolves.toBe("Jonas:sealed-value");
+  });
+
+  it("hardens the runtime-owned completion page", async () => {
+    const created = await createSmartlink({
+      source: "const completed = true;",
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-security-policy")).toBe(RUNTIME_CONTENT_SECURITY_POLICY);
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBeNull();
+    await expect(response.text()).resolves.toContain("✓ done");
+  });
+
+  it("does not share browser cookie state between Smartlinks", async () => {
+    const created = await createSmartlink({
+      source: `return {
+        headers: {
+          "clear-site-data": "*",
+          "set-cookie": "ambient=state; Path=/r/",
+          "x-author": "preserved"
+        },
+        body: ctx.headers.cookie ?? "no cookie"
+      }`,
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(
+      new Request(created.link, { headers: { cookie: "ambient=state" } }),
+      testEnv(),
+    );
+
+    expect(response.headers.get("clear-site-data")).toBeNull();
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(response.headers.get("x-author")).toBe("preserved");
+    await expect(response.text()).resolves.toBe("no cookie");
   });
 
   it("round-trips guest tokens across executions of the same link only", async () => {
@@ -656,13 +719,23 @@ describe("Worker routes", () => {
       testEnv(),
     );
     expect(response.status).toBe(200);
+    expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBe("1");
     await expect(response.text()).resolves.toContain("Preview requests never execute it");
+
+    const prefetch = await worker.fetch(
+      new Request(`${origin}/r/${payload}`, { headers: { purpose: "prefetch" } }),
+      testEnv(),
+    );
+    expect(prefetch.status).toBe(200);
+    expect(prefetch.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBe("1");
+    await expect(prefetch.text()).resolves.toContain("Preview requests never execute it");
 
     const head = await worker.fetch(
       new Request(`${origin}/r/${payload}`, { method: "HEAD" }),
       testEnv(),
     );
     expect(head.status).toBe(200);
+    expect(head.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBe("1");
     await expect(head.text()).resolves.toBe("");
   });
 

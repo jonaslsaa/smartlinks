@@ -1,5 +1,6 @@
 import {
   createRequestId,
+  guestRequestHeaders,
   localRequestBody,
   lowercaseHeaders,
   RequestBodyTooLargeError,
@@ -85,7 +86,7 @@ export async function executeLocalRequest(
     const url = new URL(request.url);
     const params = userParams(url.searchParams);
     const paramValues = userParamValues(url.searchParams);
-    const headers = lowercaseHeaders(request.headers);
+    const headers = guestRequestHeaders(request.headers);
     const body = await readBoundedRequestBody(request);
     if (options.simulate) {
       simulation = new LocalSimulation(
