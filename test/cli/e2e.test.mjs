@@ -467,9 +467,82 @@ return {
         script,
         'const child = async (_childCtx: typeof ctx, name: string) => ({ body: "compiled:" + name });\nreturn ctx.compile(child, [ctx.params.name ?? "world"]);\n',
       );
-      const compiled = await fetch(`${server.origin}/?name=Browser`);
+      const compiledRedirect = await fetch(`${server.origin}/?name=Browser`, {
+        redirect: "manual",
+      });
+      assert.equal(compiledRedirect.status, 302);
+      const compiledLocation = compiledRedirect.headers.get("location");
+      assert.ok(compiledLocation?.startsWith(`${server.origin}/r/`));
+
+      const compiled = await fetch(compiledLocation);
       assert.equal(compiled.status, 200);
       assert.equal(await compiled.text(), "compiled:Browser");
+
+      await writeFile(
+        script,
+        `
+const leaf = async (leafCtx: typeof ctx, name: string) => ({
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({
+    name,
+    query: leafCtx.params.query,
+    method: leafCtx.method,
+    trace: leafCtx.headers["x-trace"],
+    body: leafCtx.body,
+    delegated: leafCtx.secrets.DELEGATED,
+    undelegated: leafCtx.secrets.LOCAL_TOKEN ?? null,
+  }),
+});
+const child = async (childCtx: typeof ctx) => {
+  const leafUrl = await childCtx.compile(leaf, [childCtx.params.name ?? "world"], {
+    seal: { DELEGATED: childCtx.secrets.DELEGATED! },
+  });
+  return {
+    headers: { "content-type": "text/html" },
+    body: \`<!doctype html><a id="leaf" href="\${leafUrl}">Open leaf</a>\`,
+  };
+};
+const childUrl = await ctx.compile(child, [], {
+  seal: { DELEGATED: ctx.secrets.LOCAL_TOKEN! },
+});
+return {
+  headers: { "content-type": "text/html" },
+  body: \`<!doctype html><a id="child" href="\${childUrl}?name=Browser">Open child</a>\`,
+};
+`,
+      );
+      const parentPage = await fetch(server.origin);
+      assert.equal(parentPage.status, 200);
+      const childHref = (await parentPage.text()).match(/href="([^"]+)"/u)?.[1];
+      assert.ok(childHref?.startsWith(`${server.origin}/r/`));
+      assert.equal(childHref.includes("smartlinks.local"), false);
+
+      await writeFile(
+        script,
+        'throw new Error("Root edits must not replace an immutable child");\n',
+      );
+      const childPage = await fetch(childHref);
+      assert.equal(childPage.status, 200);
+      const leafHref = (await childPage.text()).match(/href="([^"]+)"/u)?.[1];
+      assert.ok(leafHref?.startsWith(`${server.origin}/r/`));
+
+      const leafUrl = new URL(leafHref);
+      leafUrl.searchParams.set("query", "clicked");
+      const leafResponse = await fetch(leafUrl, {
+        method: "POST",
+        headers: { "content-type": "text/plain", "x-trace": "browser-chain" },
+        body: "leaf-body",
+      });
+      assert.equal(leafResponse.status, 200);
+      assert.deepEqual(await leafResponse.json(), {
+        name: "Browser",
+        query: "clicked",
+        method: "POST",
+        trace: "browser-chain",
+        body: "leaf-body",
+        delegated: "local-secret",
+        undelegated: null,
+      });
 
       const binary = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
       await writeFile(

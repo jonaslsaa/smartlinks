@@ -57,9 +57,14 @@ type LocalProgram = {
   source: string;
   closures: readonly string[];
   context: SandboxContext;
+  simulation?: LocalSimulation;
+};
+
+type LocalRuntimeOptions = {
   allowNetwork: boolean;
   blockedHostnames: readonly string[];
-  simulation?: LocalSimulation;
+  followCompiledLinks: boolean;
+  service: string;
 };
 
 type LocalExecutionEnvironment = {
@@ -96,6 +101,7 @@ async function execute(
   decoded: DecodedPayload,
   context: SandboxContext,
   environment: LocalExecutionEnvironment,
+  service: string,
   compileHop: number,
 ): Promise<ScriptResult> {
   const cryptoBudget = createCryptoOperationBudget();
@@ -121,7 +127,7 @@ async function execute(
     compile: createSmartlinkCompiler({
       parent: decoded,
       parentSecrets: context.secrets,
-      service: LOCAL_SERVICE_URL,
+      service,
       getPublicKey: environment.getLocalKey,
       encode: async (envelope, version) => {
         const payload = await encodePayloadForCli(envelope, version);
@@ -134,85 +140,143 @@ async function execute(
   });
 }
 
-function compiledUrl(result: ScriptResult): URL | undefined {
+function compiledUrl(result: ScriptResult, service: string): URL | undefined {
   if (typeof result !== "string") {
     return undefined;
   }
   try {
     const url = new URL(result);
-    return url.origin === LOCAL_SERVICE_URL && /^\/r\/[^/]+$/u.test(url.pathname) ? url : undefined;
+    return url.origin === service && /^\/r\/[^/]+$/u.test(url.pathname) ? url : undefined;
   } catch {
     return undefined;
   }
 }
 
-export async function runLocalProgram(program: LocalProgram): Promise<ScriptResult> {
-  if (program.allowNetwork && program.simulation) {
-    throw new Error("Network access and network simulation cannot be enabled together.");
-  }
-  const nodeFetch = program.allowNetwork ? createNodeFetch() : undefined;
-  const createGuestFetch = (): GuestFetch =>
-    program.simulation
-      ? program.simulation.createGuestFetch(program.blockedHostnames)
-      : nodeFetch
-        ? createGuardedFetch({ fetchImpl: nodeFetch, blockedHostnames: program.blockedHostnames })
-        : async () => {
-            throw new Error(
-              "Network access is disabled. Re-run with --allow-network to enable fetch.",
-            );
-          };
+export type LocalRuntime = {
+  executePayload(payload: string, context: Omit<SandboxContext, "secrets">): Promise<ScriptResult>;
+  executeProgram(program: LocalProgram): Promise<ScriptResult>;
+};
+
+export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
+  const service = options.service;
+  const nodeFetch = options.allowNetwork ? createNodeFetch() : undefined;
   let localKey: Promise<GeneratedKeyPair> | undefined;
   const getLocalKey = () => {
     localKey ??= generateKeyPair(1);
     return localKey;
   };
-  const simulation = program.simulation;
-  const randomBytes = simulation
-    ? (byteCount: number) => simulation.randomBytes(byteCount)
-    : undefined;
-  const environment: LocalExecutionEnvironment = {
-    createGuestFetch,
-    getLocalKey,
-    randomBytes,
-    ...(simulation ? { simulation } : {}),
-    token: localTokenConfiguration(),
-  };
-  let decoded: DecodedPayload = {
-    version: "2",
-    envelope: {
-      s: program.source,
-      ...(program.closures.length ? { c: [...program.closures] } : {}),
-    },
-  };
-  let context = program.context;
-  let result = await execute(decoded, context, environment, 1);
+  const token = localTokenConfiguration();
 
-  for (let followed = 0; ; followed += 1) {
-    const url = compiledUrl(result);
-    if (!url) {
+  const executionEnvironment = (simulation?: LocalSimulation): LocalExecutionEnvironment => {
+    if (options.allowNetwork && simulation) {
+      throw new Error("Network access and network simulation cannot be enabled together.");
+    }
+    const createGuestFetch = (): GuestFetch =>
+      simulation
+        ? simulation.createGuestFetch(options.blockedHostnames)
+        : nodeFetch
+          ? createGuardedFetch({
+              fetchImpl: nodeFetch,
+              blockedHostnames: options.blockedHostnames,
+            })
+          : async () => {
+              throw new Error(
+                "Network access is disabled. Re-run with --allow-network to enable fetch.",
+              );
+            };
+    const randomBytes = simulation
+      ? (byteCount: number) => simulation.randomBytes(byteCount)
+      : undefined;
+    return {
+      createGuestFetch,
+      getLocalKey,
+      randomBytes,
+      ...(simulation ? { simulation } : {}),
+      token,
+    };
+  };
+
+  const executeChain = async (
+    initialDecoded: DecodedPayload,
+    initialContext: SandboxContext,
+    simulation?: LocalSimulation,
+  ): Promise<ScriptResult> => {
+    const environment = executionEnvironment(simulation);
+    let decoded = initialDecoded;
+    let context = initialContext;
+    let result = await execute(decoded, context, environment, service, 1);
+
+    if (!options.followCompiledLinks) {
       return result;
     }
-    if (followed >= MAX_COMPILE_REDIRECTS) {
-      throw new Error(
-        `Local execution followed more than ${MAX_COMPILE_REDIRECTS} compiled Smartlinks.`,
+
+    for (let followed = 0; ; followed += 1) {
+      const url = compiledUrl(result, service);
+      if (!url) {
+        return result;
+      }
+      if (followed >= MAX_COMPILE_REDIRECTS) {
+        throw new Error(
+          `Local execution followed more than ${MAX_COMPILE_REDIRECTS} compiled Smartlinks.`,
+        );
+      }
+      const payload = payloadFromInput(url.href);
+      decoded = decodePayload(payload);
+      if (isExpired(decoded.envelope.notAfter)) {
+        throw new Error("The compiled local Smartlink has expired.");
+      }
+      const secrets = await decryptSecrets(decoded, getLocalKey);
+      simulation?.addSecrets(secrets);
+      context = {
+        params: userParams(url.searchParams),
+        paramValues: userParamValues(url.searchParams),
+        method: "GET",
+        headers: {},
+        body: null,
+        secrets,
+        requestId: createRequestId(),
+      };
+      result = await execute(decoded, context, environment, service, followed + 2);
+    }
+  };
+
+  return {
+    async executePayload(payload, context) {
+      const decoded = decodePayload(payload);
+      if (isExpired(decoded.envelope.notAfter)) {
+        throw new Error("The compiled local Smartlink has expired.");
+      }
+      return executeChain(decoded, {
+        ...context,
+        secrets: await decryptSecrets(decoded, getLocalKey),
+      });
+    },
+    executeProgram(program) {
+      return executeChain(
+        {
+          version: "2",
+          envelope: {
+            s: program.source,
+            ...(program.closures.length ? { c: [...program.closures] } : {}),
+          },
+        },
+        program.context,
+        program.simulation,
       );
-    }
-    const payload = payloadFromInput(url.href);
-    decoded = decodePayload(payload);
-    if (isExpired(decoded.envelope.notAfter)) {
-      throw new Error("The compiled local Smartlink has expired.");
-    }
-    const secrets = await decryptSecrets(decoded, getLocalKey);
-    program.simulation?.addSecrets(secrets);
-    context = {
-      params: userParams(url.searchParams),
-      paramValues: userParamValues(url.searchParams),
-      method: "GET",
-      headers: {},
-      body: null,
-      secrets,
-      requestId: createRequestId(),
-    };
-    result = await execute(decoded, context, environment, followed + 2);
+    },
+  };
+}
+
+export async function runLocalProgram(
+  program: LocalProgram & Pick<LocalRuntimeOptions, "allowNetwork" | "blockedHostnames">,
+): Promise<ScriptResult> {
+  if (program.allowNetwork && program.simulation) {
+    throw new Error("Network access and network simulation cannot be enabled together.");
   }
+  return createLocalRuntime({
+    allowNetwork: program.allowNetwork,
+    blockedHostnames: program.blockedHostnames,
+    followCompiledLinks: true,
+    service: LOCAL_SERVICE_URL,
+  }).executeProgram(program);
 }

@@ -234,11 +234,14 @@ The local dry-run before building a final link.
 - `--json`: machine-readable mapped response, or the simulation report with `--simulate`.
 - `--no-type-check`, `--no-minify`: as above.
 
-`run --serve` serves only the root path on `127.0.0.1:8787` (`--port` overrides; `0` picks a
-free port), re-reads and checks the source for every request, and uses the real browser query
-parameters, method, headers, and body — so the request flags above and `--json` are intentionally
-unavailable. Local secrets, `--allow-network`, `--no-type-check`, and `--no-minify` still apply.
-Serve mode never builds a link, fetches the runtime key, or contacts production.
+`run --serve` serves the root script on `127.0.0.1:8787` (`--port` overrides; `0` picks a free
+port), re-reads and checks that source for every root request, and uses the real browser query
+parameters, method, headers, and body. Local `ctx.compile` returns a clickable URL on the same
+loopback origin; that route executes the immutable child with the real browser request, and
+children may mint further clickable children for the lifetime of the server session. The request
+flags above and `--json` are intentionally unavailable. Local secrets, `--allow-network`,
+`--no-type-check`, and `--no-minify` still apply. Serve mode never builds a production link,
+fetches the runtime key, or contacts production.
 
 `--simulate` traces fetches, blocked fetches, and successful child mints without sending anything:
 every allowed fetch receives HTTP 200, `content-type: application/json`, and `{}`. Runtime-host,
@@ -255,11 +258,16 @@ Base64 body containing an exact secret becomes `bodyRedacted`.
 
 Local execution uses the same wrapper, QuickJS engine, request-context normalization, fetch
 policy, response mapping, and compile validation as production. Local `ctx.compile` seals with an
-ephemeral in-process keypair and returns a local-only `https://smartlinks.local/r/<payload>` URL;
-`run` follows such links in the same process with a ten-hop limit and never contacts `/pk`, uses
-production key material, or publishes a durable bearer link. For binary responses, `--json` emits
-`bodyBase64`; redirected plain stdout receives the exact bytes; an interactive terminal prints a
-byte-count receipt instead of binary data.
+ephemeral in-process keypair. One-shot `run` returns local-only
+`https://smartlinks.local/r/<payload>` URLs and follows them in the same process. In serve mode the
+keypair is stable for the server session and compilation uses the active loopback origin, so links
+embedded in HTML or other responses can be opened later; a child receives only the secrets
+deliberately sealed into its payload, never the root command's undelegated secrets. One-shot `run`
+follows directly returned compiled links with a ten-hop limit; serve mode returns the mapped 302
+so the browser navigates to the child artifact, matching production routing. Local execution never
+contacts `/pk`, uses production key material, or publishes a durable bearer link. For binary
+responses, `--json` emits `bodyBase64`; redirected plain stdout receives the exact bytes; an
+interactive terminal prints a byte-count receipt instead of binary data.
 
 ## `smartlinks decode <link-or-payload> [--json]`
 
