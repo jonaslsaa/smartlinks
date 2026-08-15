@@ -86,7 +86,11 @@ const next = await ctx.crypto.seal({ ...state, step: state.step + 1 }, { context
 
 The same pair covers a **hidden answer** sealed into the link's own URL and compared against a
 guess, a **cooldown** that seals `Date.now()` so the client carries its own rate-limit timer, and
-a **voucher** one link issues and a different link redeems via a shared `options.key`.
+a **voucher** one link issues and a different link redeems via a shared `options.key`:
+
+```ts
+const claim = await ctx.crypto.open(ctx.params.v!, { key: ctx.secrets.VOUCHER_KEY! });
+```
 
 ### Runtime compilation
 
