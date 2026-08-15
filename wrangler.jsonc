@@ -5,6 +5,7 @@
   "compatibility_date": "2026-08-14",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": false,
+  "preview_urls": false,
   "routes": [{ "pattern": "s.jonaslsa.com", "custom_domain": true }],
   "rules": [
     {
@@ -15,7 +16,8 @@
   ],
   "vars": {
     "ACTIVE_KEY_ID": "1",
-    "LANDING_URL": "https://smartlinks.jonaslsa.com/"
+    "LANDING_URL": "https://smartlinks.jonaslsa.com/",
+    "RUNTIME_HOSTNAMES": ["s.jonaslsa.com"]
   },
   "ratelimits": [
     {

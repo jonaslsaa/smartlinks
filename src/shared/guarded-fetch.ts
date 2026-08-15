@@ -39,6 +39,7 @@ type GuardedFetchOptions = {
   fetchImpl?: FetchImplementation;
   maxFetches?: number;
   timeoutMs?: number;
+  blockedHostnames?: readonly string[];
 };
 
 function normalizeHostname(hostname: string): string {
@@ -90,6 +91,14 @@ export function assertPublicUrl(input: string): URL {
   return url;
 }
 
+function assertAllowedUrl(input: string, blockedHostnames: ReadonlySet<string>): URL {
+  const url = assertPublicUrl(input);
+  if (blockedHostnames.has(normalizeHostname(url.hostname))) {
+    throw new Error("Fetches to the Smartlinks runtime are blocked.");
+  }
+  return url;
+}
+
 async function readResponseText(response: Response): Promise<string> {
   const contentLength = response.headers.get("content-length");
   if (contentLength && Number(contentLength) > MAX_FETCH_RESPONSE_BYTES) {
@@ -134,6 +143,7 @@ export function createGuardedFetch(options: GuardedFetchOptions = {}): GuestFetc
   const fetchImpl = options.fetchImpl ?? fetch;
   const maxFetches = options.maxFetches ?? MAX_FETCHES;
   const timeoutMs = options.timeoutMs ?? FETCH_TIMEOUT_MS;
+  const blockedHostnames = new Set((options.blockedHostnames ?? []).map(normalizeHostname));
   let fetchCount = 0;
 
   return async (input, rawOptions) => {
@@ -173,7 +183,7 @@ export function createGuardedFetch(options: GuardedFetchOptions = {}): GuestFetc
       }
       headers.set(name, value);
     }
-    let url = assertPublicUrl(input);
+    let url = assertAllowedUrl(input, blockedHostnames);
     let body = parsedOptions.body;
     for (let redirects = 0; ; redirects += 1) {
       fetchCount += 1;
@@ -198,7 +208,7 @@ export function createGuardedFetch(options: GuardedFetchOptions = {}): GuestFetc
         if (redirects >= MAX_REDIRECTS) {
           throw new Error(`Fetch exceeded the ${MAX_REDIRECTS} redirect limit.`);
         }
-        const nextUrl = assertPublicUrl(new URL(location, url).href);
+        const nextUrl = assertAllowedUrl(new URL(location, url).href, blockedHostnames);
         if (nextUrl.origin !== url.origin) {
           throw new Error("Cross-origin fetch redirects are blocked.");
         }

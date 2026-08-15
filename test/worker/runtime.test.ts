@@ -20,11 +20,12 @@ function testEnv(
   executionRateLimiter: RateLimit = {
     limit: async () => ({ success: true }),
   },
-) {
+): Env & { PRIVATE_KEY_1: string } {
   return {
-    ACTIVE_KEY_ID: "1" as const,
+    ACTIVE_KEY_ID: "1",
     EXECUTION_RATE_LIMITER: executionRateLimiter,
-    LANDING_URL: "https://smartlinks.jonaslsa.com/" as const,
+    LANDING_URL: "https://smartlinks.jonaslsa.com/",
+    RUNTIME_HOSTNAMES: ["s.jonaslsa.com"],
     PRIVATE_KEY_1: pair.privateKeySecret,
   };
 }
@@ -61,6 +62,30 @@ describe("Worker routes", () => {
     expect(response.status).toBe(201);
     expect(response.headers.get("x-runtime")).toBe("quickjs");
     await expect(response.text()).resolves.toBe("Jonas:sealed-value");
+  });
+
+  it("blocks guest fetches to the active runtime and configured aliases", async () => {
+    for (const hostname of ["runtime.example", "s.jonaslsa.com"]) {
+      const created = await createSmartlink({
+        source: `
+          try {
+            await fetch("https://${hostname}/pk");
+            return { body: "unexpected success" };
+          } catch (error) {
+            return { body: String(error) };
+          }
+        `,
+        service: origin,
+        validate: validateWorkerScript,
+      });
+
+      const response = await worker.fetch(new Request(created.link), testEnv());
+
+      expect(response.status).toBe(200);
+      await expect(response.text()).resolves.toContain(
+        "Fetches to the Smartlinks runtime are blocked.",
+      );
+    }
   });
 
   it("mints and executes a sealed child through the real guest bridge", async () => {
