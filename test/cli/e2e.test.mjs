@@ -178,6 +178,48 @@ return ctx.compile(child, [ctx.params.name ?? "world"], {
   });
 });
 
+test("run preserves calendar and PNG response bytes", async () => {
+  const fixtures = [
+    {
+      name: "calendar",
+      bytes: Buffer.from("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n"),
+      headers: { "content-type": "text/calendar" },
+    },
+    {
+      name: "png",
+      bytes: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      headers: undefined,
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const bodyBase64 = fixture.bytes.toString("base64");
+    const source = `
+return {
+  ${fixture.headers ? `headers: ${JSON.stringify(fixture.headers)},` : ""}
+  bodyBase64: ${JSON.stringify(bodyBase64)},
+};
+`;
+
+    await withTemporaryScript("ts", source, async (script) => {
+      const jsonResult = await runCli(["run", script, "--json"]);
+      const output = JSON.parse(jsonResult.stdout);
+
+      assert.equal(output.bodyBase64, bodyBase64, fixture.name);
+      assert.equal(
+        output.headers["content-type"],
+        fixture.headers?.["content-type"] ?? "application/octet-stream",
+        fixture.name,
+      );
+      assert.equal("body" in output, false, fixture.name);
+
+      const rawResult = await runCli(["run", script], { encoding: "buffer" });
+      assert.deepEqual(rawResult.stdout, fixture.bytes, fixture.name);
+      assert.match(rawResult.stderr.toString(), /HTTP 200/u);
+    });
+  }
+});
+
 test("build output round-trips through decode as a URL and raw payload", async () => {
   const keyResult = await runCli(["keygen", "--key-id", "9", "--json"]);
   const key = JSON.parse(keyResult.stdout);

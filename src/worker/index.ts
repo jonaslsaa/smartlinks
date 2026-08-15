@@ -10,7 +10,11 @@ import {
   userParams,
   userParamValues,
 } from "../shared/request-context.js";
-import { mapScriptResult, type ScriptResult } from "../shared/result.js";
+import {
+  InvalidScriptResponseError,
+  mapScriptResult,
+  type ScriptResult,
+} from "../shared/result.js";
 import {
   boundSealedSecrets,
   openSecret,
@@ -155,12 +159,18 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
       compile,
     });
   } catch (error) {
+    if (error instanceof InvalidScriptResponseError) {
+      throw new HttpError(422, error.message, { cause: error });
+    }
     throw new HttpError(422, "The smartlink script failed.", { cause: error });
   }
 
   try {
     return mapScriptResult(result);
   } catch (error) {
+    if (error instanceof InvalidScriptResponseError) {
+      throw new HttpError(422, error.message, { cause: error });
+    }
     throw new HttpError(422, "The smartlink returned an invalid response.", { cause: error });
   }
 }

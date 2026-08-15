@@ -72,6 +72,17 @@ describe("CLI script input", () => {
     ).resolves.toContain("body: await response.text()");
 
     await expect(
+      transpileScriptSource('return { bodyBase64: "iVBORw0KGgo=" };', "binary-response.ts"),
+    ).resolves.toContain('bodyBase64: "iVBORw0KGgo="');
+
+    await expect(
+      transpileScriptSource(
+        'return { body: "text", bodyBase64: "dGV4dA==" };',
+        "ambiguous-response.ts",
+      ),
+    ).rejects.toThrow("Type 'string' is not assignable to type 'undefined'.");
+
+    await expect(
       transpileScriptSource(
         'const signature = await ctx.crypto.hmacSha256("key", "body");\nreturn { body: ctx.requestId + ":" + ctx.paramValues.tag?.join(",") + ":" + signature };',
         "capabilities.ts",

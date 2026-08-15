@@ -19,7 +19,7 @@ import {
   userParams,
   userParamValues,
 } from "../shared/request-context.js";
-import { mapScriptResult } from "../shared/result.js";
+import { isBinaryLiteralResponse, mapScriptResult } from "../shared/result.js";
 import type { SandboxContext } from "../shared/sandbox.js";
 import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
@@ -295,25 +295,45 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     allowNetwork: options.allowNetwork === true,
   });
   const response = mapScriptResult(result);
-  const output = {
-    status: response.status,
-    headers: Object.fromEntries(response.headers),
-    body: await response.text(),
-  };
+  const binary = isBinaryLiteralResponse(result);
+  const binaryBody = binary ? Buffer.from(await response.arrayBuffer()) : undefined;
+  const headers = Object.fromEntries(response.headers);
 
   if (options.json) {
-    console.log(JSON.stringify(output, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          status: response.status,
+          headers,
+          ...(binaryBody === undefined
+            ? { body: await response.text() }
+            : { bodyBase64: binaryBody.toString("base64") }),
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
   if (interactive) {
-    p.note(output.body || "(empty)", `Response · HTTP ${output.status}`);
-    if (Object.keys(output.headers).length) {
-      p.log.info(JSON.stringify(output.headers));
+    if (binaryBody === undefined) {
+      p.note((await response.text()) || "(empty)", `Response · HTTP ${response.status}`);
+    } else {
+      p.note(
+        `${binaryBody.byteLength.toLocaleString()} bytes · use --json for Base64 or redirect stdout for raw bytes`,
+        `Binary response · HTTP ${response.status}`,
+      );
+    }
+    if (Object.keys(headers).length) {
+      p.log.info(JSON.stringify(headers));
     }
     p.outro("Executed locally in a fresh QuickJS sandbox");
+  } else if (binaryBody !== undefined) {
+    process.stdout.write(binaryBody);
+    console.error(`HTTP ${response.status}`);
   } else {
-    console.log(output.body);
-    console.error(`HTTP ${output.status}`);
+    console.log(await response.text());
+    console.error(`HTTP ${response.status}`);
   }
 }
 
