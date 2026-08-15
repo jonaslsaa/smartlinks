@@ -91,9 +91,10 @@ only with that context.
 
 Tokens are replayable — statelessness makes true once-only impossible. Patterns that care embed a
 timestamp in the value and check it after opening. Local executions derive tokens from an
-ephemeral per-process key, so a token minted by one `run` invocation will not open in the next —
-test multi-step flows with `run --serve`, whose key is stable for the session. Local and
-production tokens never interoperate; behavior is otherwise identical.
+ephemeral per-process key by default. For a scripted multi-process walkthrough, set the same
+high-entropy `SMARTLINKS_LOCAL_TOKEN_KEY` (at least 16 bytes) on every `run`; alternatively use
+`run --serve`, whose key is stable for the server session. Tokens remain bound to the exact
+artifact, and local and production tokens never interoperate; behavior is otherwise identical.
 
 The canonical shape — a wizard whose whole session lives in one query parameter:
 

@@ -93,6 +93,25 @@ describe("guest token seal/open", () => {
     await expect(link().open(toBase64Url(versioned))).rejects.toThrow("unsupported version");
   });
 
+  it("adds an optional runtime hint only to transparent-token authentication failures", async () => {
+    const token = await link().seal("state");
+    const hinted = createGuestCrypto({
+      crypto,
+      tokenKeySource: {
+        masterSecret: "different-master-secret",
+        artifactIdentity: identity("return 1"),
+      },
+      tokenOpenFailureHint: "Reuse the local token key.",
+    });
+
+    await expect(hinted.open(token)).rejects.toThrow(
+      "different key or context. Reuse the local token key.",
+    );
+    await expect(hinted.open(token, { key: EXPLICIT_KEY })).rejects.not.toThrow(
+      "Reuse the local token key.",
+    );
+  });
+
   it("requires a configured transparent key only for transparent tokens", async () => {
     await expect(guest().seal("value")).rejects.toThrow("not configured");
     await expect(guest().seal("value", { key: EXPLICIT_KEY })).resolves.toBeDefined();

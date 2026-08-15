@@ -146,6 +146,64 @@ return ctx.compile(child, [await ctx.crypto.random(16)]);
   });
 });
 
+test("run simulation can continue a token flow across processes with a stable local key", async () => {
+  const source = `
+const child = async (_childCtx: typeof ctx, step: number) => ({ body: "step=" + step });
+if (!ctx.params.s) {
+  return { body: await ctx.crypto.seal({ step: 2 }, { context: "wizard" }) };
+}
+const state = await ctx.crypto.open<{ step: number }>(ctx.params.s, { context: "wizard" });
+return ctx.compile(child, [state.step]);
+`;
+
+  await withTemporaryScript("ts", source, async (script) => {
+    const ephemeralEnv = { ...process.env };
+    delete ephemeralEnv.SMARTLINKS_LOCAL_TOKEN_KEY;
+    const ephemeral = await runCli(["run", script, "--simulate", "--json"], {
+      env: ephemeralEnv,
+    });
+    const ephemeralToken = JSON.parse(ephemeral.stdout).response.body;
+    await assert.rejects(
+      runCli(["run", script, "--simulate", "--param", `s=${ephemeralToken}`, "--json"], {
+        env: ephemeralEnv,
+      }),
+      (error) => {
+        const report = JSON.parse(error.stdout);
+        assert.match(report.error, /SMARTLINKS_LOCAL_TOKEN_KEY/u);
+        assert.equal(error.stderr, "");
+        return true;
+      },
+    );
+
+    const localTokenKey = "local-token-key-for-multi-process-tests";
+    const env = { ...process.env, SMARTLINKS_LOCAL_TOKEN_KEY: localTokenKey };
+    const first = await runCli(["run", script, "--simulate", "--json"], { env });
+    const token = JSON.parse(first.stdout).response.body;
+    const continued = await runCli(
+      ["run", script, "--simulate", "--param", `s=${token}`, "--json"],
+      { env },
+    );
+    const report = JSON.parse(continued.stdout);
+
+    assert.equal(report.events[0].type, "compile");
+    assert.equal(report.response.body, "step=2");
+    assert.doesNotMatch(first.stdout + continued.stdout, new RegExp(localTokenKey, "u"));
+    assert.equal(first.stderr, "");
+    assert.equal(continued.stderr, "");
+
+    await assert.rejects(
+      runCli(["run", script, "--json"], {
+        env: { ...process.env, SMARTLINKS_LOCAL_TOKEN_KEY: "too-short" },
+      }),
+      (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /SMARTLINKS_LOCAL_TOKEN_KEY must contain at least 16 bytes/u);
+        return true;
+      },
+    );
+  });
+});
+
 test("run simulation reports execution failures with a nonzero exit", async () => {
   const source = `
 await fetch("https://api.example/start");

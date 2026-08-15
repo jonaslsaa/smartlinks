@@ -50,6 +50,7 @@ export type GuestCryptoOptions = {
   crypto?: Crypto;
   budget?: CryptoOperationBudget;
   tokenKeySource?: GuestTokenKeySource;
+  tokenOpenFailureHint?: string;
   randomBytes?: GuestRandomBytes;
 };
 
@@ -297,8 +298,9 @@ export function createGuestCrypto(configuration: GuestCryptoOptions = {}): Guest
           bufferSource(bytes.subarray(ciphertextStart)),
         );
       } catch {
+        const hint = options?.key === undefined ? configuration.tokenOpenFailureHint : undefined;
         throw new Error(
-          "The token could not be opened. It was tampered with, sealed by a different link, or sealed with a different key or context.",
+          `The token could not be opened. It was tampered with, sealed by a different link, or sealed with a different key or context.${hint ? ` ${hint}` : ""}`,
         );
       }
       return JSON.parse(text(plaintext)) as unknown;
