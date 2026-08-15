@@ -29,7 +29,7 @@ async function copyText(text) {
 
 copyButton?.addEventListener("click", async () => {
   const guideUrl = new URL("/smartlinks-for-agents.md", window.location.origin).href;
-  const prompt = `Read ${guideUrl} and use it as the source of truth for Smartlinks. Help me turn my intent into the smallest suitable Smartlink script, validate it locally with the CLI, and build the final link. Ask only for missing product decisions or credentials. My intent: `;
+  const prompt = `Read ${guideUrl} to understand Smartlinks. Help me turn my intent into the smallest suitable Smartlink script, validate it locally with the CLI, ensure security, and build the final link.`;
 
   try {
     await copyText(prompt);
