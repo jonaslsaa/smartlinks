@@ -1,246 +1,176 @@
-# Smartlinks
+<p align="center">
+  <img src="public/favicon.svg" alt="Smartlinks" width="72" height="72">
+</p>
 
-Smartlinks turns a small JavaScript program into a self-contained URL. The URL is the
-deployment: query parameters become inputs, a fresh QuickJS sandbox runs the script on a
-Cloudflare Worker, and the return value becomes the HTTP response. There are no accounts,
-database records, or stored scripts.
+<h1 align="center">Smartlinks</h1>
 
-Runtime: <https://smartlinks-runtime.jonasvox-2014.workers.dev>
-Landing page: <https://sl.jonaslsa.com>
+<p align="center">
+  <strong>Small programs. One URL. Nothing to deploy.</strong>
+</p>
 
-## Quick start
+<p align="center">
+  Turn a JavaScript or TypeScript function into a self-contained, executable link.
+</p>
 
-Install the CLI from npm:
+<p align="center">
+  <a href="https://sl.jonaslsa.com">Website</a> ·
+  <a href="https://www.npmjs.com/package/@jonaslsa/smartlinks">npm</a> ·
+  <a href="public/smartlinks-for-agents.md">Build with an agent</a>
+</p>
+
+---
+
+Smartlinks is for the useful little bits of server-side logic that do not deserve a project,
+a database, or a deployment pipeline.
+
+A Smartlink can redirect to the latest release, turn parameters into an SVG badge, adapt one
+webhook to another, or trigger an API with a sealed credential. The program lives in the URL;
+a Cloudflare Worker decodes it, runs it in a fresh QuickJS sandbox, and turns the result into an
+HTTP response. Smartlinks stores nothing.
+
+## Make your first Smartlink
+
+Install the CLI:
 
 ```sh
 npm install --global @jonaslsa/smartlinks
 ```
 
-Create `hello.js`. Smartlink scripts are async function bodies, so top-level `await` and
-`return` both work:
+Create `hello.ts`:
 
-```js
+```ts
+const name = ctx.params.name ?? "world";
+
 return {
-  body: `Hello, ${ctx.params.name ?? "world"}!`,
   headers: { "content-type": "text/plain; charset=utf-8" },
+  body: `Hello, ${name}!`,
 };
 ```
 
-Build and try it:
+Try it locally, then build the link:
 
 ```sh
-smartlinks build hello.js --copy
-# Open the copied URL with ?name=Jonas appended.
+smartlinks run hello.ts --param name=Jonas
+smartlinks build hello.ts --copy
 ```
 
-`.ts` files work too. The CLI uses the extension to transpile TypeScript before minification,
-validation, secret sealing, and encoding:
+Open the copied URL with `?name=Jonas`. The CLI also gives you a decoder URL for auditing the
+exact program without running it.
 
-```ts
-type Greeting = { body: string };
+## What can a link do?
 
-const name: string = ctx.params.name ?? "world";
-return { body: `Hello, ${name}!` } satisfies Greeting;
-```
+| Idea | Example |
+| --- | --- |
+| Follow the latest version of a project | [Smart redirect](examples/redirect.js) |
+| Render a badge from query parameters | [SVG status badge](examples/badge.js) |
+| Translate one webhook into another | [Webhook adapter](examples/webhook-adapter.js) |
+| Trigger an authenticated action | [GitHub workflow dispatch](examples/github-workflow-dispatch.js) |
+| Write the function body in TypeScript | [Typed response](examples/typed-response.ts) |
 
-This is syntax transpilation, not project type-checking: run `tsc --noEmit` separately when
-you want type errors checked. Execution links and decoder pages contain the emitted JavaScript,
-so the Worker needs no TypeScript compiler. Files without a `.ts` extension continue through
-the JavaScript path unchanged.
+Smartlink scripts receive one small `ctx` object:
 
-The CLI also prints a `/d/…` audit URL that decodes the script without running it. Add
-`--interstitial` when the execution link itself should show the decoded script and require
-an explicit confirmation POST before running.
+| Value | What it contains |
+| --- | --- |
+| `ctx.params` | Query parameters |
+| `ctx.method` | Incoming HTTP method |
+| `ctx.headers` | Incoming headers with lowercase names |
+| `ctx.body` | Request body as a string, or `null` |
+| `ctx.secrets` | Decrypted plaintext values, keyed by secret name |
+| `ctx.fetch(url, options)` | Guarded HTTP returning `{ status, headers, text }` |
 
-## Script API
-
-Every script receives one plain `ctx` object:
-
-```js
-ctx.params; // query parameters, excluding names beginning with __
-ctx.method; // incoming HTTP method
-ctx.headers; // incoming headers with lowercase names
-ctx.body; // request body as a string, or null
-ctx.secrets; // decrypted secrets by name
-ctx.fetch(url, options); // guarded outbound fetch
-```
-
-`ctx.fetch` accepts `http:` and `https:` URLs and returns a plain
-`{ status, headers, text }` object. It blocks local/private/reserved IP literals and local
-hostnames; the local CLI additionally pins DNS resolution to validated public addresses.
-Cross-origin redirects are rejected so authorization headers and bodies cannot move to a
-different service. Same-origin redirects are limited to three, total requests to five, and
-request/response bodies to 1 MB measured as UTF-8 bytes.
-
-The script may return:
-
-- An absolute `http:` or `https:` URL string for a `302` redirect.
-- `{ status?, headers?, body? }` for a literal response.
-- `undefined` for the default `✓ done` page.
-
-See the ready-to-build examples:
-
-- [Smart redirect](examples/redirect.js)
-- [SVG status badge](examples/badge.js)
-- [Typed response](examples/typed-response.ts)
-- [Webhook adapter](examples/webhook-adapter.js)
-- [GitHub workflow dispatch](examples/github-workflow-dispatch.js)
+Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? }` for a response,
+or return nothing for a small success page. Top-level `await` works.
 
 ## Sealed secrets
 
-Yes: the CLI encrypts secrets with the runtime's **public key**. The private key is
-generated locally, stored as a Cloudflare Worker secret, and never embedded in a
-smartlink.
+Secrets are encrypted locally with the runtime's public key and bound to the exact emitted
+program. Only ciphertext and a key ID enter the URL.
 
 ```sh
 export GITHUB_TOKEN=github_pat_…
-smartlinks build examples/github-workflow-dispatch.js --secret GITHUB_TOKEN
+smartlinks build examples/github-workflow-dispatch.js --secret GITHUB_TOKEN --copy
 ```
 
-For `--secret NAME`, the CLI uses `$NAME` or asks with a hidden TTY prompt. You can also use
-`--secret NAME=value`, but that puts the plaintext in shell history and is usually the wrong
-choice.
+The private key stays in the Cloudflare Worker. This keeps a secret out of the visible and
+decoded link, but it does not make the link private: anyone holding the complete URL can run
+the program with that credential. Use narrowly scoped, revocable secrets.
 
-The complete flow is:
-
-1. The CLI fetches the current key ID and X25519 public key from `/pk`.
-2. It HPKE-encrypts each value with X25519, HKDF-SHA-256, and AES-128-GCM.
-3. The authenticated associated data is the key ID plus the SHA-256 hash of the exact stored
-   script. Moving the ciphertext to a changed or different script makes decryption fail.
-4. Only the ciphertext and key ID are placed in the URL. At execution time, the Worker uses
-   its `PRIVATE_KEY_<id>` secret to decrypt the values immediately before entering QuickJS.
-
-Encryption protects the value from people inspecting or decoding the URL; it does **not**
-make the link private. Anyone holding the complete execution URL can trigger its script with
-the sealed credentials. Use narrowly scoped, revocable credentials and opt into the
-interstitial for human-triggered side effects.
-
-## CLI reference
+## The CLI
 
 ```text
-smartlinks build <script.js|script.ts>
-  [--interstitial]
-  [--secret NAME[=value] ...]
-  [--service URL]
-  [--copy]
-  [--json]
-  [--no-minify]
-
-smartlinks decode <link-or-payload> [--json]
-
-smartlinks run <script.js|script.ts>
-  [--param NAME=value ...]
-  [--secret NAME[=value] ...]
-  [--header NAME=value ...]
-  [--method METHOD]
-  [--body TEXT]
-  [--allow-network]
-  [--json]
-  [--no-minify]
-
-smartlinks keygen [--key-id 1] [--set-worker] [--json]
+smartlinks build <script.js|script.ts>   Build an immutable execution and audit URL
+smartlinks run <script.js|script.ts>     Run locally with the production sandbox
+smartlinks decode <link-or-payload>      Inspect a Smartlink without executing it
+smartlinks keygen                        Create or provision a runtime encryption key
 ```
 
-For `.ts` input, both commands transpile to JavaScript first; `--no-minify` skips minification
-but still removes TypeScript syntax. `smartlinks build` compile-checks the exact emitted
-production wrapper with QuickJS's `compileOnly` mode and discards the temporary bytecode; it
-never executes the script. `smartlinks run` is
-the explicit local execution command and uses the same codec, guarded fetch implementation,
-response mapper, wrapper, and QuickJS engine as production. Its network bridge stays disabled
-unless `--allow-network` is present. Set `SMARTLINKS_URL` to override the baked-in runtime
-without repeating `--service`.
+Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
+include `--secret`, `--interstitial`, `--copy`, `--json`, and `--no-minify`. Local networking is
+off by default; opt in with `smartlinks run --allow-network`.
 
-## Encoding and link length
+TypeScript input is transpiled from the `.ts` extension before validation and encoding. This
+strips types but does not replace project type-checking, so use `tsc --noEmit` when you want
+type errors checked.
 
-Payload version 2 first minifies the complete async function with Terser, stores it in a
-short-key JSON envelope, applies raw DEFLATE level 9, then uses unpadded base64url. The first
-URL character is the payload version. Links are rejected above 7,800 payload characters.
-Source has only a generous one-million-character safety guard for accidentally selected files;
-large input is accepted when minification and compression bring the encoded payload under the
-real URL limit.
+## How the link works
 
-A Base85/Base86-style encoding looks denser in isolation, but most additional alphabet
-characters are reserved or inconsistently handled in URLs. Once those characters are
-percent-encoded, the result is commonly longer and more fragile. Unpadded base64url is the
-best simple portable choice here. Version 1 decoding remains unchanged for old links.
+1. The CLI transpiles, safely minifies, raw-DEFLATE compresses, and base64url-encodes the
+   function body and metadata.
+2. The runtime decodes the URL and opens any sealed secrets.
+3. A fresh QuickJS sandbox runs the function with bounded memory, stack, execution, network,
+   and body sizes.
+4. The return value becomes the HTTP response.
 
-For tiny scripts the compression header/metadata can dominate; for realistic scripts,
-minification plus DEFLATE wins. Use `--no-minify` only when preserving the stored source is
-more valuable than link length.
+The leading payload character versions the format so old links keep working as the codec
+evolves. Payloads are capped at 7,800 characters to remain comfortably below common URL limits.
 
-## Safety and limitations
+## Know the boundary
 
-- Links are immutable. A bug requires creating and distributing a new URL.
-- Anyone with an execution URL can run it, repeatedly. There is no authentication, rate
-  limiting, revocation list, or per-link analytics in v1.
-- Secrets are encrypted, but the Worker necessarily decrypts them while executing the bound
-  script. Prefer least-privilege credentials with independent expiry/revocation.
-- QuickJS provides a separate guest runtime with a 16 MB heap, 512 KB stack, a deterministic
-  1,500-interrupt-poll budget, and 15-second host-wait deadline. Interrupt polls are not
-  calibrated to CPU milliseconds, and external latency is not a measurement of Workers CPU
-  usage. It is a meaningful isolation boundary, not a promise that arbitrary hostile programs
-  are harmless. The [deployed engine spike](docs/engine-spike.md)
-  records why v1 uses original QuickJS rather than QuickJS-NG.
-- Outbound fetch restrictions are intentionally small and best-effort. This is a hobby
-  service, not a general-purpose untrusted-code platform.
-- Slack, Discord, social crawlers, `HEAD`, and explicit prefetch requests receive a no-op
-  preview. Blocklists can never identify every future crawler.
-- Browser and intermediary URL limits vary. Smartlinks enforces a conservative payload cap,
-  but shorter remains better.
+Smartlinks are immutable bearer links. There are no accounts, stored scripts, revocation lists,
+or per-link analytics. Anyone with an execution URL can invoke it repeatedly, and source code is
+intentionally decodable. Use an interstitial for human-triggered side effects and scoped secrets
+for authenticated actions.
+
+The runtime blocks local hostname suffixes, private/local/reserved IP literals, cross-origin
+redirects, and oversized bodies. Local `run --allow-network` is stricter: it also resolves and
+pins DNS connections to validated public addresses. Known crawler, prefetch, and `HEAD` requests
+do not execute scripts. This is a carefully constrained hobby service, not a general-purpose
+hostile-code platform.
+
+## Build with an agent
+
+The landing page's **Coffee for agents** button copies a ready-made prompt. You can also point
+your coding agent directly at the concise [Smartlinks agent guide](public/smartlinks-for-agents.md),
+which describes the format, CLI, runtime contract, and limitations.
 
 ## Development
 
-Requires Node.js 18.18 or newer.
+Smartlinks requires Node.js 18.18 or newer.
 
 ```sh
 npm ci
-npm run build
-npm test
 npm run check
 ```
 
-`npm test` runs both ordinary Vitest tests and integration tests inside Cloudflare's Workers
-runtime. `npm run check` additionally runs Biome, strict TypeScript checks, generated binding
-checks, and a real Wrangler production dry-run.
-
-Releases are created from the **Release npm package** workflow in GitHub Actions. Choose
-`patch`, `minor`, or `major`; choose `current` only to retry a release after its version commit
-was already pushed. The workflow validates `main`, updates the package and CLI versions,
-publishes through npm trusted publishing, and creates the matching GitHub release.
+`npm run check` covers formatting, strict TypeScript, unit tests, Workers-runtime tests,
+generated bindings, and a Wrangler production dry-run.
 
 For local Worker development:
 
 ```sh
 cp .dev.vars.example .dev.vars
+npm run build
 node dist/index.js keygen --key-id 1
-# Put the printed value after PRIVATE_KEY_1= in .dev.vars.
+# Add the printed PRIVATE_KEY_1 value to .dev.vars
 npm run dev
 ```
 
-Never commit `.dev.vars`; it is ignored.
+To deploy your own runtime, run `npx wrangler deploy`, then provision its key with
+`smartlinks keygen --key-id 1 --set-worker`. Set `SMARTLINKS_URL` to the new Worker URL, or pass
+`--service URL` when building links. Never commit `.dev.vars`.
 
-## Deploying and rotating keys
+---
 
-The repository contains one Worker and no storage bindings:
-
-```sh
-npx wrangler deploy
-node dist/index.js keygen --key-id 1 --set-worker
-```
-
-`--set-worker` sends the generated private/public key bundle directly to
-`wrangler secret put PRIVATE_KEY_1`; it does not print the private value. `/pk` derives the
-public response from that secret.
-
-To rotate, generate and store the next ID first, change `ACTIVE_KEY_ID` in `wrangler.jsonc`,
-then deploy. Keep every older `PRIVATE_KEY_<id>` secret that is still referenced by a live
-link. Removing an old key deliberately makes those links unable to decrypt their secrets.
-
-The Worker-origin routes are:
-
-| Route | Purpose |
-| --- | --- |
-| `GET /` | Temporary redirect to the landing page |
-| `ALL /r/<payload>` | Preview, confirm if requested, decrypt, and execute |
-| `GET /d/<payload>` | Decode and audit without executing |
-| `GET /pk` | Current public encryption key and key ID |
+<p align="center">
+  <a href="https://sl.jonaslsa.com">Turn the tiny program into the product.</a>
+</p>
