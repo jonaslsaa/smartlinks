@@ -3,6 +3,8 @@
 PRIVATE_KEY_1=replace-with-base64url-private-key
 # Any long random string; ctx.crypto.seal without an explicit key needs it.
 TOKEN_MASTER_SECRET=replace-with-long-random-string
-# Hosted Smartlinks reserves issuer ID 1. Self-hosters should choose an unused ID from 2 through
-# 255, then keep AUTHOR_CA_KEY_ID and the matching AUTHOR_CA_PUBLIC_KEY_<id> synchronized.
-AUTHOR_CA_PRIVATE_KEY_1=replace-with-base64url-pkcs8-private-key
+# Hosted Smartlinks reserves issuer ID 1. This self-hosted example uses 128; keep the ID, public
+# key, and private-key binding synchronized with `author-keygen --key-id 128` output.
+AUTHOR_CA_KEY_ID=128
+AUTHOR_CA_PUBLIC_KEY_128=replace-with-base64url-public-key
+AUTHOR_CA_PRIVATE_KEY_128=replace-with-base64url-pkcs8-private-key

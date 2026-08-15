@@ -178,9 +178,6 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   if (options.out) {
     await assertOutputDoesNotOverwriteInput(file, options.out);
   }
-  const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
-  const secrets = await resolveSecrets(options.secret, { prompt: interactive });
-  const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
   const author = options.sign ? await readStoredAuthor() : undefined;
   if (options.sign && !author) {
     throw new Error("No author identity is configured. Run smartlinks login first.");
@@ -196,6 +193,9 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
       throw new Error("The local author certificate has expired. Run smartlinks login again.");
     }
   }
+  const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
+  const secrets = await resolveSecrets(options.secret, { prompt: interactive });
+  const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
 
   let publicKey: z.infer<typeof publicKeySchema> | undefined;
   if (Object.keys(secrets).length > 0) {
@@ -233,6 +233,9 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   }
 
   const stats = buildStats(created.link.length, created.payload.length, notAfter);
+  const signingReceipt = author
+    ? { githubLogin: author.certificate[3], overhead: created.signingOverhead }
+    : undefined;
 
   if (options.json) {
     console.log(
@@ -263,15 +266,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   }
   if (interactive) {
     if (options.copy || options.out) {
-      p.outro(
-        buildReceipt(
-          stats,
-          options,
-          author
-            ? { githubLogin: author.certificate[3], overhead: created.signingOverhead }
-            : undefined,
-        ),
-      );
+      p.outro(buildReceipt(stats, options, signingReceipt));
     } else {
       if (fitsInteractiveNote(created.link)) {
         p.note(created.link, "Smartlink");
@@ -280,22 +275,14 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
         p.log.message(created.link);
       }
       p.log.info("Audit: run smartlinks decode with the link above");
-      p.outro(stats);
+      p.outro(buildReceipt(stats, options, signingReceipt));
     }
   } else if (options.copy || options.out) {
-    console.log(
-      buildReceipt(
-        stats,
-        options,
-        author
-          ? { githubLogin: author.certificate[3], overhead: created.signingOverhead }
-          : undefined,
-      ),
-    );
+    console.log(buildReceipt(stats, options, signingReceipt));
   } else {
     console.log(created.link);
     console.error("Audit: run smartlinks decode with the link above");
-    console.error(stats);
+    console.error(buildReceipt(stats, options, signingReceipt));
   }
 }
 
@@ -351,17 +338,6 @@ function wait(milliseconds: number): Promise<void> {
 }
 
 async function loginCommand(): Promise<void> {
-  const existing = await readStoredAuthor();
-  if (existing) {
-    const certificate = await verifyAuthorCertificate(existing.certificate, {
-      issuerPublicKeys: trustedAuthorIssuerKeys(),
-    });
-    if (certificate.status === "valid") {
-      throw new Error(
-        `Already signed in as github.com/${existing.certificate[3]}. Run smartlinks logout before changing identities.`,
-      );
-    }
-  }
   const interactive = startUi("smartlinks login", false);
   const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
   const spinner = interactive ? p.spinner() : undefined;

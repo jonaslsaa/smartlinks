@@ -204,6 +204,16 @@ test("build --sign fails instead of silently producing an unsigned link", async 
         return true;
       },
     );
+
+    await assert.rejects(
+      runCli(["build", join(dirname(script), "missing.ts"), "--sign", "--secret", "TOKEN"]),
+      (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /Run smartlinks login first/u);
+        assert.doesNotMatch(error.stderr, /ENOENT|Secret TOKEN/u);
+        return true;
+      },
+    );
   });
 });
 
@@ -238,6 +248,10 @@ test("build signs with the configured author and decode verifies it offline", as
     assert.match(receipt.stdout, /signed by github\.com\/jonaslsaa · \+[\d,]+ characters/u);
     assert.doesNotMatch(receipt.stdout, /https:\/\/s\.jonaslsa\.com\/r\//u);
     assert.match(await readFile(outputFile, "utf8"), /^https:\/\/s\.jonaslsa\.com\/r\//u);
+
+    const plain = await runCli(["build", script, "--sign"], { env });
+    assert.match(plain.stdout, /^https:\/\/s\.jonaslsa\.com\/r\//u);
+    assert.match(plain.stderr, /signed by github\.com\/jonaslsaa · \+[\d,]+ characters/u);
   });
 });
 
