@@ -19,8 +19,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - name: Verify committed CLI bundle
-        run: git diff --exit-code -- dist
       - name: Smoke-test secret-bearing CLI build
         run: npm run test:cli
 

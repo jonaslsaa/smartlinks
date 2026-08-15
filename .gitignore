@@ -1,6 +1,7 @@
 .vercel
 .wrangler
 coverage
+/dist
 node_modules
 
 .env*
