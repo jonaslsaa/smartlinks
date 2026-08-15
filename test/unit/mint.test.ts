@@ -79,6 +79,18 @@ describe("smartlink minting", () => {
     ).resolves.toMatch(/^https:\/\/runtime\.example\/r\/2/u);
   });
 
+  it("rejects escaped parent-secret bytes in tuple values and object keys", async () => {
+    const secret = 'quote"slash\\line\nseparator\u2028';
+    const compile = await compiler({ parentSecrets: { TOKEN: secret } });
+
+    await expect(compile(0, [{ value: secret }], undefined)).rejects.toThrow(
+      "Pass it through options.seal",
+    );
+    await expect(compile(0, [{ [secret]: "value" }], undefined)).rejects.toThrow(
+      "Pass it through options.seal",
+    );
+  });
+
   it("rejects non-JSON tuples, prototype keys, and oversized argument data", async () => {
     const compile = await compiler();
 

@@ -125,14 +125,31 @@ function childNotAfter(
 function assertNoPlaintextSecrets(
   source: string,
   closures: readonly string[],
+  args: readonly JsonValue[],
   argumentJson: string,
   secrets: Readonly<Record<string, string>>,
 ): void {
+  const containsSecret = (value: JsonValue, secret: string): boolean => {
+    if (typeof value === "string") {
+      return value.includes(secret);
+    }
+    if (Array.isArray(value)) {
+      return value.some((entry) => containsSecret(entry, secret));
+    }
+    if (typeof value === "object" && value !== null) {
+      return Object.entries(value).some(
+        ([name, entry]) => name.includes(secret) || containsSecret(entry, secret),
+      );
+    }
+    return false;
+  };
+
   for (const [name, value] of Object.entries(secrets)) {
     if (
       value &&
       (source.includes(value) ||
         argumentJson.includes(value) ||
+        args.some((argument) => containsSecret(argument, value)) ||
         closures.some((closure) => closure.includes(value)))
     ) {
       throw new Error(
@@ -152,7 +169,7 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
     if (!closure) {
       throw new Error(`Compile closure ${closureIndex} is unavailable.`);
     }
-    const { json: argumentJson } = serializedArguments(rawArgs);
+    const { args, json: argumentJson } = serializedArguments(rawArgs);
     const compileOptions = compileOptionsSchema.parse(rawOptions ?? {});
     const nowSeconds = options.nowSeconds?.() ?? Math.floor(Date.now() / 1_000);
     const notAfter = childNotAfter(
@@ -162,7 +179,7 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
     );
     const interstitial = compileOptions.interstitial ?? options.parent.envelope.i === true;
     const source = compiledChildSource(closure, argumentJson);
-    assertNoPlaintextSecrets(source, closures, argumentJson, options.parentSecrets);
+    assertNoPlaintextSecrets(source, closures, args, argumentJson, options.parentSecrets);
     await options.validate(options.parent.version, source);
 
     const secretEntries = Object.entries(compileOptions.seal ?? {});

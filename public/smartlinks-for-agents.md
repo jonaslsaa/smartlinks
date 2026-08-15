@@ -64,7 +64,7 @@ Options are:
   secrets, deliberately derived values, and generated values are all supported.
 
 One `ctx.compile` attempt is allowed per execution, including failed attempts. Tuple data is
-canonical JSON with a 64 KiB encoded limit, 32-level depth limit, 10,000-value limit, and no
+canonical JSON with a 64 KB encoded limit, 32-level depth limit, 10,000-value limit, and no
 `__proto__` keys. The runtime rejects any decrypted parent-secret bytes found in child source,
 packaged closures, or tuple data; move intentional delegation through `seal`. Each sealed value
 also consumes one of the execution's 16 shared cryptographic operations.
