@@ -240,13 +240,14 @@ parameters, method, headers, and body — so the request flags above and `--json
 unavailable. Local secrets, `--allow-network`, `--no-type-check`, and `--no-minify` still apply.
 Serve mode never builds a link, fetches the runtime key, or contacts production.
 
-`--simulate` traces fetches, blocked fetches, and compiled child hops without sending anything:
+`--simulate` traces fetches, blocked fetches, and successful child mints without sending anything:
 every allowed fetch receives HTTP 200, `content-type: application/json`, and `{}`. Runtime-host,
 URL, method, header, body, redirect, response-size, and five-request guards still apply; no DNS
 lookup occurs. With `--json` the report is stable: normalized input, chronological events, and
-the final mapped response or error. The trace follows locally compiled children without printing
-their bearer URLs. Simulation is for trusted-source authoring, not for deciding whether an
-unknown Smartlink is safe — it covers one control-flow path. Exact supplied secret values are
+the final mapped response or error. A mint is recorded whether its URL is returned, embedded, or
+discarded; the trace follows a locally compiled child only when execution returns its URL, without
+printing the URL in the compile event. Simulation is for trusted-source authoring, not for deciding
+whether an unknown Smartlink is safe — it covers one control-flow path. Exact supplied secret values are
 replaced with `[secret:NAME]` in recorded URLs, headers, bodies, responses, and errors, including
 common URL and JSON encodings; derived or transformed values cannot be recognized, so treat the
 report as potentially sensitive. Binary final responses include `bodyBytes` and `bodyBase64`; a
