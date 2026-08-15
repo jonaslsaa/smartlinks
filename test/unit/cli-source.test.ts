@@ -24,10 +24,72 @@ describe("CLI script input", () => {
     expect(transpiled).not.toContain("satisfies Result");
   });
 
+  it("type-checks Windows-style input paths", async () => {
+    await expect(
+      transpileScriptSource(
+        'const value: string = "windows";\nreturn value;',
+        "C:\\temp\\script.ts",
+      ),
+    ).resolves.toContain('const value = "windows";');
+  });
+
   it("reports TypeScript syntax errors with their source location", async () => {
     await expect(transpileScriptSource("const value: = 1;", "broken.ts")).rejects.toThrow(
       /Could not transpile broken\.ts: 1:\d+: Type expected\./u,
     );
+  });
+
+  it("rejects semantic TypeScript errors by default", async () => {
+    await expect(
+      transpileScriptSource('const value: number = "wrong";\nreturn value;', "typed.ts"),
+    ).rejects.toThrow(
+      "Could not type-check typed.ts: 1:7: Type 'string' is not assignable to type 'number'.",
+    );
+
+    await expect(
+      transpileScriptSource('const echo = (value) => value;\nreturn echo("strict");', "strict.ts"),
+    ).rejects.toThrow("Parameter 'value' implicitly has an 'any' type.");
+  });
+
+  it("checks the Smartlink context and response contract", async () => {
+    await expect(
+      transpileScriptSource("return { body: ctx.missing };", "context.ts"),
+    ).rejects.toThrow("Property 'missing' does not exist on type '__SmartlinksContext'.");
+
+    await expect(transpileScriptSource("return { body: 123 };", "response.ts")).rejects.toThrow(
+      "Type 'number' is not assignable to type 'string'.",
+    );
+
+    await expect(
+      transpileScriptSource('return await ctx.fetch("https://example.com");', "fetch-response.ts"),
+    ).rejects.toThrow("Type '__SmartlinksFetchResponse' is not assignable");
+
+    await expect(
+      transpileScriptSource(
+        'const response = await ctx.fetch("https://example.com");\nreturn { body: response.text };',
+        "mapped-fetch-response.ts",
+      ),
+    ).resolves.toContain("body: response.text");
+  });
+
+  it("allows an omitted return for the default completion page", async () => {
+    await expect(
+      transpileScriptSource("const name = ctx.params.name;", "no-return.ts"),
+    ).resolves.toContain("const name = ctx.params.name;");
+
+    await expect(transpileScriptSource("return 123;", "invalid-return.ts")).rejects.toThrow(
+      "Type 'number' is not assignable to type '__SmartlinksResult'.",
+    );
+  });
+
+  it("can explicitly skip semantic type checking", async () => {
+    const transpiled = await transpileScriptSource(
+      'const value: number = "runtime";\nreturn value;',
+      "unchecked.ts",
+      { typeCheck: false },
+    );
+
+    expect(transpiled).toContain('const value = "runtime";');
   });
 
   it("rejects oversized raw TypeScript before erasable syntax can hide it", async () => {

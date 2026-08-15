@@ -61,6 +61,10 @@ test("the built CLI exposes its version and public subcommands", async () => {
 
   const buildHelp = await runCli(["help", "build"]);
   assert.doesNotMatch(buildHelp.stdout, /--service\b/u);
+  assert.match(buildHelp.stdout, /--no-type-check\b/u);
+
+  const runHelp = await runCli(["help", "run"]);
+  assert.match(runHelp.stdout, /--no-type-check\b/u);
 });
 
 test("keygen emits a usable key pair for the requested key ID", async () => {
@@ -188,6 +192,28 @@ test("build output round-trips through decode as a URL and raw payload", async (
   } finally {
     await close(server);
   }
+});
+
+test("TypeScript is checked by default and can be explicitly transpiled without checking", async () => {
+  const source = 'const value: number = "runtime";\nreturn { body: String(value) };\n';
+
+  await withTemporaryScript("ts", source, async (script) => {
+    await assert.rejects(runCli(["build", script, "--json"]), (error) => {
+      assert.equal(error.stdout, "");
+      assert.match(error.stderr, /Could not type-check .*script\.ts/u);
+      assert.match(error.stderr, /Type 'string' is not assignable to type 'number'/u);
+      return true;
+    });
+
+    const built = JSON.parse((await runCli(["build", script, "--no-type-check", "--json"])).stdout);
+    assert.match(built.link, /^https:\/\/s\.jonaslsa\.com\/r\/2/u);
+
+    const response = JSON.parse(
+      (await runCli(["run", script, "--no-type-check", "--json"])).stdout,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.body, "runtime");
+  });
 });
 
 test("run rejects a missing non-interactive secret", async () => {

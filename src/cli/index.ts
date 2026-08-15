@@ -41,6 +41,7 @@ type BuildOptions = {
   interstitial?: boolean;
   secret: string[];
   minify: boolean;
+  typeCheck: boolean;
   copy?: boolean;
   json?: boolean;
 };
@@ -53,6 +54,7 @@ type RunOptions = {
   method: string;
   body?: string;
   minify: boolean;
+  typeCheck: boolean;
   json?: boolean;
 };
 
@@ -78,7 +80,7 @@ async function fetchPublicKey(service: string): Promise<z.infer<typeof publicKey
 
 async function buildCommand(file: string, options: BuildOptions): Promise<void> {
   const interactive = startUi("smartlinks build", options.json === true);
-  const originalSource = await readScriptSource(file);
+  const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
   const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
 
@@ -168,7 +170,7 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
 
 async function runCommand(file: string, options: RunOptions): Promise<void> {
   const interactive = startUi("smartlinks run", options.json === true);
-  const originalSource = await readScriptSource(file);
+  const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
   const source = options.minify
     ? await minifyScriptBody(originalSource)
     : wrapScriptBody(originalSource);
@@ -299,6 +301,7 @@ program
   .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
   .option("--copy", "copy the finished link to the clipboard")
   .option("--json", "print machine-readable output")
+  .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
   .addOption(new Option("--no-minify", "skip JavaScript minification"))
   .action(buildCommand);
 
@@ -320,6 +323,7 @@ program
   .option("--body <text>", "request body")
   .option("--allow-network", "allow guarded outbound ctx.fetch calls")
   .option("--json", "print machine-readable output")
+  .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
   .addOption(new Option("--no-minify", "skip JavaScript minification"))
   .action(runCommand);
 

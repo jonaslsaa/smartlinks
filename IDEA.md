@@ -134,8 +134,9 @@ link formats can never drift. Commands:
 
 ```
 smartlinks build <script.js|script.ts> [--interstitial] [--secret NAME[=value]]
-    # compress + encode; fetch /pk and HPKE-seal secrets bound to the
-    # script's hash; print the finished link + character count.
+    # strictly type-check .ts input, transpile, compress + encode; fetch /pk
+    # and HPKE-seal secrets bound to the script's hash; print the finished
+    # link + character count.
     # --secret NAME without a value reads $NAME from the environment, or
     # prompts on a TTY — so secrets stay out of shell history.
 
@@ -143,9 +144,12 @@ smartlinks decode <link | payload>
     # print the pretty-printed script + envelope metadata
 
 smartlinks run <script.js|script.ts> [--param a=1 ...] [--method POST] [--body ...]
-    # execute locally in the same QuickJS sandbox as production, with
-    # fake ctx; secrets provided via env. Prints the mapped response.
+    # type-check .ts input and execute locally in the same QuickJS sandbox as
+    # production, with fake ctx; secrets provided via env. Prints the mapped
+    # response.
 ```
+
+Both TypeScript commands accept `--no-type-check` to transpile without semantic checking.
 
 The public CLI uses the baked-in service domain. Runtime operators and
 self-hosters can override it with `SMARTLINKS_URL`.

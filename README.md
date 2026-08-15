@@ -104,17 +104,17 @@ smartlinks decode <link-or-payload>      Inspect a Smartlink without executing i
 ```
 
 Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
-include `--secret`, `--interstitial`, `--copy`, `--json`, and `--no-minify`. Local networking is
-off by default; opt in with `smartlinks run --allow-network`.
+include `--secret`, `--interstitial`, `--copy`, `--json`, `--no-minify`, and `--no-type-check`.
+Local networking is off by default; opt in with `smartlinks run --allow-network`.
 
-TypeScript input is transpiled from the `.ts` extension before validation and encoding. This
-strips types but does not replace project type-checking, so use `tsc --noEmit` when you want
-type errors checked.
+TypeScript input is strictly type-checked against the Smartlinks `ctx` and response contract,
+then transpiled from the `.ts` extension before validation and encoding. Use `--no-type-check`
+to explicitly skip semantic checking and only strip the types.
 
 ## How the link works
 
-1. The CLI transpiles, safely minifies, raw-DEFLATE compresses, and base64url-encodes the
-   function body and metadata.
+1. The CLI type-checks TypeScript, transpiles it, safely minifies, raw-DEFLATE compresses, and
+   base64url-encodes the function body and metadata.
 2. The runtime decodes the URL and opens any sealed secrets.
 3. A fresh QuickJS sandbox runs the function with bounded memory, stack, execution, network,
    and body sizes.

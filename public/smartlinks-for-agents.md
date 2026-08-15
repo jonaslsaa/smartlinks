@@ -5,10 +5,10 @@ Use this document as the operational contract when helping someone create a Smar
 ## What Smartlinks is
 
 [Smartlinks](https://github.com/jonaslsaa/smartlinks) turns a JavaScript or TypeScript function body into a self-contained executable URL.
-The CLI transpiles TypeScript when the input filename ends in `.ts`, optionally minifies the
-emitted JavaScript, validates the exact stored wrapper with QuickJS, seals requested secrets,
-compresses the payload, and returns an execution URL. No script or per-link record is stored by
-the service.
+The CLI strictly type-checks TypeScript against the Smartlinks runtime contract when the input
+filename ends in `.ts`, transpiles it, optionally minifies the emitted JavaScript, validates the
+exact stored wrapper with QuickJS, seals requested secrets, compresses the payload, and returns
+an execution URL. No script or per-link record is stored by the service.
 
 The execution URL carries the script and encrypted secret blobs. A Cloudflare Worker decodes the
 payload, decrypts secrets, creates a fresh QuickJS runtime, supplies a small request context, and
@@ -31,9 +31,10 @@ The script receives `ctx` with:
 Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` for a literal
 response, or `undefined` for the default completion page.
 
-TypeScript support is syntax transpilation, not project type-checking. Use the `.ts` extension to
-enable it. The execution link and decoder contain emitted JavaScript. `--no-minify` still
-transpiles TypeScript.
+TypeScript is checked in isolation with strict compiler settings and built-in types for `ctx`,
+`ctx.fetch`, and valid script results. Smartlinks does not load a project `tsconfig` or resolve
+imports. The execution link and decoder contain emitted JavaScript. `--no-type-check` skips
+semantic checking but still transpiles TypeScript; `--no-minify` still transpiles it as well.
 
 ## CLI discovery
 
@@ -51,9 +52,10 @@ Treat installed CLI help as authoritative:
 - `smartlinks help run`
 - `smartlinks help decode`
 
-There is no separate `compile` command. `build` performs transpilation, minification, compile-only
-QuickJS validation, secret sealing, compression, and link creation without executing the guest
-script. There is no command named `dry-run`; `run` is the local execution and validation path.
+There is no separate `compile` command. `build` performs TypeScript checking and transpilation,
+minification, compile-only QuickJS validation, secret sealing, compression, and link creation
+without executing the guest script. There is no command named `dry-run`; `run` is the local
+execution and validation path.
 
 ## `smartlinks build <script.js|script.ts>`
 
@@ -61,6 +63,7 @@ script. There is no command named `dry-run`; `run` is the local execution and va
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline values.
 - `--copy`: copy the execution URL.
 - `--json`: emit machine-readable output only.
+- `--no-type-check`: skip strict semantic checking for TypeScript; syntax must still transpile.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
 
 The command produces an execution URL; `--json` also includes its non-executing decoder URL. Pass
@@ -78,6 +81,7 @@ Use this as the local dry-run before building a final link.
 - `--body TEXT`: set a request body; invalid for `GET` and `HEAD`.
 - `--allow-network`: enable guarded `ctx.fetch`; networking is disabled by default locally.
 - `--json`: emit the mapped response as machine-readable output.
+- `--no-type-check`: skip strict semantic checking for TypeScript; syntax must still transpile.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
 
 Local execution uses the same wrapper, QuickJS engine, request-context normalization, general
