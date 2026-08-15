@@ -172,7 +172,7 @@ endpoint. Keep parent links private or verify a signed request before compiling.
 
 Smartlinks requires Node.js 24 or newer: `npm install --global @jonaslsa/smartlinks`, then treat
 the installed help as authoritative (`smartlinks --help`, `help build`, `help run`,
-`help decode`). There is no `compile` or `dry-run` command: `build` performs the whole pipeline
+`help decode`, `help whoami`). There is no `compile` or `dry-run` command: `build` performs the whole pipeline
 without executing the script (QuickJS validation is compile-only); `run` is the local execution
 and validation path.
 
@@ -189,9 +189,9 @@ secrets nothing is fetched, so a wrong value silently emits links to a host that
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline.
 - `--expires VALUE`: a duration (`30m`, `1h`, `7d`) or absolute ISO 8601 date, stored as integer
   Unix seconds in UTC; past dates are rejected.
-- `--copy`: copy the execution URL and print only a compact size receipt.
-- `--out FILE`: write the URL to a file and print the receipt; new and existing files are set to
-  owner-only permissions on POSIX. The file ends with a trailing newline; trim it when scripting.
+- `--copy`: copy the execution URL and print only a compact fingerprint and size receipt.
+- `--out FILE`: write the URL to a file and print the fingerprint and size receipt; new and
+  existing files are set to owner-only permissions on POSIX.
 - `--json`: machine-readable output; without `--copy` or `--out` it includes the execution URL
   once, never a decoder URL.
 - `--sign`: sign every immutable payload field with the identity configured by `smartlinks login`.
@@ -207,7 +207,9 @@ into reasoning, plans, or other working context. Iterate with `run`, then finish
 `build --out link.txt` (keep the file out of version control) or `--copy` when the user should
 receive the link directly; if clipboard access is unavailable, ask the user to run the final
 command rather than printing the URL. Both modes suppress the URL and report character count,
-payload version, budget usage, and any expiry as an absolute UTC timestamp.
+payload version, budget usage, a short SHA-256 fingerprint, and any expiry as an absolute UTC
+timestamp. Compare the fingerprint when checking an opaque clipboard or file artifact; it is not
+an authenticity guarantee.
 
 ## `smartlinks run <script.js|script.ts>`
 
@@ -259,8 +261,10 @@ and on expired links, so neither expiry nor rate limits affect what a reader lea
 
 `smartlinks login` runs a zero-permission GitHub App device flow, generates a local author key, and
 stores only that private key and its 90-day Smartlinks certificate. The temporary GitHub token is
-discarded during issuance. `smartlinks logout` removes the local author identity. A build requested
-with `--sign` fails rather than silently becoming unsigned when no valid certificate exists.
+discarded during issuance. `smartlinks whoami [--json]` verifies the certificate and local signing
+key without building; it exits nonzero when the identity is missing, expired, or invalid.
+`smartlinks logout` removes the local author identity. A build requested with `--sign` fails rather
+than silently becoming unsigned when no valid certificate exists.
 
 Signing is provenance, not endorsement or additional authority. The Worker rejects invalid signed
 artifacts before execution, while unsigned links remain valid. An expired certificate leaves the
