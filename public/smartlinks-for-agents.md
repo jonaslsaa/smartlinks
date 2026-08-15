@@ -147,4 +147,4 @@ revocable credentials. Avoid inline `NAME=value` secrets because shell history c
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 
 Keep the script small, explicit, and least-privileged. Use `run` first, inspect with `decode`, then
-use `build --out link.txt` or `build --copy` for the final immutable link.
+use `build --out link.txt` or `build --copy` for the final immutable link. IF it is safe to test it, then smoke-test it to see if it works while you work.
