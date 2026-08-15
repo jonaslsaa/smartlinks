@@ -275,7 +275,10 @@ fails open or closed.
 - Encoded payloads are limited to 7,800 characters; raw and emitted source have a
   one-million-character wrong-file guard.
 - Each request gets a fresh QuickJS runtime: 16 MiB heap, 512 KiB stack, deterministic
-  1,500-interrupt-poll budget (not a CPU-time measurement), and a 15-second host-wait deadline.
+  1,500-interrupt-poll budget, and a 15-second host-wait deadline. The platform separately
+  enforces about 10 milliseconds of CPU time per execution — cycles, not wall clock, effectively
+  unmeasurable from inside — which is why the poll budget is a deterministic proxy rather than a
+  CPU-time measurement.
 - `fetch` permits HTTP(S); blocks Smartlinks runtime hostnames, local hostnames, and
   private/local/reserved IP literals; limits same-origin redirects to three, total requests to
   five, request and response bodies to 1 MiB, and each fetch to ten seconds. Cross-origin
