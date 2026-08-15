@@ -37,8 +37,9 @@ The script receives `ctx` with:
   `verifyHmacSha256(key, message, signature, encoding?)` (constant-time),
   `random(byteCount, encoding?)` drawing up to 256 bytes of host entropy, and the `seal`/`open`
   token helpers below. Inputs are strings; encoding is lowercase `hex` (default) or `base64`.
-  At most 16 cryptographic operations per execution, 1 MiB of string input per hashing or HMAC
-  operation.
+  At most 16 cryptographic operations per execution, and 1 MiB of string input per hashing or HMAC
+  operation. `ctx.compile` draws on this budget only through `seal`, one per value; its own
+  one-attempt limit is separate.
 - `compile`: mint one child Smartlink from a statically packaged closure.
 
 Prefer deriving values with `hmacSha256(ctx.secrets.KEY!, ctx.requestId + counter)` when the link
@@ -53,7 +54,8 @@ returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirec
 `bodyUsed`, `text()`, and `json()`; the body can be consumed once. Streams, `Request`, `Blob`,
 `FormData`, cloning, custom redirect modes, and guest abort signals are not supported.
 
-Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` for text,
+Return an absolute HTTP(S) URL for a 302 redirect (return `{ status, headers }` with a `location`
+header for any other redirect status), `{ status?, headers?, body? }` for text,
 `{ status?, headers?, bodyBase64 }` for bytes, or `undefined` for the default completion page.
 `body` and `bodyBase64` are mutually exclusive. `bodyBase64` accepts padded or unpadded Base64,
 is limited to 1 MiB after decoding, and defaults to `application/octet-stream` when headers do
@@ -163,6 +165,9 @@ the installed help as authoritative (`smartlinks --help`, `help build`, `help ru
 `help decode`). There is no `compile` or `dry-run` command: `build` performs the whole pipeline
 without executing the script (QuickJS validation is compile-only); `run` is the local execution
 and validation path.
+
+`SMARTLINKS_URL` overrides the runtime origin, including the host baked into built links; with no
+secrets nothing is fetched, so a wrong value silently emits links to a host that may not exist.
 
 ## `smartlinks build <script.js|script.ts>`
 
@@ -289,7 +294,8 @@ fails open or closed.
 - Execution links are immutable, with no authentication, revocation list, or per-link analytics.
   `notAfter` is checked before sandbox execution; normal expired executions return HTTP 410. A
   script that throws, exhausts a budget, or returns an invalid response shape yields HTTP 422.
-  The hosted runtime is rate-limited for fair use; excess executions return HTTP 429.
+  The hosted runtime allows 60 executions per minute per client IP; excess executions return HTTP
+  429 with `retry-after: 60`.
 - Encoded payloads are limited to 7,800 characters; raw and emitted source have a
   one-million-character wrong-file guard.
 - Each request gets a fresh QuickJS runtime: 16 MiB heap, 512 KiB stack, deterministic
