@@ -108,7 +108,7 @@ export function interstitialPage(
   return html(
     page(
       "Confirm smartlink",
-      `<h1>Review before running</h1><section class="panel system" aria-labelledby="system-warning-heading"><h2 id="system-warning-heading">This link runs a program.</h2><p>Review its author, note, facts, and source before continuing.</p></section>${authorHtml(author)}${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
+      `<h1>Review before running</h1>${authorHtml(author)}${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
     ),
     { headers: { "cache-control": "no-store" } },
   );

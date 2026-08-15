@@ -575,9 +575,7 @@ describe("Worker routes", () => {
     expect(review.headers.get("content-type")).toContain("text/html");
     const reviewHtml = await review.text();
     expect(reviewHtml).toContain("Review before running");
-    expect(reviewHtml).toContain("This link runs a program");
     expect(reviewHtml).toContain("Author-provided note");
-    expect(reviewHtml).toContain('aria-labelledby="system-warning-heading"');
     expect(reviewHtml).toContain('aria-labelledby="author-note-heading"');
     expect(reviewHtml).toContain('aria-labelledby="facts-heading"');
     expect(reviewHtml).toContain(
