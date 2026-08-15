@@ -13,7 +13,12 @@ import { formatStoredScript, minifyScriptBody, wrapScriptBody } from "../../src/
 
 describe("payload codec", () => {
   it("round-trips current payloads", () => {
-    const envelope = { s: "async a=>a.params.to", i: true as const, k: { TOKEN: "AQID" } };
+    const envelope = {
+      s: "async a=>a.params.to",
+      i: true as const,
+      k: { TOKEN: "AQID" },
+      notAfter: 2_000_000_000,
+    };
     const payload = encodePayload(envelope);
 
     expect(payload[0]).toBe(CURRENT_PAYLOAD_VERSION);

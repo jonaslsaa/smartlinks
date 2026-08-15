@@ -7,6 +7,7 @@ export type CreateSmartlinkOptions = {
   source: string;
   service: string;
   interstitial?: boolean;
+  notAfter?: number;
   secrets?: Record<string, string>;
   publicKey?: PublicKey;
   minify?: boolean;
@@ -35,7 +36,17 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
   const sealedEntries = publicKey
     ? await Promise.all(
         secretEntries.map(
-          async ([name, value]) => [name, await sealSecret(value, source, publicKey)] as const,
+          async ([name, value]) =>
+            [
+              name,
+              await sealSecret(
+                value,
+                options.notAfter === undefined
+                  ? { script: source }
+                  : { script: source, notAfter: options.notAfter },
+                publicKey,
+              ),
+            ] as const,
         ),
       )
     : [];
@@ -43,6 +54,7 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
     s: source,
     ...(options.interstitial ? { i: true as const } : {}),
     ...(sealedEntries.length ? { k: Object.fromEntries(sealedEntries) } : {}),
+    ...(options.notAfter !== undefined ? { notAfter: options.notAfter } : {}),
   });
 
   return {

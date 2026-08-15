@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { deflateRawSync } from "node:zlib";
 
 const exec = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -62,6 +63,7 @@ test("the built CLI exposes its version and public subcommands", async () => {
   const buildHelp = await runCli(["help", "build"]);
   assert.doesNotMatch(buildHelp.stdout, /--service\b/u);
   assert.match(buildHelp.stdout, /--no-type-check\b/u);
+  assert.match(buildHelp.stdout, /--expires <duration-or-date>/u);
   assert.match(buildHelp.stdout, /--copy\s+copy the link without printing it/u);
   assert.match(buildHelp.stdout, /--out <file>\s+write the link privately without printing it/u);
 
@@ -179,6 +181,8 @@ test("build output round-trips through decode as a URL and raw payload", async (
                 "--secret",
                 "E2E_TOKEN=value",
                 "--interstitial",
+                "--expires",
+                "2100-01-01T00:00:00Z",
                 "--no-minify",
                 "--json",
               ],
@@ -190,6 +194,9 @@ test("build output round-trips through decode as a URL and raw payload", async (
         assert.match(built.link, new RegExp(`^${service}/r/2`));
         assert.equal("decoder" in built, false);
         assert.equal(built.payloadVersion, 2);
+        assert.equal(built.notAfter, Date.parse("2100-01-01T00:00:00Z") / 1000);
+        assert.equal(built.expiresAt, "2100-01-01T00:00:00.000Z");
+        assert.equal(built.expired, false);
         assert.equal(built.characters, built.link.length);
         assert.equal(built.fits, true);
         assert.equal(typeof built.payloadCharacters, "number");
@@ -200,6 +207,9 @@ test("build output round-trips through decode as a URL and raw payload", async (
         assert.equal(decodedFromUrl.payloadVersion, 2);
         assert.equal(decodedFromUrl.interstitial, true);
         assert.deepEqual(decodedFromUrl.sealedSecrets, ["E2E_TOKEN"]);
+        assert.equal(decodedFromUrl.notAfter, built.notAfter);
+        assert.equal(decodedFromUrl.expiresAt, built.expiresAt);
+        assert.equal(decodedFromUrl.expired, false);
         assert.match(decodedFromUrl.script, /ctx\.params\.name/u);
 
         const payload = new URL(built.link).pathname.slice("/r/".length);
@@ -226,7 +236,14 @@ test("build writes the link as an artifact without repeating it", async () => {
       assert.equal(await readFile(script, "utf8"), source);
 
       const output = join(dirname(script), "link.txt");
-      const result = await runCli(["build", script, "--out", output]);
+      const result = await runCli([
+        "build",
+        script,
+        "--expires",
+        "2100-01-01T00:00:00Z",
+        "--out",
+        output,
+      ]);
       const link = (await readFile(output, "utf8")).trim();
 
       assert.match(link, /^https:\/\/s\.jonaslsa\.com\/r\/2/u);
@@ -234,7 +251,7 @@ test("build writes the link as an artifact without repeating it", async () => {
       assert.match(
         result.stdout,
         new RegExp(
-          `^${link.length.toLocaleString()} characters · payload v2 · fits \\(\\d+% of budget\\) · written to `,
+          `^${link.length.toLocaleString()} characters · payload v2 · fits \\(\\d+% of budget\\) · expires 2100-01-01T00:00:00\\.000Z · written to `,
           "u",
         ),
       );
@@ -243,7 +260,15 @@ test("build writes the link as an artifact without repeating it", async () => {
       if (process.platform !== "win32") {
         await chmod(output, 0o644);
       }
-      const jsonResult = await runCli(["build", script, "--out", output, "--json"]);
+      const jsonResult = await runCli([
+        "build",
+        script,
+        "--expires",
+        "2100-01-01T00:00:00Z",
+        "--out",
+        output,
+        "--json",
+      ]);
       assert.equal(jsonResult.stderr, "");
       assert.doesNotMatch(jsonResult.stdout, /https:\/\//u);
       const json = JSON.parse(jsonResult.stdout);
@@ -252,11 +277,35 @@ test("build writes the link as an artifact without repeating it", async () => {
       assert.equal(json.out, output);
       assert.equal(json.fits, true);
       assert.equal(json.characters, link.length);
+      assert.equal(json.expiresAt, "2100-01-01T00:00:00.000Z");
       if (process.platform !== "win32") {
         assert.equal((await stat(output)).mode & 0o777, 0o600);
       }
     },
   );
+});
+
+test("build rejects invalid or past expiries before producing a link", async () => {
+  await withTemporaryScript("js", 'return "https://example.com";\n', async (script) => {
+    for (const expires of ["yesterday", "2020-01-01T00:00:00Z"]) {
+      await assert.rejects(runCli(["build", script, "--expires", expires, "--json"]), (error) => {
+        assert.equal(error.stdout, "");
+        assert.doesNotMatch(error.stderr, /https:\/\//u);
+        assert.match(error.stderr, /Expected a duration|future date/u);
+        return true;
+      });
+    }
+  });
+});
+
+test("decode flags an expired payload", async () => {
+  const envelope = { s: "async()=>{}", notAfter: 1 };
+  const payload = `2${deflateRawSync(JSON.stringify(envelope), { level: 9 }).toString("base64url")}`;
+  const decoded = JSON.parse((await runCli(["decode", payload, "--json"])).stdout);
+
+  assert.equal(decoded.notAfter, 1);
+  assert.equal(decoded.expiresAt, "1970-01-01T00:00:01.000Z");
+  assert.equal(decoded.expired, true);
 });
 
 test("build copies the link without printing it", {

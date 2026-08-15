@@ -63,6 +63,36 @@ describe("Worker routes", () => {
     await expect(response.text()).resolves.toBe("Jonas:sealed-value");
   });
 
+  it("executes a link before its expiry", async () => {
+    const created = await createSmartlink({
+      source: 'return { body: "still valid" }',
+      service: origin,
+      notAfter: Math.floor(Date.now() / 1_000) + 60 * 60,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+
+    expect(response.status).toBe(200);
+    await expect(response.text()).resolves.toBe("still valid");
+  });
+
+  it("returns 410 before executing an expired script", async () => {
+    const limit = vi.fn(async () => ({ success: true }));
+    const payload = encodePayload({
+      s: "this is not valid JavaScript",
+      i: true,
+      k: { TOKEN: "not-a-valid-sealed-secret" },
+      notAfter: Math.floor(Date.now() / 1_000) - 1,
+    });
+    const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv({ limit }));
+
+    expect(response.status).toBe(410);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.text()).resolves.toContain("This link has expired");
+    expect(limit).not.toHaveBeenCalled();
+  });
+
   it("supplies repeated params, request IDs, and crypto in production", async () => {
     const created = await createSmartlink({
       source: `
@@ -155,7 +185,7 @@ describe("Worker routes", () => {
   });
 
   it("never executes preview or prefetch requests", async () => {
-    const payload = encodePayload({ s: "this is not valid JavaScript" }, "1");
+    const payload = encodePayload({ s: "this is not valid JavaScript", notAfter: 1 });
     const response = await worker.fetch(
       new Request(`${origin}/r/${payload}`, {
         headers: { "user-agent": "Slackbot-LinkExpanding" },
@@ -182,11 +212,19 @@ describe("Worker routes", () => {
     const response = await worker.fetch(new Request(created.decoder), testEnv());
     expect(response.status).toBe(200);
     await expect(response.text()).resolves.toContain("Decoded smartlink");
+
+    const expiredPayload = encodePayload({
+      s: 'return { body: "expired" }',
+      notAfter: Math.floor(Date.now() / 1_000) - 1,
+    });
+    const expired = await worker.fetch(new Request(`${origin}/d/${expiredPayload}`), testEnv());
+    expect(expired.headers.get("cache-control")).toBe("no-store");
+    await expect(expired.text()).resolves.toContain("(expired)");
   });
 
   it("rejects a sealed blob copied to another script", async () => {
     const original = "async()=>({body:'original'})";
-    const blob = await sealSecret("secret", original, pair);
+    const blob = await sealSecret("secret", { script: original }, pair);
     const payload = encodePayload({ s: "async()=>({body:'changed'})", k: { TOKEN: blob } });
     const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());
 
@@ -194,6 +232,26 @@ describe("Worker routes", () => {
     await expect(response.json()).resolves.toMatchObject({
       error: "Sealed secret TOKEN could not be decrypted.",
     });
+  });
+
+  it("rejects a sealed payload whose expiry is stripped or changed", async () => {
+    const source = "async()=>({body:'bound'})";
+    const notAfter = Math.floor(Date.now() / 1_000) + 60 * 60;
+    const blob = await sealSecret("secret", { script: source, notAfter }, pair);
+
+    for (const tamperedNotAfter of [undefined, notAfter + 60]) {
+      const payload = encodePayload({
+        s: source,
+        k: { TOKEN: blob },
+        ...(tamperedNotAfter === undefined ? {} : { notAfter: tamperedNotAfter }),
+      });
+      const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({
+        error: "Sealed secret TOKEN could not be decrypted.",
+      });
+    }
   });
 
   it("returns bounded errors for malformed links and missing routes", async () => {

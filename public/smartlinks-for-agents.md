@@ -78,6 +78,10 @@ execution and validation path.
 
 - `--interstitial`: require a browser confirmation before execution.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline values.
+- `--expires VALUE`: expire the link after a duration (`30m`, `1h`, `7d`) or at an absolute ISO
+  8601 date. The CLI stores the deadline as integer Unix seconds in UTC and rejects past dates.
+  Normal execution requests after it return HTTP 410; crawler, prefetch, and `HEAD` requests remain
+  non-executing HTTP 200 previews.
 - `--copy`: copy the execution URL and print only a compact size receipt.
 - `--out FILE`: write the execution URL to a file and print only a compact size receipt. New and
   existing output files are set to owner-only permissions on POSIX systems.
@@ -101,6 +105,8 @@ the user should receive the final link directly; if clipboard access is unavaila
 to run the final command rather than printing the URL. Both modes suppress the URL and report its
 character count, payload version, and budget usage instead.
 
+When an expiry is present, the receipt also states its absolute UTC timestamp.
+
 ## `smartlinks run <script.js|script.ts>`
 
 Use this as the local dry-run before building a final link.
@@ -121,7 +127,8 @@ URL/method/header/body/count/redirect policy, and response mapping as production
 ## Other commands
 
 `smartlinks decode <link-or-payload> [--json]` inspects the emitted script and metadata without
-executing it or decrypting secrets.
+executing it or decrypting secrets. It renders `notAfter` as an absolute UTC timestamp and marks
+links whose deadline has passed.
 
 ## Secrets and authority
 
@@ -130,14 +137,21 @@ bound to the active key ID and the exact emitted script, so it cannot be moved t
 script. The private key remains a Worker secret.
 
 Encryption hides values from URL inspection; it does not make the execution URL private. Anyone
-with the complete URL can invoke the script with its sealed authority. Prefer narrowly scoped,
-revocable credentials. Avoid inline `NAME=value` secrets because shell history can retain them.
-If there is a frontend, be careful not to leak secrets to the client.
+with the complete URL can invoke the script with its sealed authority until `notAfter`, when
+present. Prefer narrowly scoped, revocable credentials. Avoid inline `NAME=value` secrets because
+shell history can retain them. If there is a frontend, be careful not to leak secrets to the client.
+
+`notAfter` is cryptographically bound to sealed secrets. Altering or removing it from a sealed
+payload makes those secrets fail to decrypt. On a link without sealed secrets, expiry is advisory:
+the Worker still returns HTTP 410 for normal execution requests after the deadline, but anyone can
+decode the public source and build a separate link without that deadline.
 
 ## Runtime and link limits
 
 - Execution links are immutable and have no authentication, revocation list, or per-link
-  analytics. The hosted runtime is rate-limited for fair-use of this service; excess executions return HTTP 429.
+  analytics. An optional `notAfter` deadline is checked before sandbox execution; normal expired
+  executions return HTTP 410. The hosted runtime is rate-limited for fair-use of this service;
+  excess executions return HTTP 429.
 - Encoded payloads are limited to 7,800 characters. Raw and emitted source have a one-million-
   character wrong-file safety guard; minification and compression determine whether the URL fits.
 - Each request gets a fresh QuickJS runtime with a 16 MiB heap, 512 KiB stack, deterministic

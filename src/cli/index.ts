@@ -5,7 +5,13 @@ import * as p from "@clack/prompts";
 import clipboard from "clipboardy";
 import { Command, Option } from "commander";
 import { z } from "zod";
-import { decodePayload, MAX_PAYLOAD_LENGTH, payloadFromInput } from "../shared/codec.js";
+import {
+  decodePayload,
+  formatNotAfter,
+  isExpired,
+  MAX_PAYLOAD_LENGTH,
+  payloadFromInput,
+} from "../shared/codec.js";
 import { createGuardedFetch } from "../shared/guarded-fetch.js";
 import {
   createRequestId,
@@ -19,6 +25,7 @@ import { runScript } from "../shared/sandbox.js";
 import { formatStoredScript, minifyScriptBody, wrapScriptBody } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
 import { createSmartlink } from "./build.js";
+import { parseExpiry } from "./expiry.js";
 import { createNodeFetch } from "./node-fetch.js";
 import { readScriptSource } from "./source.js";
 import { fail, startUi } from "./ui.js";
@@ -43,6 +50,7 @@ type BuildOptions = {
   secret: string[];
   minify: boolean;
   typeCheck: boolean;
+  expires?: string;
   copy?: boolean;
   out?: string;
   json?: boolean;
@@ -69,9 +77,16 @@ function payloadBudgetPercent(payloadLength: number): number {
   return Math.max(1, Math.round((payloadLength / MAX_PAYLOAD_LENGTH) * 100));
 }
 
-function buildStats(linkLength: number, payloadLength: number): string {
+function buildStats(linkLength: number, payloadLength: number, notAfter?: number): string {
   const budgetPercent = payloadBudgetPercent(payloadLength);
-  return `${linkLength.toLocaleString()} characters · payload v2 · fits (${budgetPercent}% of budget)`;
+  return [
+    `${linkLength.toLocaleString()} characters`,
+    "payload v2",
+    `fits (${budgetPercent}% of budget)`,
+    notAfter === undefined ? undefined : `expires ${formatNotAfter(notAfter)}`,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(" · ");
 }
 
 function buildReceipt(stats: string, options: Pick<BuildOptions, "copy" | "out">): string {
@@ -116,6 +131,7 @@ async function fetchPublicKey(service: string): Promise<z.infer<typeof publicKey
 
 async function buildCommand(file: string, options: BuildOptions): Promise<void> {
   const interactive = startUi("smartlinks build", options.json === true);
+  const notAfter = options.expires === undefined ? undefined : parseExpiry(options.expires);
   if (options.out) {
     await assertOutputDoesNotOverwriteInput(file, options.out);
   }
@@ -137,8 +153,12 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     secrets,
     ...(publicKey ? { publicKey } : {}),
     ...(options.interstitial ? { interstitial: true } : {}),
+    ...(notAfter !== undefined ? { notAfter } : {}),
     minify: options.minify,
   });
+  if (isExpired(notAfter)) {
+    throw new Error("The link expired before the build completed. Choose a later expiry.");
+  }
 
   if (options.copy) {
     await clipboard.write(created.link);
@@ -150,7 +170,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     }
   }
 
-  const stats = buildStats(created.link.length, created.payload.length);
+  const stats = buildStats(created.link.length, created.payload.length, notAfter);
 
   if (options.json) {
     console.log(
@@ -160,6 +180,9 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
           characters: created.link.length,
           payloadCharacters: created.payload.length,
           payloadVersion: 2,
+          ...(notAfter === undefined
+            ? {}
+            : { notAfter, expiresAt: formatNotAfter(notAfter), expired: false }),
           budgetPercent: payloadBudgetPercent(created.payload.length),
           fits: true,
           ...(options.copy ? { copied: true } : {}),
@@ -196,10 +219,16 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
 async function decodeCommand(input: string, options: { json?: boolean }): Promise<void> {
   const decoded = decodePayload(payloadFromInput(input));
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
+  const notAfter = decoded.envelope.notAfter;
+  const expiresAt = notAfter === undefined ? null : formatNotAfter(notAfter);
+  const expired = isExpired(notAfter);
   const metadata = {
     payloadVersion: Number(decoded.version),
     interstitial: decoded.envelope.i === true,
     sealedSecrets: Object.keys(decoded.envelope.k ?? {}),
+    notAfter: notAfter ?? null,
+    expiresAt,
+    expired,
   };
 
   if (options.json) {
@@ -210,7 +239,7 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
   if (interactive) {
     p.note(script, "Script");
     p.note(
-      `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}`,
+      `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}\nExpiry: ${expiresAt === null ? "never" : `${expiresAt}${expired ? " (expired)" : ""}`}`,
       "Metadata",
     );
     p.outro("Decoded without executing");
@@ -352,6 +381,7 @@ program
   .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to encode")
   .option("-i, --interstitial", "require browser confirmation before execution")
   .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
+  .option("--expires <duration-or-date>", "expire after a duration or at an ISO 8601 date")
   .option("--copy", "copy the link without printing it")
   .option("--out <file>", "write the link privately without printing it")
   .option("--json", "print machine-readable output")

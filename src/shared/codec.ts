@@ -8,6 +8,7 @@ export const MAX_SCRIPT_LENGTH = 1_000_000;
 // A single JavaScript code unit can occupy six UTF-8 bytes after JSON escaping
 // (for example, a lone surrogate). Keep extra room for envelope metadata and secrets.
 export const MAX_DECOMPRESSED_LENGTH = MAX_SCRIPT_LENGTH * 6 + 64_000;
+export const MAX_NOT_AFTER = 8_640_000_000_000;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
 
 const sealedSecretSchema = z.record(
@@ -20,6 +21,7 @@ export const envelopeSchema = z
     s: z.string().min(1).max(MAX_SCRIPT_LENGTH),
     i: z.literal(true).optional(),
     k: sealedSecretSchema.optional(),
+    notAfter: z.number().int().positive().max(MAX_NOT_AFTER).optional(),
   })
   .strict();
 
@@ -33,6 +35,17 @@ export type DecodedPayload = {
 
 export type RawDeflate = (input: Uint8Array) => Uint8Array;
 export type RawDeflates = readonly [RawDeflate, ...RawDeflate[]];
+
+export function isExpired(
+  notAfter: number | undefined,
+  nowSeconds = Math.floor(Date.now() / 1_000),
+): boolean {
+  return notAfter !== undefined && notAfter <= nowSeconds;
+}
+
+export function formatNotAfter(notAfter: number): string {
+  return new Date(notAfter * 1_000).toISOString();
+}
 
 function inflateWithLimit(compressed: Uint8Array): Uint8Array {
   const chunks: Uint8Array[] = [];

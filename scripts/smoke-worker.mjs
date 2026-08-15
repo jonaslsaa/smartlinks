@@ -74,21 +74,43 @@ const html = await response.text();
 if (!response.ok || !html.includes("<title>Smartlinks</title>")) {
   return { status: 502, body: "Landing fetch failed" };
 }
-return { headers: { "x-smartlinks-smoke": "global-fetch" }, body: "global-fetch-ok" };
+return {
+  headers: { "x-smartlinks-smoke": "sealed-expiry" },
+  body: \`global-fetch-ok:\${ctx.secrets.SMARTLINKS_SMOKE_SECRET}\`,
+};
 `,
   );
 
   const { stdout } = await execFileAsync(
     process.execPath,
-    [join(projectRoot, "dist/index.js"), "build", script, "--json"],
+    [
+      join(projectRoot, "dist/index.js"),
+      "build",
+      script,
+      "--secret",
+      "SMARTLINKS_SMOKE_SECRET",
+      "--expires",
+      "10m",
+      "--json",
+    ],
     {
       cwd: projectRoot,
-      env: { ...process.env, SMARTLINKS_URL: runtimeUrl.origin },
+      env: {
+        ...process.env,
+        SMARTLINKS_SMOKE_SECRET: "sealed-smoke-ok",
+        SMARTLINKS_URL: runtimeUrl.origin,
+      },
     },
   );
   const built = JSON.parse(stdout);
+  assert(built.payloadVersion === 2, "Expected a payload v2 smoke link.");
+  assert(built.expired === false, "Expected a future smoke-link expiry.");
+  assert(
+    typeof built.notAfter === "number" && built.notAfter > Math.floor(Date.now() / 1_000),
+    "Expected the smoke link to include a future notAfter value.",
+  );
 
-  await retry("global fetch smoke", async () => {
+  await retry("sealed expiry and global fetch smoke", async () => {
     const response = await fetch(built.link, {
       redirect: "manual",
       signal: AbortSignal.timeout(30_000),
@@ -96,10 +118,13 @@ return { headers: { "x-smartlinks-smoke": "global-fetch" }, body: "global-fetch-
     const body = await response.text();
     assert(response.status === 200, `Expected Smartlink status 200, received ${response.status}.`);
     assert(
-      response.headers.get("x-smartlinks-smoke") === "global-fetch",
-      "Expected the global fetch smoke response header.",
+      response.headers.get("x-smartlinks-smoke") === "sealed-expiry",
+      "Expected the sealed expiry smoke response header.",
     );
-    assert(body === "global-fetch-ok", `Unexpected global fetch smoke body: ${body}`);
+    assert(
+      body === "global-fetch-ok:sealed-smoke-ok",
+      `Unexpected sealed expiry smoke body: ${body}`,
+    );
   });
 } finally {
   await rm(directory, { recursive: true, force: true });

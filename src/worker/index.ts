@@ -1,6 +1,6 @@
 import { ZodError } from "zod";
 import { isPreviewRequest } from "../shared/bots.js";
-import type { DecodedPayload } from "../shared/codec.js";
+import { type DecodedPayload, isExpired } from "../shared/codec.js";
 import { createGuardedFetch } from "../shared/guarded-fetch.js";
 import {
   createRequestId,
@@ -12,7 +12,7 @@ import { mapScriptResult, type ScriptResult } from "../shared/result.js";
 import { openSecret, publicKeyFromPrivateSecret, sealedSecretKeyId } from "../shared/seal.js";
 import { decodeWorkerPayload } from "./codec.js";
 import { HttpError, json, readBoundedBody } from "./http.js";
-import { decoderPage, interstitialPage, previewPage } from "./pages.js";
+import { decoderPage, expiredPage, interstitialPage, previewPage } from "./pages.js";
 import { runWorkerScript } from "./sandbox.js";
 
 function readStringBinding(env: Env, name: string): string | undefined {
@@ -48,6 +48,7 @@ function routePayload(pathname: string, route: "r" | "d"): string | undefined {
 async function decryptSecrets(
   sealed: Record<string, string> | undefined,
   source: string,
+  notAfter: number | undefined,
   env: Env,
 ): Promise<Record<string, string>> {
   if (!sealed) {
@@ -58,7 +59,14 @@ async function decryptSecrets(
     Object.entries(sealed).map(async ([name, blob]) => {
       const keyId = sealedSecretKeyId(blob);
       try {
-        return [name, await openSecret(blob, source, privateKey(env, keyId))] as const;
+        return [
+          name,
+          await openSecret(
+            blob,
+            notAfter === undefined ? { script: source } : { script: source, notAfter },
+            privateKey(env, keyId),
+          ),
+        ] as const;
       } catch (error) {
         if (error instanceof HttpError) {
           throw error;
@@ -95,6 +103,9 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
   }
 
   const url = new URL(request.url);
+  if (isExpired(decoded.envelope.notAfter)) {
+    return expiredPage();
+  }
   if (decoded.envelope.i) {
     if (request.method === "GET") {
       const action = new URL(url);
@@ -107,7 +118,12 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
   }
 
   await enforceExecutionRateLimit(request, env);
-  const secrets = await decryptSecrets(decoded.envelope.k, decoded.envelope.s, env);
+  const secrets = await decryptSecrets(
+    decoded.envelope.k,
+    decoded.envelope.s,
+    decoded.envelope.notAfter,
+    env,
+  );
   let result: ScriptResult;
   try {
     result = await runWorkerScript({

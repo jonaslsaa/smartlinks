@@ -40,12 +40,16 @@ be fixed, anyone with a link can run it, etc.).
 5. **Sealed secrets**: secrets are encrypted by the CLI with **HPKE
    (RFC 9180, X25519 + ChaCha20-Poly1305 or AES-GCM — use `@hpke/core`)** to
    the service's public key. Critically, the AAD is
-   `keyId || SHA-256(script source)` so a sealed blob only decrypts for the
-   exact script it was sealed for — stolen blobs are useless in other scripts.
+   `keyId || SHA-256(script source) || UTF-8("smartlinks/not-after/" + expiry)`
+   where `expiry` is the exact integer `notAfter` value or `none`. A sealed blob
+   only decrypts for the exact script and expiry state it was sealed for —
+   stolen blobs are useless in other scripts and cannot have expiry removed.
    Private key lives in a worker secret (`wrangler secret`). A **key ID**
    prefixes every sealed blob so the keypair can be rotated additively.
-6. **Versioned encoding**: the payload starts with a version character (`1`).
-   Never change the meaning of `1`; evolve by adding `2`.
+6. **Versioned encoding**: the payload starts with a version character; current
+   links use `2`. While the product has no users, v2 may evolve in place rather
+   than carrying migration code. Once links are in external use, incompatible
+   format changes require a new version.
 7. **Bot/prefetch handling**: link previews and prefetchers must never execute
    scripts (pasting an action link into Slack must not fire it). Detection is
    **blocklist-based** (never an allowlist — curl and webhook senders send no
@@ -65,6 +69,12 @@ be fixed, anyone with a link can run it, etc.).
    /link-local IPs and localhost, cap ~5 subrequests and ~1 MB per response.
 10. **Size budget**: total URL must stay comfortably under 8,000 chars;
     compress aggressively.
+11. **Optional expiry**: `notAfter` is integer Unix seconds in UTC. Normal
+    execution requests after the deadline return HTTP 410 before interstitial,
+    rate limiting, secret decryption, body reading, or sandbox execution.
+    Preview, prefetch, and `HEAD` handling stays non-executing and returns the
+    preview. Expiry is cryptographically bound when secrets are sealed and
+    advisory for secret-free links, whose public source can be rebuilt.
 
 ## URL and envelope format
 
@@ -72,7 +82,7 @@ be fixed, anyone with a link can run it, etc.).
 https://<domain>/r/<payload>?<user params...>
 ```
 
-- `<payload>` = `"1"` + base64url( deflate-raw( UTF-8 JSON envelope ) ).
+- `<payload>` = `"2"` + base64url( deflate-raw( UTF-8 JSON envelope ) ).
   Use `CompressionStream('deflate-raw')` — available in both Node ≥18
   (CLI) and Workers (runner).
 - Envelope JSON (short keys, they're paid for by every link):
@@ -81,12 +91,13 @@ https://<domain>/r/<payload>?<user params...>
 {
   "s": "<script source>",
   "i": true,
-  "k": { "TOKEN": "<base64url sealed blob>" }
+  "k": { "TOKEN": "<base64url sealed blob>" },
+  "notAfter": 2000000000
 }
 ```
 
   `s` = script, `i` = interstitial flag (optional), `k` = sealed secrets by
-  name (optional).
+  name (optional), `notAfter` = expiry as integer Unix seconds (optional).
 - Query params starting with `__` are reserved for the service
   (`__confirm`); all others belong to the script.
 - Sealed blob layout: `keyId (1 byte) || hpke enc || ciphertext`.
@@ -116,8 +127,8 @@ Host↔guest boundary passes plain JSON-able values only.
 
 | Route | Behavior |
 |---|---|
-| `GET /` | Minimal service metadata/health response |
-| `ALL /r/<payload>` | Runner: bot check → interstitial check → decode → decrypt secrets (verify script-hash AAD) → sandbox → map return value to response |
+| `GET /` | Temporary redirect to the public landing page |
+| `ALL /r/<payload>` | Runner: preview check → decode → expiry check → interstitial → rate limit → decrypt secrets (verify script-and-expiry AAD) → read body → sandbox → map return value to response |
 | `GET /d/<payload>` | Decoder: pretty-printed script source + envelope metadata, "audit before you click" page |
 | `GET /pk` | Current public key + key ID (JSON) — the CLI uses this to seal |
 
@@ -136,10 +147,10 @@ repo and **imports the same codec/seal/sandbox modules the worker uses** so
 link formats can never drift. Commands:
 
 ```
-smartlinks build <script.js|script.ts> [--interstitial] [--secret NAME[=value]]
+smartlinks build <script.js|script.ts> [--interstitial] [--secret NAME[=value]] [--expires 7d]
     # strictly type-check .ts input, transpile, compress + encode; fetch /pk
-    # and HPKE-seal secrets bound to the script's hash; print the finished
-    # link + character count.
+    # and HPKE-seal secrets bound to the script and expiry. --copy or --out
+    # keeps the finished link out of terminal output while reporting its size.
     # --secret NAME without a value reads $NAME from the environment, or
     # prompts on a TTY — so secrets stay out of shell history.
 
@@ -161,8 +172,8 @@ self-hosters can override it with `SMARTLINKS_URL`.
 
 1. Wrangler + TypeScript project scaffold (`wrangler.jsonc`, this repo dir).
 2. `src/codec.ts` — envelope encode/decode with version byte. Unit-tested.
-3. `src/seal.ts` — HPKE seal/open with keyId + script-hash AAD. Unit test
-   proving a blob sealed for script A fails to open for script B.
+3. `src/seal.ts` — HPKE seal/open with keyId + script-and-expiry AAD. Unit
+   tests prove a blob fails to open for a different script or altered expiry.
 4. `src/sandbox.ts` — QuickJS execution, ctx bridge, guarded fetch, return
    value mapping. Test: script can't reach host globals; private-IP fetch is
    rejected.
