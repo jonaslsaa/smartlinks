@@ -33,6 +33,7 @@ jobs:
     permissions:
       actions: write
       contents: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -89,7 +90,6 @@ jobs:
           npm version "$RELEASE" --no-git-tag-version
           version="$(node -p "require('./package.json').version")"
           tag="v$version"
-          branch="release/$tag"
 
           if git rev-parse "$tag" >/dev/null 2>&1 || npm view "@jonaslsa/smartlinks@$version" version >/dev/null 2>&1; then
             echo "$tag has already been released." >&2
@@ -98,38 +98,60 @@ jobs:
 
           git add package.json package-lock.json
           git commit -m "Release $tag"
-          git branch -m "$branch"
 
-          echo "branch=$branch" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Push or reuse release branch
+        id: branch
         env:
-          RELEASE_BRANCH: ${{ steps.release.outputs.branch }}
+          TAG: ${{ steps.release.outputs.tag }}
         run: |
-          if git ls-remote --exit-code --heads origin "$RELEASE_BRANCH" >/dev/null; then
-            git fetch origin "$RELEASE_BRANCH"
+          release_branch="release/$TAG"
+
+          branch_matches_release() {
+            git fetch origin "$1"
             git show FETCH_HEAD:package.json > "$RUNNER_TEMP/release-package.json"
             remote_version="$(node -p "require('$RUNNER_TEMP/release-package.json').version")"
-            if [[ "v$remote_version" != "${RELEASE_BRANCH#release/}" || "$(git rev-parse FETCH_HEAD^)" != "$(git rev-parse HEAD^)" ]]; then
-              echo "$RELEASE_BRANCH already exists for a different commit." >&2
+            [[ "v$remote_version" == "$TAG" && "$(git rev-parse FETCH_HEAD^)" == "$(git rev-parse HEAD^)" ]]
+          }
+
+          if git ls-remote --exit-code --heads origin "$release_branch" >/dev/null && ! branch_matches_release "$release_branch"; then
+            release_branch="$release_branch-${GITHUB_SHA::7}"
+          fi
+
+          if git ls-remote --exit-code --heads origin "$release_branch" >/dev/null; then
+            if ! branch_matches_release "$release_branch"; then
+              echo "$release_branch already exists for a different release." >&2
               exit 1
             fi
           else
-            git push --set-upstream origin "$RELEASE_BRANCH"
+            git push origin "HEAD:$release_branch"
           fi
 
-      - name: Show release PR link
+          echo "branch=$release_branch" >> "$GITHUB_OUTPUT"
+
+      - name: Create or reuse release PR
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          RELEASE_BRANCH: ${{ steps.release.outputs.branch }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ steps.branch.outputs.branch }}
           TAG: ${{ steps.release.outputs.tag }}
         run: |
-          pr_url="https://github.com/$GITHUB_REPOSITORY/compare/$DEFAULT_BRANCH...$RELEASE_BRANCH?expand=1"
+          pr_url="$(gh pr list --base "$DEFAULT_BRANCH" --head "$RELEASE_BRANCH" --state open --json url --jq '.[0].url // empty')"
+          if [[ -z "$pr_url" ]]; then
+            pr_url="$(
+              gh pr create \
+                --base "$DEFAULT_BRANCH" \
+                --head "$RELEASE_BRANCH" \
+                --title "Release $TAG" \
+                --body "Bumps the npm package version to ${TAG#v}. Merging this PR publishes the package automatically."
+            )"
+          fi
+
           {
             echo "### $TAG is ready for review"
             echo
-            echo "[$TAG release PR]($pr_url)"
+            echo "[$TAG release PR]($pr_url) is ready for review."
             echo
             echo "The package will be published automatically after the PR passes CI and is merged."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -137,7 +159,7 @@ jobs:
       - name: Start release CI
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_BRANCH: ${{ steps.release.outputs.branch }}
+          RELEASE_BRANCH: ${{ steps.branch.outputs.branch }}
         run: gh workflow run ci.yml --ref "$RELEASE_BRANCH"
 
   detect_release:
