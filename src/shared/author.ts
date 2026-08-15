@@ -6,6 +6,7 @@ const GITHUB_LOGIN = /^(?!-)[A-Za-z0-9-]{1,39}(?<!-)$/u;
 const BASE64URL = /^[A-Za-z0-9_-]+$/u;
 const CERTIFICATE_DOMAIN = utf8("smartlinks/author-certificate/v1\0");
 const ARTIFACT_DOMAIN = utf8("smartlinks/author-artifact/v1\0");
+const KEY_CHECK_DOMAIN = utf8("smartlinks/author-key-check/v1\0");
 
 export const GITHUB_APP_CLIENT_ID = "Iv23liVE6og0SQZEQqSc";
 
@@ -150,6 +151,41 @@ async function verifySignature(
   );
 }
 
+async function signWithAuthorKey(authorKey: AuthorKeyPair, message: Uint8Array): Promise<string> {
+  const signature = toBase64Url(
+    await crypto.subtle.sign(
+      "Ed25519",
+      await importPrivateKey(authorKey.privateKey),
+      Uint8Array.from(message),
+    ),
+  );
+  if (!(await verifySignature(authorKey.publicKey, message, signature))) {
+    throw new Error("The local author private key does not match its public key.");
+  }
+  return signature;
+}
+
+export async function verifyAuthorKeyPair(authorKey: AuthorKeyPair): Promise<void> {
+  await signWithAuthorKey(authorKey, KEY_CHECK_DOMAIN);
+}
+
+function assertAuthorCertificateMatchesKey(
+  certificate: AuthorCertificate,
+  authorKey: AuthorKeyPair,
+): void {
+  if (certificate[4] !== authorKey.publicKey) {
+    throw new Error("The author certificate does not match the local signing key.");
+  }
+}
+
+export async function verifyAuthorCredential(
+  certificate: AuthorCertificate,
+  authorKey: AuthorKeyPair,
+): Promise<void> {
+  assertAuthorCertificateMatchesKey(certificate, authorKey);
+  await verifyAuthorKeyPair(authorKey);
+}
+
 export async function generateAuthorKeyPair(): Promise<AuthorKeyPair> {
   const pair = (await crypto.subtle.generateKey("Ed25519", true, [
     "sign",
@@ -198,23 +234,12 @@ export async function signEnvelope(
   authorKey: AuthorKeyPair,
   nowSeconds = Math.floor(Date.now() / 1_000),
 ): Promise<Envelope> {
-  if (certificate[4] !== authorKey.publicKey) {
-    throw new Error("The author certificate does not match the local signing key.");
-  }
+  assertAuthorCertificateMatchesKey(certificate, authorKey);
   if (certificate[6] <= nowSeconds) {
     throw new Error("The author certificate has expired. Run smartlinks login again.");
   }
   const message = artifactSigningBytes(version, envelope, certificate);
-  const signature = toBase64Url(
-    await crypto.subtle.sign(
-      "Ed25519",
-      await importPrivateKey(authorKey.privateKey),
-      Uint8Array.from(message),
-    ),
-  );
-  if (!(await verifySignature(authorKey.publicKey, message, signature))) {
-    throw new Error("The local author private key does not match its public key.");
-  }
+  const signature = await signWithAuthorKey(authorKey, message);
   return { ...envelope, u: [certificate, signature] };
 }
 

@@ -16,6 +16,13 @@ const storedAuthorSchema = z
 
 export type StoredAuthor = z.infer<typeof storedAuthorSchema>;
 
+export class StoredAuthorAccessError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StoredAuthorAccessError";
+  }
+}
+
 export function authorConfigPath(environment: NodeJS.ProcessEnv = process.env): string {
   if (environment.SMARTLINKS_CONFIG_DIR) {
     return join(environment.SMARTLINKS_CONFIG_DIR, "author.json");
@@ -50,10 +57,12 @@ export async function readStoredAuthor(
     return undefined;
   }
   if (!stats.isFile() || stats.isSymbolicLink()) {
-    throw new Error(`The Smartlinks author credential at ${path} is not a regular file.`);
+    throw new StoredAuthorAccessError(
+      `The Smartlinks author credential at ${path} is not a regular file.`,
+    );
   }
   if (process.platform !== "win32" && (stats.mode & 0o077) !== 0) {
-    throw new Error(
+    throw new StoredAuthorAccessError(
       `The Smartlinks author credential at ${path} is readable by other users. Restrict it to mode 0600.`,
     );
   }
