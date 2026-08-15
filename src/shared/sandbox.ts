@@ -14,7 +14,11 @@ import {
   createGuestCrypto,
   type GuestCrypto,
 } from "./guest-crypto.js";
-import type { GuestCompile } from "./mint.js";
+import {
+  type GuestCompile,
+  MAX_COMPILE_ARGUMENT_DEPTH,
+  MAX_COMPILE_ARGUMENT_VALUES,
+} from "./mint.js";
 import { parseScriptResult, type ScriptResult } from "./result.js";
 import { executableSource } from "./script.js";
 
@@ -49,7 +53,110 @@ type RunScriptOptions = {
 const webApiBootstrap = `
 (() => {
   const hostFetch = globalThis.__smartlinks_host_fetch;
+  const beginCompile = globalThis.__smartlinks_begin_compile;
+  const hostCompile = globalThis.__smartlinks_host_compile;
+  const CompileError = Error;
+  const arrayIsArray = Array.isArray;
+  const arrayPush = Array.prototype.push;
+  const hasOwnProperty = Object.prototype.hasOwnProperty;
+  const jsonStringify = JSON.stringify;
+  const numberFromString = Number;
+  const numberIsFinite = Number.isFinite;
+  const numberIsInteger = Number.isInteger;
+  const objectCreate = Object.create;
+  const objectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+  const objectGetPrototypeOf = Object.getPrototypeOf;
+  const objectPrototype = Object.prototype;
+  const objectSetPrototypeOf = Object.setPrototypeOf;
+  const ownKeys = Reflect.ownKeys;
+  const reflectApply = Reflect.apply;
+  const arrayIndexPattern = /^(?:0|[1-9][0-9]*)$/;
+  const regexpTest = RegExp.prototype.test;
   delete globalThis.__smartlinks_host_fetch;
+  delete globalThis.__smartlinks_begin_compile;
+  delete globalThis.__smartlinks_host_compile;
+
+  function serializeCompileValue(value, depth, state) {
+    state.values += 1;
+    if (state.values > ${MAX_COMPILE_ARGUMENT_VALUES}) {
+      throw new CompileError("Compile arguments may contain at most ${MAX_COMPILE_ARGUMENT_VALUES} values.");
+    }
+    if (depth > ${MAX_COMPILE_ARGUMENT_DEPTH}) {
+      throw new CompileError("Compile arguments may be nested at most ${MAX_COMPILE_ARGUMENT_DEPTH} levels.");
+    }
+    if (value === null || typeof value === "string" || typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "number") {
+      if (!numberIsFinite(value)) {
+        throw new CompileError("Compile arguments may contain only finite numbers.");
+      }
+      return value;
+    }
+    if (arrayIsArray(value)) {
+      const normalized = objectSetPrototypeOf([], null);
+      for (let index = 0; index < value.length; index += 1) {
+        if (!reflectApply(hasOwnProperty, value, [index])) {
+          throw new CompileError("Compile arguments may not contain sparse arrays.");
+        }
+        reflectApply(arrayPush, normalized, [
+          serializeCompileValue(value[index], depth + 1, state),
+        ]);
+      }
+      const keys = ownKeys(value);
+      for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
+        const key = keys[keyIndex];
+        if (
+          key !== "length" &&
+          (typeof key !== "string" ||
+            !reflectApply(regexpTest, arrayIndexPattern, [key]) ||
+            numberFromString(key) >= value.length)
+        ) {
+          throw new CompileError("Compile argument arrays may not contain extra properties.");
+        }
+      }
+      return normalized;
+    }
+    if (typeof value === "object") {
+      const prototype = objectGetPrototypeOf(value);
+      if (prototype !== objectPrototype && prototype !== null) {
+        throw new CompileError("Compile arguments must contain only plain JSON objects.");
+      }
+      const normalized = objectCreate(null);
+      const keys = ownKeys(value);
+      for (let keyIndex = 0; keyIndex < keys.length; keyIndex += 1) {
+        const key = keys[keyIndex];
+        if (typeof key !== "string") {
+          throw new CompileError("Compile arguments may not contain symbol keys.");
+        }
+        if (key === "__proto__") {
+          throw new CompileError('Compile arguments may not contain a "__proto__" key.');
+        }
+        if (!objectGetOwnPropertyDescriptor(value, key)?.enumerable) {
+          throw new CompileError("Compile arguments may not contain non-enumerable properties.");
+        }
+        normalized[key] = serializeCompileValue(value[key], depth + 1, state);
+      }
+      return normalized;
+    }
+    throw new CompileError("Compile arguments must be JSON-serializable values.");
+  }
+
+  function serializeCompileInput(args, options) {
+    if (!arrayIsArray(args)) {
+      throw new CompileError("ctx.compile requires an argument tuple as its second argument.");
+    }
+    const normalizedArgs = serializeCompileValue(args, 0, { values: 0 });
+    const normalizedOptions =
+      options === undefined
+        ? undefined
+        : serializeCompileValue(options, 0, { values: 0 });
+    const serialized = objectCreate(null);
+    serialized.args = jsonStringify(normalizedArgs);
+    serialized.options =
+      normalizedOptions === undefined ? undefined : jsonStringify(normalizedOptions);
+    return serialized;
+  }
 
   class SmartlinksHeaders {
     constructor(values) {
@@ -114,6 +221,21 @@ const webApiBootstrap = `
     writable: true,
     value: async (input, init) => new SmartlinksResponse(await hostFetch(input, init)),
   });
+
+  if (hostCompile && beginCompile) {
+    Object.defineProperty(globalThis.__smartlinks_ctx, "compile", {
+      configurable: true,
+      writable: true,
+      value: async (closureIndex, args, options) => {
+        await beginCompile();
+        if (!numberIsInteger(closureIndex) || closureIndex < 0) {
+          throw new CompileError("ctx.compile requires a packaged closure as its first argument.");
+        }
+        const serialized = serializeCompileInput(args, options);
+        return hostCompile(closureIndex, serialized.args, serialized.options);
+      },
+    });
+  }
 })();
 `;
 
@@ -327,11 +449,12 @@ export async function runScriptWithModule(
     vm.setProp(cryptoHandle, "hmacSha256", hmacHandle);
     vm.setProp(cryptoHandle, "verifyHmacSha256", verifyHandle);
     vm.setProp(contextHandle, "crypto", cryptoHandle);
+    let beginCompileHandle: QuickJSHandle | undefined;
     let compileHandle: QuickJSHandle | undefined;
     if (options.compile) {
-      compileHandle = asyncHostFunction(
-        "compile",
-        async (closureIndex, args, rawOptions) => options.compile?.(closureIndex, args, rawOptions),
+      beginCompileHandle = asyncHostFunction(
+        "beginCompile",
+        async () => undefined,
         () => {
           if (compileAttempted) {
             throw new Error("A smartlink may call ctx.compile at most once per execution.");
@@ -339,7 +462,24 @@ export async function runScriptWithModule(
           compileAttempted = true;
         },
       );
-      vm.setProp(contextHandle, "compile", compileHandle);
+      compileHandle = asyncHostFunction(
+        "compile",
+        async (closureIndex, serializedArgs, serializedOptions) => {
+          if (typeof serializedArgs !== "string") {
+            throw new Error("Could not read the compile argument tuple.");
+          }
+          if (serializedOptions !== undefined && typeof serializedOptions !== "string") {
+            throw new Error("Could not read the compile options.");
+          }
+          return options.compile?.(
+            closureIndex,
+            JSON.parse(serializedArgs),
+            serializedOptions === undefined ? undefined : JSON.parse(serializedOptions),
+          );
+        },
+      );
+      vm.setProp(vm.global, "__smartlinks_begin_compile", beginCompileHandle);
+      vm.setProp(vm.global, "__smartlinks_host_compile", compileHandle);
     }
     vm.setProp(vm.global, "__smartlinks_ctx", contextHandle);
     const bootstrap = vm.evalCode(webApiBootstrap, "smartlinks-web-api.js");
@@ -354,6 +494,7 @@ export async function runScriptWithModule(
     sha256Handle.dispose();
     cryptoHandle.dispose();
     compileHandle?.dispose();
+    beginCompileHandle?.dispose();
     fetchHandle.dispose();
     contextHandle.dispose();
 

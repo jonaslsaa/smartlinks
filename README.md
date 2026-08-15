@@ -154,9 +154,10 @@ and `--no-type-check`. `--expires` accepts a duration such as `30m`, `1h`, or `7
 absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
 running the script; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
 Local networking is off by default; opt in with `smartlinks run --allow-network`.
-Local `ctx.compile` uses an ephemeral in-process key and returns a clearly non-production
-`https://smartlinks.local/...` artifact, so dry-runs never publish bearer links or need the
-production private key.
+Local `ctx.compile` uses an ephemeral in-process key and a clearly non-production
+`https://smartlinks.local/...` artifact. `run` follows compiled local links and executes their
+final response in the same process, so dry-runs verify sealed delegation without publishing a
+bearer link or needing the production private key.
 
 Generated links are opaque bearer artifacts. `--copy` sends the link to the clipboard without
 printing it, while `--out link.txt` writes it to a file with owner-only POSIX permissions; both

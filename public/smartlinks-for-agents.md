@@ -157,8 +157,10 @@ Use this as the local dry-run before building a final link.
 Local execution uses the same wrapper, QuickJS engine, request-context normalization, general
 URL/method/header/body/count/redirect policy, response mapping, and compile validation as
 production. Local compile sealing uses an ephemeral in-process keypair and returns a local-only
-`https://smartlinks.local/r/<payload>` URL; it does not contact `/pk`, use production private-key
-material, or publish a durable bearer link.
+`https://smartlinks.local/r/<payload>` URL. `run` follows compiled local links, decrypts them with
+that ephemeral key, and executes the final response in the same process, with a ten-hop local
+follow limit. It does not contact `/pk`, use production private-key material, or publish a durable
+bearer link.
 
 ## Other commands
 

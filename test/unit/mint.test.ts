@@ -99,6 +99,9 @@ describe("smartlink minting", () => {
       "__proto__",
     );
     await expect(compile(0, ["x".repeat(65_000)], undefined)).rejects.toThrow("64 KB");
+    await expect(compile(0, [], { ttlSeconds: 0 })).rejects.toThrow(
+      "Invalid ctx.compile option ttlSeconds",
+    );
   });
 
   it("charges sealed values to the shared crypto-operation budget", async () => {

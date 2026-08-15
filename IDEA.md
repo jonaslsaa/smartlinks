@@ -173,8 +173,8 @@ smartlinks decode <link | payload>
 smartlinks run <script.js|script.ts> [--param a=1 ...] [--method POST] [--body ...]
     # type-check .ts input and execute locally in the same QuickJS sandbox as
     # production, with fake ctx; secrets provided via env. Prints the mapped
-    # response. ctx.compile uses ephemeral local encryption and returns a
-    # clearly local-only artifact rather than publishing a production link.
+    # response. ctx.compile uses ephemeral local encryption; run follows and
+    # executes local-only compiled links rather than publishing them.
 ```
 
 Both TypeScript commands accept `--no-type-check` to transpile without semantic checking.

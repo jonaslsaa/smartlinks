@@ -10,7 +10,7 @@ import {
   type Program,
   parse,
 } from "acorn";
-import { analyze, type ScopeManager } from "eslint-scope";
+import { analyze, type Scope, type ScopeManager, type Variable } from "eslint-scope";
 
 const WRAPPER_PREFIX = "async ctx=>{";
 const WRAPPER_SUFFIX = "\n}";
@@ -74,6 +74,7 @@ type Replacement = {
 
 type NamedClosure = {
   closure: CompileClosure;
+  binding: Variable;
   mutable: boolean;
 };
 
@@ -128,13 +129,34 @@ function functionFromExpression(
   return expression && isFunction(expression) ? expression : undefined;
 }
 
-function namedClosures(program: Program): Map<string, NamedClosure> {
+function wrapperScope(program: Program, scopes: ScopeManager): Scope {
+  const scope = scopes.acquire(wrapperFunction(program), true);
+  if (!scope) {
+    throw new Error("Could not analyze the Smartlinks entry scope.");
+  }
+  return scope;
+}
+
+function isReassigned(binding: Variable): boolean {
+  return binding.references.some((reference) => reference.isWrite() && !reference.init);
+}
+
+function namedClosures(program: Program, scopes: ScopeManager): Map<string, NamedClosure> {
   const wrapper = wrapperFunction(program);
+  const scope = wrapperScope(program, scopes);
 
   const closures = new Map<string, NamedClosure>();
   for (const statement of wrapper.body.body) {
     if (statement.type === "FunctionDeclaration" && statement.id) {
-      closures.set(statement.id.name, { closure: statement, mutable: false });
+      const binding = scope.set.get(statement.id.name);
+      if (!binding) {
+        throw new Error(`Could not analyze compile closure ${statement.id.name}.`);
+      }
+      closures.set(statement.id.name, {
+        closure: statement,
+        binding,
+        mutable: isReassigned(binding),
+      });
       continue;
     }
     if (statement.type !== "VariableDeclaration") {
@@ -146,9 +168,14 @@ function namedClosures(program: Program): Map<string, NamedClosure> {
       }
       const closure = functionFromExpression(declaration.init);
       if (closure) {
+        const binding = scope.set.get(declaration.id.name);
+        if (!binding) {
+          throw new Error(`Could not analyze compile closure ${declaration.id.name}.`);
+        }
         closures.set(declaration.id.name, {
           closure,
-          mutable: statement.kind !== "const",
+          binding,
+          mutable: statement.kind !== "const" || isReassigned(binding),
         });
       }
     }
@@ -169,12 +196,21 @@ function wrapperFunction(program: Program): WrapperFunction {
 }
 
 function contextReferences(program: Program, scopes: ScopeManager): ReadonlySet<object> {
-  const scope = scopes.acquire(wrapperFunction(program), true);
-  const context = scope?.set.get("ctx");
+  const context = wrapperScope(program, scopes).set.get("ctx");
   if (!context) {
     throw new Error("Could not analyze the Smartlinks context binding.");
   }
   return new Set(context.references.map((reference) => reference.identifier));
+}
+
+function resolvedReferences(scopes: ScopeManager): ReadonlyMap<object, Variable | null> {
+  const references = new Map<object, Variable | null>();
+  for (const scope of scopes.scopes) {
+    for (const reference of scope.references) {
+      references.set(reference.identifier, reference.resolved);
+    }
+  }
+  return references;
 }
 
 function compileCall(node: Node, contexts: ReadonlySet<object>): node is CallExpression {
@@ -198,6 +234,7 @@ function compileCall(node: Node, contexts: ReadonlySet<object>): node is CallExp
 function resolveClosure(
   argument: Expression,
   available: ReadonlyMap<string, NamedClosure>,
+  references: ReadonlyMap<object, Variable | null>,
 ): CompileClosure {
   if (isFunction(argument)) {
     return argument;
@@ -211,8 +248,15 @@ function resolveClosure(
       `Could not statically resolve compile closure ${argument.name}. Pass an inline function or a top-level const/function declaration.`,
     );
   }
+  if (references.get(argument) !== named.binding) {
+    throw new Error(
+      `Compile closure ${argument.name} is shadowed or is not the top-level declaration with that name.`,
+    );
+  }
   if (named.mutable) {
-    throw new Error(`Compile closure ${argument.name} must be declared with const.`);
+    throw new Error(
+      `Compile closure ${argument.name} must be a top-level const or an unmodified function declaration.`,
+    );
   }
   return named.closure;
 }
@@ -289,7 +333,8 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     ignoreEval: false,
   });
   const contexts = contextReferences(program, scopes);
-  const available = namedClosures(program);
+  const references = resolvedReferences(scopes);
+  const available = namedClosures(program, scopes);
   const closures: CompileClosure[] = [];
   const indexes = new Map<CompileClosure, number>();
   const replacements: Replacement[] = [];
@@ -305,7 +350,7 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     if (!argument || argument.type === "SpreadElement") {
       throw new Error("ctx.compile requires a closure as its first argument.");
     }
-    const closure = resolveClosure(argument, available);
+    const closure = resolveClosure(argument, available, references);
     let index = indexes.get(closure);
     if (index === undefined) {
       index = closures.length;

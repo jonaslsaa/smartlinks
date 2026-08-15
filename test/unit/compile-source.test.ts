@@ -79,6 +79,34 @@ describe("compile closure extraction", () => {
         let child = async () => ({ body: "ok" });
         return ctx.compile(child, []);
       `),
-    ).rejects.toThrow("must be declared with const");
+    ).rejects.toThrow("must be a top-level const");
+  });
+
+  it("rejects reassigned function declarations and shadowed closure bindings", async () => {
+    await expect(
+      extractCompileClosures(`
+        function child() { return { body: "original" }; }
+        child = async () => ({ body: "reassigned" });
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow("unmodified function declaration");
+
+    await expect(
+      extractCompileClosures(`
+        const child = async () => ({ body: "outer" });
+        {
+          const child = async () => ({ body: "inner" });
+          return ctx.compile(child, []);
+        }
+      `),
+    ).rejects.toThrow("is shadowed");
+
+    await expect(
+      extractCompileClosures(`
+        const child = async () => ({ body: "outer" });
+        const choose = (child) => ctx.compile(child, []);
+        return choose(async () => ({ body: "inner" }));
+      `),
+    ).rejects.toThrow("is shadowed");
   });
 });

@@ -3,9 +3,9 @@ import { type DecodedPayload, type Envelope, MAX_NOT_AFTER, type PayloadVersion 
 import type { CryptoOperationBudget } from "./guest-crypto.js";
 import { artifactSecretBinding, type PublicKey, sealSecret } from "./seal.js";
 
-const MAX_ARGUMENT_BYTES = 64_000;
-const MAX_ARGUMENT_DEPTH = 32;
-const MAX_ARGUMENT_VALUES = 10_000;
+export const MAX_COMPILE_ARGUMENT_BYTES = 64_000;
+export const MAX_COMPILE_ARGUMENT_DEPTH = 32;
+export const MAX_COMPILE_ARGUMENT_VALUES = 10_000;
 const MAX_SEALED_VALUE_LENGTH = 1_024;
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
 
@@ -23,6 +23,18 @@ const compileOptionsSchema = z
     interstitial: z.boolean().optional(),
   })
   .strict();
+
+function parseCompileOptions(raw: unknown): z.infer<typeof compileOptionsSchema> {
+  const parsed = compileOptionsSchema.safeParse(raw ?? {});
+  if (parsed.success) {
+    return parsed.data;
+  }
+  const issue = parsed.error.issues[0];
+  const field = issue?.path.join(".");
+  throw new Error(
+    `Invalid ctx.compile ${field ? `option ${field}` : "options"}: ${issue?.message ?? "invalid value"}.`,
+  );
+}
 
 export type MintEncoder = (envelope: Envelope, version: PayloadVersion) => Promise<string>;
 
@@ -47,11 +59,13 @@ type JsonState = { values: number };
 
 function normalizeJson(value: unknown, depth: number, state: JsonState): JsonValue {
   state.values += 1;
-  if (state.values > MAX_ARGUMENT_VALUES) {
-    throw new Error(`Compile arguments may contain at most ${MAX_ARGUMENT_VALUES} values.`);
+  if (state.values > MAX_COMPILE_ARGUMENT_VALUES) {
+    throw new Error(`Compile arguments may contain at most ${MAX_COMPILE_ARGUMENT_VALUES} values.`);
   }
-  if (depth > MAX_ARGUMENT_DEPTH) {
-    throw new Error(`Compile arguments may be nested at most ${MAX_ARGUMENT_DEPTH} levels.`);
+  if (depth > MAX_COMPILE_ARGUMENT_DEPTH) {
+    throw new Error(
+      `Compile arguments may be nested at most ${MAX_COMPILE_ARGUMENT_DEPTH} levels.`,
+    );
   }
   if (value === null || typeof value === "string" || typeof value === "boolean") {
     return value;
@@ -90,7 +104,7 @@ function serializedArguments(raw: unknown): { args: JsonValue[]; json: string } 
     throw new Error("ctx.compile requires an argument tuple as its second argument.");
   }
   const json = JSON.stringify(args);
-  if (new TextEncoder().encode(json).byteLength > MAX_ARGUMENT_BYTES) {
+  if (new TextEncoder().encode(json).byteLength > MAX_COMPILE_ARGUMENT_BYTES) {
     throw new Error("Compile arguments exceed the 64 KB limit.");
   }
   return { args, json };
@@ -170,7 +184,7 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
       throw new Error(`Compile closure ${closureIndex} is unavailable.`);
     }
     const { args, json: argumentJson } = serializedArguments(rawArgs);
-    const compileOptions = compileOptionsSchema.parse(rawOptions ?? {});
+    const compileOptions = parseCompileOptions(rawOptions);
     const nowSeconds = options.nowSeconds?.() ?? Math.floor(Date.now() / 1_000);
     const notAfter = childNotAfter(
       options.parent.envelope.notAfter,

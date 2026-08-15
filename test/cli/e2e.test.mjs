@@ -144,10 +144,13 @@ return {
   });
 });
 
-test("run locally mints a private local-only child with typed tuple arguments", async () => {
+test("run locally executes a sealed child with typed tuple arguments", async () => {
   const source = `
-const child = async (name: string) => ({
+const leaf = async (name: string) => ({
   body: name + ":" + ctx.secrets.CHILD_TOKEN,
+});
+const child = async (name: string) => ctx.compile(leaf, [name], {
+  seal: { CHILD_TOKEN: ctx.secrets.CHILD_TOKEN! },
 });
 return ctx.compile(child, [ctx.params.name ?? "world"], {
   seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN! },
@@ -166,14 +169,10 @@ return ctx.compile(child, [ctx.params.name ?? "world"], {
       "--json",
     ]);
     const response = JSON.parse(result.stdout);
-    const location = response.headers.location;
 
-    assert.equal(response.status, 302);
-    assert.match(location, /^https:\/\/smartlinks\.local\/r\/2/u);
-    const decoded = JSON.parse((await runCli(["decode", location, "--json"])).stdout);
-    assert.equal(decoded.compileClosures, 1);
-    assert.deepEqual(decoded.sealedSecrets, ["CHILD_TOKEN"]);
-    assert.equal(typeof decoded.notAfter, "number");
+    assert.equal(response.status, 200);
+    assert.equal(response.body, "Jonas:local-secret");
+    assert.equal(response.headers.location, undefined);
   });
 });
 
