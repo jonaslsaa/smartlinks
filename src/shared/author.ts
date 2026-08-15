@@ -169,6 +169,23 @@ export async function verifyAuthorKeyPair(authorKey: AuthorKeyPair): Promise<voi
   await signWithAuthorKey(authorKey, KEY_CHECK_DOMAIN);
 }
 
+function assertAuthorCertificateMatchesKey(
+  certificate: AuthorCertificate,
+  authorKey: AuthorKeyPair,
+): void {
+  if (certificate[4] !== authorKey.publicKey) {
+    throw new Error("The author certificate does not match the local signing key.");
+  }
+}
+
+export async function verifyAuthorCredential(
+  certificate: AuthorCertificate,
+  authorKey: AuthorKeyPair,
+): Promise<void> {
+  assertAuthorCertificateMatchesKey(certificate, authorKey);
+  await verifyAuthorKeyPair(authorKey);
+}
+
 export async function generateAuthorKeyPair(): Promise<AuthorKeyPair> {
   const pair = (await crypto.subtle.generateKey("Ed25519", true, [
     "sign",
@@ -217,9 +234,7 @@ export async function signEnvelope(
   authorKey: AuthorKeyPair,
   nowSeconds = Math.floor(Date.now() / 1_000),
 ): Promise<Envelope> {
-  if (certificate[4] !== authorKey.publicKey) {
-    throw new Error("The author certificate does not match the local signing key.");
-  }
+  assertAuthorCertificateMatchesKey(certificate, authorKey);
   if (certificate[6] <= nowSeconds) {
     throw new Error("The author certificate has expired. Run smartlinks login again.");
   }

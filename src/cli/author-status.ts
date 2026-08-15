@@ -1,7 +1,7 @@
 import {
   type AuthorCertificateVerification,
   verifyAuthorCertificate,
-  verifyAuthorKeyPair,
+  verifyAuthorCredential,
 } from "../shared/author.js";
 import {
   authorKey,
@@ -52,7 +52,7 @@ export async function inspectConfiguredAuthor(): Promise<AuthorInspection> {
   }
   const validStatus: ValidStatus = { ...status, status: "valid" };
   try {
-    await verifyAuthorKeyPair(authorKey(author));
+    await verifyAuthorCredential(author.certificate, authorKey(author));
     return { status: validStatus, author };
   } catch {
     return {

@@ -133,6 +133,43 @@ test("whoami reports signing readiness and fails closed for unusable identities"
       },
     );
 
+    const mismatchedKeyConfig = join(directory, "mismatched-key-author");
+    const mismatchedKeyIssuer = await createTestAuthor(mismatchedKeyConfig);
+    const mismatchedCredentialPath = join(mismatchedKeyConfig, "author.json");
+    const mismatchedCredential = JSON.parse(await readFile(mismatchedCredentialPath, "utf8"));
+    const replacement = await crypto.subtle.generateKey("Ed25519", true, ["sign", "verify"]);
+    const [replacementPrivate, replacementPublic] = await Promise.all([
+      crypto.subtle.exportKey("pkcs8", replacement.privateKey),
+      crypto.subtle.exportKey("raw", replacement.publicKey),
+    ]);
+    mismatchedCredential.privateKey = toBase64Url(replacementPrivate);
+    mismatchedCredential.publicKey = toBase64Url(replacementPublic);
+    await writeFile(mismatchedCredentialPath, `${JSON.stringify(mismatchedCredential)}\n`, {
+      mode: 0o600,
+    });
+    const mismatchedEnv = {
+      ...process.env,
+      SMARTLINKS_CONFIG_DIR: mismatchedKeyConfig,
+      SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: mismatchedKeyIssuer,
+    };
+    for (const args of [
+      ["whoami", "--json"],
+      ["build", script, "--sign", "--json"],
+    ]) {
+      await assert.rejects(runCli(args, { env: mismatchedEnv }), (error) => {
+        const output = args[0] === "whoami" ? JSON.parse(error.stdout) : error.stderr;
+        assert.match(
+          typeof output === "string" ? output : output.reason,
+          /stored author signing key is invalid/iu,
+        );
+        assert.doesNotMatch(
+          error.stdout + error.stderr,
+          new RegExp(mismatchedCredential.privateKey),
+        );
+        return true;
+      });
+    }
+
     const expiredConfig = join(directory, "expired-author");
     const expiredIssuer = await createTestAuthor(expiredConfig, { expired: true });
     await assert.rejects(
