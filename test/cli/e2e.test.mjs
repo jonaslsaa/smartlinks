@@ -293,6 +293,37 @@ return ctx.compile(child, [ctx.params.name ?? "world"], {
   });
 });
 
+test("run locally executes compile closures with packaged static dependencies", async () => {
+  const source = `
+const CSS = "shared-style-sentinel";
+const escapeHtml = (value: string) => value.replaceAll("&", "&amp;");
+const factorial = (value: number): number => value < 2 ? 1 : value * factorial(value - 1);
+function render(value: string) {
+  return CSS + ":" + escapeHtml(value) + ":" + factorial(4);
+}
+const child = async (_childCtx: typeof ctx, name: string) => ({ body: render(name) });
+return ctx.compile(child, [ctx.params.name ?? "world"]);
+`;
+
+  await withTemporaryScript("ts", source, async (script) => {
+    const result = await runCli(["run", script, "--param", "name=Jonas&Ada", "--json"]);
+    const response = JSON.parse(result.stdout);
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body, "shared-style-sentinel:Jonas&amp;Ada:24");
+    assert.equal(result.stderr, "");
+
+    await assert.rejects(
+      runCli(["run", script, "--secret", "TOKEN=shared-style-sentinel", "--json"]),
+      (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /Compile output contains plaintext from ctx\.secrets\.TOKEN/u);
+        return true;
+      },
+    );
+  });
+});
+
 test("run preserves calendar and PNG response bytes", async () => {
   const fixtures = [
     {

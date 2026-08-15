@@ -81,9 +81,19 @@ type Replacement = {
 };
 
 type NamedClosure = {
+  name: string;
   closure: CompileClosure;
   binding: Variable;
   mutable: boolean;
+};
+
+type StaticDependency = {
+  name: string;
+  binding: Variable;
+  declaration: FunctionDeclaration | VariableDeclarator;
+  function?: CompileClosure;
+  kind?: "function" | "primitive";
+  reason?: string;
 };
 
 export type ExtractedCompileSource = {
@@ -165,6 +175,7 @@ function namedClosures(program: Program, scopes: ScopeManager): Map<string, Name
         throw new Error(`Could not analyze compile closure ${statement.id.name}.`);
       }
       closures.set(statement.id.name, {
+        name: statement.id.name,
         closure: statement,
         binding,
         mutable: isReassigned(binding),
@@ -185,6 +196,7 @@ function namedClosures(program: Program, scopes: ScopeManager): Map<string, Name
           throw new Error(`Could not analyze compile closure ${declaration.id.name}.`);
         }
         closures.set(declaration.id.name, {
+          name: declaration.id.name,
           closure,
           binding,
           mutable: statement.kind !== "const" || isReassigned(binding),
@@ -193,6 +205,113 @@ function namedClosures(program: Program, scopes: ScopeManager): Map<string, Name
     }
   }
   return closures;
+}
+
+function primitiveInitializer(expression: Expression | null | undefined): boolean {
+  if (!expression) {
+    return false;
+  }
+  if (expression.type === "TemplateLiteral") {
+    return expression.expressions.length === 0;
+  }
+  if (expression.type === "Literal") {
+    return (
+      expression.regex === undefined &&
+      (expression.value === null ||
+        typeof expression.value === "string" ||
+        typeof expression.value === "number" ||
+        typeof expression.value === "boolean" ||
+        typeof expression.value === "bigint")
+    );
+  }
+  if (
+    expression.type === "UnaryExpression" &&
+    (expression.operator === "+" || expression.operator === "-") &&
+    expression.argument.type === "Literal" &&
+    (typeof expression.argument.value === "number" || typeof expression.argument.value === "bigint")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function dependencyReason(expression: Expression | null | undefined): string {
+  if (!expression) {
+    return "has no initializer";
+  }
+  if (
+    expression.type === "ArrayExpression" ||
+    expression.type === "ObjectExpression" ||
+    (expression.type === "Literal" && expression.regex !== undefined)
+  ) {
+    return "has a mutable object initializer";
+  }
+  if (expression.type === "FunctionExpression" && expression.id) {
+    return "uses a named function expression";
+  }
+  return "has a computed initializer";
+}
+
+function staticDependencies(
+  program: Program,
+  scopes: ScopeManager,
+): ReadonlyMap<Variable, StaticDependency> {
+  const wrapper = wrapperFunction(program);
+  const scope = wrapperScope(program, scopes);
+  const dependencies = new Map<Variable, StaticDependency>();
+
+  for (const statement of wrapper.body.body) {
+    if (statement.type === "FunctionDeclaration" && statement.id) {
+      const binding = scope.set.get(statement.id.name);
+      if (!binding) {
+        throw new Error(`Could not analyze top-level declaration ${statement.id.name}.`);
+      }
+      dependencies.set(binding, {
+        name: statement.id.name,
+        binding,
+        declaration: statement,
+        function: statement,
+        ...(isReassigned(binding) ? { reason: "is reassigned" } : { kind: "function" as const }),
+      });
+      continue;
+    }
+    if (statement.type !== "VariableDeclaration") {
+      continue;
+    }
+    for (const declaration of statement.declarations) {
+      if (declaration.id.type !== "Identifier") {
+        continue;
+      }
+      const binding = scope.set.get(declaration.id.name);
+      if (!binding) {
+        throw new Error(`Could not analyze top-level declaration ${declaration.id.name}.`);
+      }
+      const candidate = functionFromExpression(declaration.init);
+      const common = {
+        name: declaration.id.name,
+        binding,
+        declaration,
+      };
+      if (statement.kind !== "const" || isReassigned(binding)) {
+        dependencies.set(binding, { ...common, reason: "is mutable or reassigned" });
+      } else if (candidate && !(candidate.type === "FunctionExpression" && candidate.id)) {
+        dependencies.set(binding, {
+          ...common,
+          function: candidate,
+          kind: "function",
+        });
+      } else if (primitiveInitializer(declaration.init)) {
+        dependencies.set(binding, { ...common, kind: "primitive" });
+      } else {
+        dependencies.set(binding, {
+          ...common,
+          reason: dependencyReason(declaration.init),
+        });
+      }
+    }
+  }
+
+  return dependencies;
 }
 
 function wrapperFunction(program: Program): WrapperFunction {
@@ -223,6 +342,15 @@ function resolvedReferences(scopes: ScopeManager): ReadonlyMap<object, Variable 
     }
   }
   return references;
+}
+
+function nodeParents(program: Program): ReadonlyMap<object, Node | undefined> {
+  const parents = new Map<object, Node | undefined>();
+  walk(program, (node, parent) => {
+    parents.set(node, parent);
+    return undefined;
+  });
+  return parents;
 }
 
 function assertNoDirectEvalWithCompile(
@@ -436,31 +564,163 @@ function insideNestedReplacement(
   );
 }
 
-function assertNoCapturedVariables(
+function directCallReference(identifier: object, parent: Node | undefined): boolean {
+  return parent?.type === "CallExpression" && (parent as CallExpression).callee === identifier;
+}
+
+function dependencyDeclarationSource(
+  dependency: StaticDependency,
+  source: string,
+  replacements: readonly Replacement[],
+): string {
+  const declaration = applyReplacements(
+    source,
+    dependency.declaration.start,
+    dependency.declaration.end,
+    replacements,
+  );
+  return dependency.declaration.type === "FunctionDeclaration"
+    ? declaration
+    : `const ${declaration};`;
+}
+
+function packageClosure(
   closure: CompileClosure,
+  named: NamedClosure | undefined,
+  source: string,
   replacements: readonly Replacement[],
   scopes: ScopeManager,
-): void {
-  const scope = scopes.acquire(closure, true);
-  if (!scope) {
-    throw new Error("Could not analyze a compile closure's lexical scope.");
-  }
+  dependencies: ReadonlyMap<Variable, StaticDependency>,
+  parents: ReadonlyMap<object, Node | undefined>,
+  compileArguments: ReadonlySet<object>,
+  parentContext: Variable,
+): string {
+  const selected = new Map<Variable, StaticDependency>();
+  const visiting = new Set<Variable>();
+  const visited = new Set<CompileClosure>();
   const captures = new Set<string>();
-  for (const reference of scope.through) {
-    const allowedGlobal =
-      reference.resolved === null && ALLOWED_GLOBALS.has(reference.identifier.name);
-    if (
-      !insideNestedReplacement(reference.identifier.range, closure, replacements) &&
-      !allowedGlobal
-    ) {
-      captures.add(reference.identifier.name);
+  const rootBinding = named?.binding;
+  const rootLabel = named?.name ?? "inline closure";
+
+  function assertCallOnly(dependency: StaticDependency): void {
+    for (const reference of dependency.binding.references) {
+      if (!reference.isRead()) {
+        continue;
+      }
+      const identifier = reference.identifier;
+      if (
+        directCallReference(identifier, parents.get(identifier)) ||
+        compileArguments.has(identifier)
+      ) {
+        continue;
+      }
+      const line = identifier.loc?.start.line;
+      throw new Error(
+        `Packaged helper ${dependency.name} must only be called directly${line === undefined ? "" : `; found a non-call reference on line ${line}`}.`,
+      );
     }
   }
+
+  function rejectDependency(path: readonly string[], dependency: StaticDependency): never {
+    const chain = [...path, dependency.name].join(" -> ");
+    throw new Error(
+      `Compile closure dependency ${chain} is unavailable because ${dependency.name} ${dependency.reason ?? "is not statically packageable"}.`,
+    );
+  }
+
+  function includeDependency(dependency: StaticDependency, path: readonly string[]): void {
+    if (!dependency.kind) {
+      if (path.length === 1) {
+        captures.add(dependency.name);
+        return;
+      }
+      rejectDependency(path, dependency);
+    }
+
+    selected.set(dependency.binding, dependency);
+    if (dependency.kind !== "function" || !dependency.function) {
+      return;
+    }
+    if (dependency.binding !== rootBinding) {
+      assertCallOnly(dependency);
+    }
+    if (visiting.has(dependency.binding)) {
+      return;
+    }
+    visiting.add(dependency.binding);
+    inspectFunction(dependency.function, [...path, dependency.name]);
+    visiting.delete(dependency.binding);
+  }
+
+  function inspectFunction(current: CompileClosure, path: readonly string[]): void {
+    if (visited.has(current)) {
+      return;
+    }
+    visited.add(current);
+    const scope = scopes.acquire(current, true);
+    if (!scope) {
+      throw new Error("Could not analyze a compile closure's lexical scope.");
+    }
+    for (const reference of scope.through) {
+      if (insideNestedReplacement(reference.identifier.range, current, replacements)) {
+        continue;
+      }
+      if (reference.resolved === null && ALLOWED_GLOBALS.has(reference.identifier.name)) {
+        continue;
+      }
+      if (reference.resolved === parentContext) {
+        if (path.length === 1) {
+          captures.add(reference.identifier.name);
+          continue;
+        }
+        throw new Error(
+          `Compile closure dependency ${path.join(" -> ")} references the parent ctx.`,
+        );
+      }
+      const dependency =
+        reference.resolved === null ? undefined : dependencies.get(reference.resolved);
+      if (!dependency) {
+        if (path.length === 1) {
+          captures.add(reference.identifier.name);
+          continue;
+        }
+        throw new Error(
+          `Compile closure dependency ${path.join(" -> ")} captures ${reference.identifier.name}, which is not statically packageable.`,
+        );
+      }
+      includeDependency(dependency, path);
+    }
+  }
+
+  if (rootBinding) {
+    visiting.add(rootBinding);
+  }
+  inspectFunction(closure, [rootLabel]);
+  if (rootBinding) {
+    visiting.delete(rootBinding);
+  }
+
   if (captures.size) {
     throw new Error(
       `Compile closures cannot capture outer variables: ${[...captures].sort().join(", ")}. Pass them in the argument tuple instead.`,
     );
   }
+
+  const closureSource = applyReplacements(source, closure.start, closure.end, replacements);
+  if (!selected.size) {
+    return closureSource;
+  }
+
+  const rootDependency = rootBinding ? dependencies.get(rootBinding) : undefined;
+  const packageRootByName = rootDependency?.kind === "function";
+  if (packageRootByName && rootDependency) {
+    selected.set(rootDependency.binding, rootDependency);
+  }
+  const declarations = [...selected.values()]
+    .sort((left, right) => left.declaration.start - right.declaration.start)
+    .map((dependency) => dependencyDeclarationSource(dependency, source, replacements));
+  const result = packageRootByName && named ? named.name : closureSource;
+  return `(()=>{${declarations.join("\n")}\nreturn ${result};})()`;
 }
 
 function applyReplacements(
@@ -499,6 +759,7 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     ecmaVersion: "latest",
     sourceType: "script",
     ranges: true,
+    locations: true,
   });
   const scopes = analyze(program, {
     ecmaVersion: 2022,
@@ -508,11 +769,17 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
   });
   const context = contextBinding(program, scopes);
   const references = resolvedReferences(scopes);
+  const parents = nodeParents(program);
   assertNoDirectEvalWithCompile(program, context, references);
   const available = namedClosures(program, scopes);
+  const namedByClosure = new Map(
+    [...available.values()].map((named) => [named.closure, named] as const),
+  );
+  const dependencies = staticDependencies(program, scopes);
   const closures: CompileClosure[] = [];
   const indexes = new Map<CompileClosure, number>();
   const replacements: Replacement[] = [];
+  const compileArguments = new Set<object>();
 
   function registerClosure(closure: CompileClosure): number {
     const existing = indexes.get(closure);
@@ -544,6 +811,9 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
       throw new Error("ctx.compile requires a closure as its first argument.");
     }
     const closure = resolveClosure(argument, available, references);
+    if (isIdentifier(argument)) {
+      compileArguments.add(argument);
+    }
     replacements.push({
       start: argument.start,
       end: argument.end,
@@ -565,16 +835,22 @@ export async function extractCompileClosures(source: string): Promise<ExtractedC
     return undefined;
   });
 
-  for (const closure of closures) {
-    assertNoCapturedVariables(closure, replacements, scopes);
-  }
-
   const bodyStart = WRAPPER_PREFIX.length;
   const bodyEnd = bodyStart + source.length;
   return {
     source: applyReplacements(wrapped, bodyStart, bodyEnd, replacements),
     closures: closures.map((closure) =>
-      applyReplacements(wrapped, closure.start, closure.end, replacements),
+      packageClosure(
+        closure,
+        namedByClosure.get(closure),
+        wrapped,
+        replacements,
+        scopes,
+        dependencies,
+        parents,
+        compileArguments,
+        context,
+      ),
     ),
   };
 }

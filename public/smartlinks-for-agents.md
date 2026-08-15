@@ -136,13 +136,22 @@ const claim = await ctx.crypto.open(ctx.params.v!, { key: ctx.secrets.VOUCHER_KE
 parameter is the child execution context, supplied by the runtime — annotate it
 `SmartlinksContext` on a named TypeScript closure; inline closures are contextually typed.
 `typeof ctx` also works when the parameter has another name. `args` is a positional JSON tuple
-whose TypeScript types must match the remaining closure parameters. The closure must be
-inline or a top-level `const`/function declaration and may use its parameters, `fetch`, and
-supported JavaScript globals, but cannot capture outer variables, including the parent's `ctx` —
-pass parent values explicitly in the tuple. The CLI extracts and type-checks every closure before
-minification, replaces the guest reference with a table index, and packages the finite closure
-table in the link. Call `ctx.compile(...)` directly so the build can identify the call site; the
-method cannot be aliased, destructured, or passed as a value.
+whose TypeScript types must match the remaining closure parameters. The closure must be inline or
+a top-level `const`/function declaration. It may call transitively packaged top-level helpers and
+read immutable primitive constants. Eligible constants are strings, numbers, bigints, booleans,
+`null`, or template literals without expressions. Eligible helpers are unmodified function
+declarations, `const` arrows, or anonymous `const` function expressions; they may use parameters,
+locals, supported globals, and other eligible declarations, but never the parent's `ctx`. Other
+parent values must be passed explicitly in the tuple.
+
+Packaged helpers are copied definitions, not mutable runtime function objects. Every reference
+outside a direct `ctx.compile` closure position must therefore call the helper directly: passing,
+inspecting, comparing, or mutating it is rejected. Named function expressions, objects, arrays,
+classes, computed initializers, and mutable declarations are not packaged. The CLI resolves exact
+lexical bindings transitively, preserves declaration order, extracts and type-checks every closure
+before minification, replaces guest closure references with table indexes, and packages the finite
+closure table in the link. Call `ctx.compile(...)` directly so the build can identify the call
+site; the method cannot be aliased, destructured, or passed as a value.
 
 Compile arguments are data. Never evaluate them, pass them to `Function`, or interpolate them
 into executable source: static closure extraction authenticates the authored interpreter; it
