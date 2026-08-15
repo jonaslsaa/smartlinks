@@ -167,6 +167,9 @@ Use this as the local dry-run before building a final link.
 - `--method METHOD`: set the request method; defaults to `GET`.
 - `--body TEXT`: set a request body; invalid for `GET` and `HEAD`.
 - `--allow-network`: enable guarded `fetch`; networking is disabled by default locally.
+- `--simulate`: run one deterministic path, trace fetches and compiled child hops, and send no
+  network requests. Every allowed fetch receives HTTP 200, `content-type: application/json`, and
+  `{}`. It cannot be combined with `--allow-network` or `--serve`.
 - `--json`: emit the mapped response as machine-readable output.
 - `--no-type-check`: skip strict semantic checking for TypeScript; syntax must still transpile.
 - `--no-minify`: skip JavaScript minification; TypeScript is still transpiled.
@@ -178,6 +181,18 @@ incoming browser query parameters, method, headers, and body. `--port` selects a
 `--body`, and `--json`) are intentionally unavailable in serve mode. Local secrets,
 `--allow-network`, `--no-type-check`, and `--no-minify` continue to apply. Serve mode does not
 build a link, fetch the runtime key, or contact production.
+
+With `--simulate --json`, output is a stable report containing the normalized input, chronological
+fetch/blocked-fetch/compiled-child events, and final mapped response or error. Runtime-host, URL,
+method, header, body, redirect, response-size, and five-request guards still apply, while the
+final network operation is replaced by the fixed response. The same trace continues through
+locally compiled children without printing their bearer URLs. No DNS lookup occurs.
+
+Simulation is for trusted-source authoring, not deciding whether an unknown Smartlink is safe.
+The fixed response covers one control-flow path. Exact supplied local secret values are replaced
+with `[secret:NAME]` in recorded URLs, headers, bodies, final responses, and errors, including
+common URL and JSON encodings. Derived or transformed values cannot be recognized, so treat the
+report as potentially sensitive.
 
 Local execution uses the same wrapper, QuickJS engine, request-context normalization, general
 URL/method/header/body/count/redirect policy, response mapping, and compile validation as

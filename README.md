@@ -163,7 +163,12 @@ include `--secret`, `--expires`, `--interstitial`, `--copy`, `--out`, `--json`, 
 note and implies `--interstitial`. `--expires` accepts a duration such as `30m`, `1h`, or `7d`, or an
 absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
 running the script; crawler, prefetch, and `HEAD` requests remain non-executing HTTP 200 previews.
-Local networking is off by default; opt in with `smartlinks run --allow-network`.
+Local networking is off by default; opt in with `smartlinks run --allow-network`. To inspect a
+networked script without sending requests, use `smartlinks run script.ts --simulate`. It runs one
+deterministic path with the real fetch guards, records fetches and locally compiled child hops,
+and supplies every allowed fetch with HTTP 200, `content-type: application/json`, and `{}`. The
+flag cannot be combined with `--allow-network` or `--serve`; `--json` returns the stable simulation
+report.
 Local `ctx.compile` uses an ephemeral in-process key and a clearly non-production
 `https://smartlinks.local/...` artifact. `run` follows compiled local links and executes their
 final response in the same process, so dry-runs verify sealed delegation without publishing a
@@ -220,6 +225,12 @@ HTTP; use `ctx.compile` to create a child link. Local `run --allow-network` is s
 resolves and pins DNS connections to validated public addresses. Known crawler, prefetch, and
 `HEAD` requests do not execute scripts. This is a carefully constrained hobby service, not a
 general-purpose hostile-code platform.
+
+Simulation is an authoring aid, not a safety verdict. Its fixed response exercises only one path,
+and it performs no DNS lookup. Exact supplied secret values are redacted from recorded URLs,
+headers, bodies, final responses, and errors, including common URL and JSON encodings. Derived or
+transformed secret values cannot be recognized, so treat simulation output as potentially
+sensitive.
 
 ## Build with an agent
 

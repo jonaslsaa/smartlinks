@@ -16,8 +16,9 @@ import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
 import { createSmartlink } from "./build.js";
 import { parseExpiry } from "./expiry.js";
-import { createSyntheticRequest, executeLocalRequest } from "./run.js";
+import { createSyntheticRequest, executeLocalRequest, LocalScriptError } from "./run.js";
 import { serveLocalScript } from "./serve.js";
+import type { SimulationReport } from "./simulation.js";
 import { readScriptSource } from "./source.js";
 import { fail, startUi } from "./ui.js";
 import { collect, normalizeServiceUrl, resolveSecrets, splitAssignment } from "./values.js";
@@ -44,6 +45,7 @@ type BuildOptions = {
 
 type RunOptions = {
   allowNetwork?: boolean;
+  simulate?: boolean;
   param: string[];
   secret: string[];
   header: string[];
@@ -93,6 +95,77 @@ function buildReceipt(stats: string, options: Pick<BuildOptions, "copy" | "out">
   ]
     .filter((part): part is string => part !== undefined)
     .join(" · ");
+}
+
+function formatSimulationReport(report: SimulationReport): string {
+  const lines = [
+    `Input · ${report.inputs.method}`,
+    ...(Object.keys(report.inputs.params).length
+      ? [`Parameters · ${JSON.stringify(report.inputs.params)}`]
+      : []),
+    ...(Object.keys(report.inputs.headers).length
+      ? [`Headers · ${JSON.stringify(report.inputs.headers)}`]
+      : []),
+    ...(report.inputs.body === null ? [] : [`Body · ${report.inputs.body}`]),
+  ];
+
+  for (const [index, event] of report.events.entries()) {
+    if (event.type === "fetch") {
+      lines.push(`Fetch ${index + 1} · ${event.request.method} ${event.request.url}`);
+      if (Object.keys(event.request.headers).length) {
+        lines.push(`  Headers · ${JSON.stringify(event.request.headers)}`);
+      }
+      if (event.request.body !== null) {
+        lines.push(`  Body · ${event.request.body}`);
+      }
+      lines.push(`  Synthetic response · HTTP ${event.response.status} · ${event.response.body}`);
+    } else if (event.type === "fetch-blocked") {
+      lines.push(
+        `Fetch ${index + 1} blocked · ${event.request.method} ${event.request.url}`,
+        `  ${event.reason}`,
+      );
+    } else {
+      const secrets = event.artifact.sealedSecrets.join(", ") || "none";
+      lines.push(
+        `Compiled child ${event.hop} · payload v${event.artifact.payloadVersion} · ${event.artifact.payloadCharacters.toLocaleString()} characters · sealed secrets: ${secrets}`,
+      );
+    }
+  }
+
+  if (report.response) {
+    lines.push(`Final response · HTTP ${report.response.status}`);
+    if (Object.keys(report.response.headers).length) {
+      lines.push(`  Headers · ${JSON.stringify(report.response.headers)}`);
+    }
+    lines.push(
+      "body" in report.response
+        ? `  Body · ${report.response.body || "(empty)"}`
+        : `  Body · ${Buffer.from(report.response.bodyBase64, "base64").byteLength.toLocaleString()} binary bytes`,
+    );
+  }
+  if (report.error) {
+    lines.push(`Execution error · ${report.error}`);
+  }
+  return lines.join("\n");
+}
+
+function printSimulationReport(
+  report: SimulationReport,
+  options: Pick<RunOptions, "json">,
+  interactive: boolean,
+): void {
+  if (options.json) {
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  const formatted = formatSimulationReport(report);
+  if (interactive) {
+    p.note(formatted, "Network simulation");
+    p.outro("One deterministic path · no network requests were sent");
+  } else {
+    console.log(formatted);
+    console.error("One deterministic path · no network requests were sent");
+  }
 }
 
 async function assertOutputDoesNotOverwriteInput(input: string, output: string): Promise<void> {
@@ -260,12 +333,13 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
   const executionOptions = {
     allowNetwork: options.allowNetwork === true,
     blockedHostnames:
-      options.allowNetwork === true
+      options.allowNetwork === true || options.simulate === true
         ? [new URL(normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL)).hostname]
         : [],
     file,
     minify: options.minify,
     secrets: await resolveSecrets(options.secret, { prompt: interactive }),
+    simulate: options.simulate === true,
     typeCheck: options.typeCheck,
   };
 
@@ -294,7 +368,22 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     method: options.method,
     parameters,
   });
-  const { binary, response } = await executeLocalRequest(request, executionOptions);
+  let execution: Awaited<ReturnType<typeof executeLocalRequest>>;
+  try {
+    execution = await executeLocalRequest(request, executionOptions);
+  } catch (error) {
+    if (options.simulate && error instanceof LocalScriptError && error.simulation) {
+      printSimulationReport(error.simulation, options, interactive);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
+  const { binary, response } = execution;
+  if (execution.simulation) {
+    printSimulationReport(execution.simulation, options, interactive);
+    return;
+  }
   const binaryBody = binary ? Buffer.from(await response.arrayBuffer()) : undefined;
   const responseHeaders = Object.fromEntries(response.headers);
 
@@ -452,7 +541,15 @@ program
     new Option("-X, --method <method>", "request method").default("GET").conflicts("serve"),
   )
   .addOption(new Option("--body <text>", "request body").conflicts("serve"))
-  .option("--allow-network", "allow guarded outbound fetch calls")
+  .addOption(
+    new Option("--allow-network", "allow guarded outbound fetch calls").conflicts("simulate"),
+  )
+  .addOption(
+    new Option("--simulate", "trace fetch calls without sending network requests").conflicts([
+      "allowNetwork",
+      "serve",
+    ]),
+  )
   .option("--serve", "serve the script on a loopback HTTP server")
   .addOption(
     new Option("--port <number>", "serve port; use 0 to choose an available port")

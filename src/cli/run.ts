@@ -10,6 +10,7 @@ import {
 import { isBinaryLiteralResponse, mapScriptResult, type ScriptResult } from "../shared/result.js";
 import { prepareSmartlinkProgram } from "./build.js";
 import { runLocalProgram } from "./local-run.js";
+import { LocalSimulation, type SimulationReport } from "./simulation.js";
 import { readScriptSource } from "./source.js";
 
 type LocalScriptOptions = {
@@ -18,6 +19,7 @@ type LocalScriptOptions = {
   file: string;
   minify: boolean;
   secrets: Record<string, string>;
+  simulate?: boolean;
   typeCheck: boolean;
 };
 
@@ -32,14 +34,19 @@ export type LocalScriptExecution = {
   binary: boolean;
   defaultPage: boolean;
   response: Response;
+  simulation?: SimulationReport;
 };
 
 export class LocalScriptError extends Error {
   readonly status = 422;
+  readonly simulation?: SimulationReport;
 
-  constructor(message: string, options?: ErrorOptions) {
+  constructor(message: string, options?: ErrorOptions & { simulation?: SimulationReport }) {
     super(message, options);
     this.name = "LocalScriptError";
+    if (options?.simulation) {
+      this.simulation = options.simulation;
+    }
   }
 }
 
@@ -71,35 +78,54 @@ export async function executeLocalRequest(
   request: Request,
   options: LocalScriptOptions,
 ): Promise<LocalScriptExecution> {
+  let simulation: LocalSimulation | undefined;
   try {
     const originalSource = await readScriptSource(options.file, { typeCheck: options.typeCheck });
     const { source, closures } = await prepareSmartlinkProgram(originalSource, options.minify);
     const url = new URL(request.url);
+    const params = userParams(url.searchParams);
+    const paramValues = userParamValues(url.searchParams);
+    const headers = lowercaseHeaders(request.headers);
+    const body = await readBoundedRequestBody(request);
+    if (options.simulate) {
+      simulation = new LocalSimulation(
+        { method: request.method, params: paramValues, headers, body },
+        options.secrets,
+      );
+    }
     const result: ScriptResult = await runLocalProgram({
       source,
       closures,
       context: {
-        params: userParams(url.searchParams),
-        paramValues: userParamValues(url.searchParams),
+        params,
+        paramValues,
         method: request.method,
-        headers: lowercaseHeaders(request.headers),
-        body: await readBoundedRequestBody(request),
+        headers,
+        body,
         secrets: options.secrets,
         requestId: createRequestId(),
       },
       allowNetwork: options.allowNetwork,
       blockedHostnames: options.blockedHostnames,
+      ...(simulation ? { simulation } : {}),
     });
 
+    const binary = isBinaryLiteralResponse(result);
+    const response = mapScriptResult(result);
+
     return {
-      binary: isBinaryLiteralResponse(result),
+      binary,
       defaultPage: result === undefined,
-      response: mapScriptResult(result),
+      response,
+      ...(simulation ? { simulation: await simulation.success(response.clone(), binary) } : {}),
     };
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
       throw error;
     }
-    throw new LocalScriptError(errorMessage(error), { cause: error });
+    throw new LocalScriptError(errorMessage(error), {
+      cause: error,
+      ...(simulation ? { simulation: simulation.failure(error) } : {}),
+    });
   }
 }
