@@ -70,6 +70,8 @@ to guest code. The preview marker is runtime-owned so an executed response canno
 A response can be a complete HTML document. The script cannot read its own URL, but relative
 references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the
 same link with new parameters; add `cache-control: no-store` when each execution should differ.
+To display or hand out an absolute working URL instead, mint a child with `ctx.compile` — the only
+URL an execution can obtain — at the cost of its single mint.
 The runtime policy permits inline styles and same-origin forms while blocking scripts and external
 subresources. Escape every interpolated value — query parameters and fetched data are
 attacker-controlled.
@@ -161,9 +163,10 @@ or tuple data — move intentional delegation through `seal`, where each value a
 cryptographic operation. This exact-byte scan is an accidental-leak guardrail, not
 information-flow analysis; transformed, encoded, or split secret values cannot be identified.
 
-There is no stored ancestry, generation counter, or depth policy: a child carrying another
-build-time-approved closure may mint again, and each execution independently reapplies the same
-budgets, validation, expiry resolution, sealing, and payload limits.
+Self-continuing chains are supported, unbounded by design: a packaged closure may compile another
+closure or itself — closure-table references are not outer captures — and each hop is an ordinary
+execution that independently reapplies the same one-mint budget, validation, expiry resolution,
+sealing, and payload limits. There is no stored ancestry, generation counter, or depth policy.
 
 A parent whose mint branch is reachable by anyone holding its URL is an unauthenticated admin
 endpoint. Keep parent links private or verify a signed request before compiling.
