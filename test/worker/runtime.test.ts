@@ -365,6 +365,23 @@ describe("Worker routes", () => {
     await expect(response.text()).resolves.toBe("one,two:ray-123:true");
   });
 
+  it("supplies host entropy in production", async () => {
+    const created = await createSmartlink({
+      source: `
+        const first = await ctx.crypto.random(16);
+        const second = await ctx.crypto.random(16, "base64");
+        return { body: first + ":" + second };
+      `,
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+    const [hex, base64] = (await response.text()).split(":");
+
+    expect(hex).toMatch(/^[0-9a-f]{32}$/u);
+    expect(base64).toMatch(/^[A-Za-z0-9+/]{22}==$/u);
+  });
+
   it("supports legacy version 1 links", async () => {
     const payload = encodePayload({ s: 'return { body: "legacy" }' }, "1");
     const response = await worker.fetch(new Request(`${origin}/r/${payload}`), testEnv());

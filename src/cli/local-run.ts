@@ -6,7 +6,11 @@ import {
   payloadFromInput,
 } from "../shared/codec.js";
 import { createGuardedFetch, type GuestFetch } from "../shared/guarded-fetch.js";
-import { createCryptoOperationBudget, createGuestCrypto } from "../shared/guest-crypto.js";
+import {
+  createCryptoOperationBudget,
+  createGuestCrypto,
+  type GuestRandomBytes,
+} from "../shared/guest-crypto.js";
 import { createSmartlinkCompiler } from "../shared/mint.js";
 import { createRequestId, userParams, userParamValues } from "../shared/request-context.js";
 import type { ScriptResult } from "../shared/result.js";
@@ -64,6 +68,7 @@ async function execute(
   context: SandboxContext,
   createGuestFetch: () => GuestFetch,
   getLocalKey: () => Promise<GeneratedKeyPair>,
+  randomBytes?: GuestRandomBytes,
 ): Promise<ScriptResult> {
   const cryptoBudget = createCryptoOperationBudget();
   return runScript({
@@ -71,10 +76,15 @@ async function execute(
     source: decoded.envelope.s,
     context,
     fetch: createGuestFetch(),
-    crypto: createGuestCrypto(crypto, cryptoBudget, {
-      masterSecret,
-      artifactIdentity: payloadArtifactIdentity(decoded),
-    }),
+    crypto: createGuestCrypto(
+      crypto,
+      cryptoBudget,
+      {
+        masterSecret,
+        artifactIdentity: payloadArtifactIdentity(decoded),
+      },
+      randomBytes,
+    ),
     cryptoBudget,
     compile: createSmartlinkCompiler({
       parent: decoded,
@@ -120,6 +130,10 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     localKey ??= generateKeyPair(1);
     return localKey;
   };
+  const simulation = program.simulation;
+  const randomBytes = simulation
+    ? (byteCount: number) => simulation.randomBytes(byteCount)
+    : undefined;
   let decoded: DecodedPayload = {
     version: "2",
     envelope: {
@@ -128,7 +142,7 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     },
   };
   let context = program.context;
-  let result = await execute(decoded, context, createGuestFetch, getLocalKey);
+  let result = await execute(decoded, context, createGuestFetch, getLocalKey, randomBytes);
 
   for (let followed = 0; ; followed += 1) {
     const url = compiledUrl(result);
@@ -157,6 +171,6 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
       secrets,
       requestId: createRequestId(),
     };
-    result = await execute(decoded, context, createGuestFetch, getLocalKey);
+    result = await execute(decoded, context, createGuestFetch, getLocalKey, randomBytes);
   }
 }

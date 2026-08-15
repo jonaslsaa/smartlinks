@@ -91,6 +91,7 @@ export class LocalSimulation {
   readonly #secrets: Array<readonly [name: string, value: string]> = [];
   readonly #inputs: SimulationInputs;
   #fetchQueue: Promise<void> = Promise.resolve();
+  #randomState = 0x6d2b79f5;
 
   constructor(inputs: SimulationInputs, secrets: Record<string, string>) {
     this.addSecrets(secrets);
@@ -106,6 +107,19 @@ export class LocalSimulation {
         this.#secrets.push([name, value]);
       }
     }
+  }
+
+  randomBytes(byteCount: number): Uint8Array {
+    const bytes = new Uint8Array(byteCount);
+    for (let index = 0; index < byteCount; index += 1) {
+      let state = this.#randomState;
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      this.#randomState = state >>> 0;
+      bytes[index] = this.#randomState & 255;
+    }
+    return bytes;
   }
 
   #redactionPattern(): { labels: Map<string, string>; pattern: RegExp } | undefined {

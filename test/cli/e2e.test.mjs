@@ -367,6 +367,31 @@ test("run simulation redacts an exact secret used as a binary response", async (
   });
 });
 
+test("run simulation replays entropy across a compiled child without repeating a value", async () => {
+  const source = `
+const child = async (childCtx: typeof ctx, parentRandom: string) => ({
+  body: parentRandom + ":" + await childCtx.crypto.random(16),
+});
+return ctx.compile(child, [await ctx.crypto.random(16)]);
+`;
+
+  await withTemporaryScript("ts", source, async (script) => {
+    const first = await runCli(["run", script, "--simulate", "--json"]);
+    const replay = await runCli(["run", script, "--simulate", "--json"]);
+    const firstReport = JSON.parse(first.stdout);
+    const replayReport = JSON.parse(replay.stdout);
+    const [parentRandom, childRandom] = firstReport.response.body.split(":");
+
+    assert.equal(firstReport.response.body, replayReport.response.body);
+    assert.match(parentRandom, /^[0-9a-f]{32}$/u);
+    assert.match(childRandom, /^[0-9a-f]{32}$/u);
+    assert.notEqual(parentRandom, childRandom);
+    assert.equal(firstReport.events[0].type, "compile");
+    assert.equal(first.stderr, "");
+    assert.equal(replay.stderr, "");
+  });
+});
+
 test("run simulation reports execution failures with a nonzero exit", async () => {
   const source = `
 await fetch("https://api.example/start");

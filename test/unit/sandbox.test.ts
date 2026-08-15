@@ -37,6 +37,43 @@ describe("QuickJS sandbox", () => {
     ).resolves.toEqual({ body: "undefined,undefined,undefined" });
   });
 
+  it("provides browser-compatible Latin-1 base64 globals", async () => {
+    await expect(
+      run(`
+        const encode = btoa;
+        const decode = atob;
+        String.fromCharCode = () => "tampered";
+        String.prototype.charCodeAt = () => 0;
+        String.prototype.indexOf = () => -1;
+        let encodeError = "";
+        let decodeError = "";
+        try { encode("€"); } catch (error) { encodeError = error.name; }
+        try { decode("not base64!"); } catch (error) { decodeError = error.name; }
+        return {
+          body: JSON.stringify({
+            encoded: encode("hello"),
+            binary: encode("\\x00\\xff"),
+            decoded: decode("aGVsbG8"),
+            whitespace: decode("Y Q=="),
+            permissiveBits: decode("AB==").charCodeAt(0),
+            encodeError,
+            decodeError,
+          }),
+        };
+      `),
+    ).resolves.toEqual({
+      body: JSON.stringify({
+        encoded: "aGVsbG8=",
+        binary: "AP8=",
+        decoded: "hello",
+        whitespace: "a",
+        permissiveBits: 0,
+        encodeError: "InvalidCharacterError",
+        decodeError: "InvalidCharacterError",
+      }),
+    });
+  });
+
   it("provides a guarded Web-like global fetch", async () => {
     const fetchImpl: typeof globalThis.fetch = vi.fn(async () =>
       Response.json({ answer: 42 }, { headers: { "x-test": "yes" } }),
@@ -72,6 +109,27 @@ describe("QuickJS sandbox", () => {
     ).resolves.toEqual({
       body: "Jonas:request-123:true:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
     });
+  });
+
+  it("bridges host entropy into the shared crypto budget", async () => {
+    let nextByte = 0;
+    const cryptoBudget = createCryptoOperationBudget();
+    await expect(
+      runScript({
+        version: "2",
+        source: await minifyScriptBody(`
+          const first = await ctx.crypto.random(4);
+          const second = await ctx.crypto.random(3, "base64");
+          return { body: first + ":" + second };
+        `),
+        context,
+        fetch: createGuardedFetch(),
+        crypto: createGuestCrypto(crypto, cryptoBudget, undefined, (byteCount) =>
+          Uint8Array.from({ length: byteCount }, () => nextByte++),
+        ),
+        cryptoBudget,
+      }),
+    ).resolves.toEqual({ body: "00010203:BAUG" });
   });
 
   it("bounds guest cryptographic work", async () => {
