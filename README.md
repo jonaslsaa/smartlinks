@@ -87,13 +87,14 @@ method, header, and string-body options and returns a Response-like value with `
 `url`, `redirected`, `headers`, `text()`, and `json()`. Browser-compatible `btoa` and `atob`
 encode and decode Latin-1 binary strings for `bodyBase64` responses.
 
-`ctx.crypto` provides `random`, `sha256`, `hmacSha256`, and `verifyHmacSha256`. They return
-lowercase hex by default and can use Base64 when passed `"base64"`; hashing and HMAC operate on
-strings. `random` draws up to 256 bytes of host entropy and is one of the 16 cryptographic
-operations available to an execution. Prefer HMAC with a sealed key, `ctx.requestId`, and a
-counter when deriving values from existing authority; use `random` when a link must originate a
-fresh key or nonce. `Math.random` is not cryptographically secure. `ctx.crypto` also provides
-`seal` and `open` for encrypted state tokens — see below.
+`ctx.crypto` provides `random`, `sha256`, `hmacSha256`, and `verifyHmacSha256`. `random`, `sha256`,
+and `hmacSha256` return lowercase hex by default and can return Base64 when passed `"base64"`;
+hashing and HMAC operate on strings. `verifyHmacSha256` returns a boolean, with its encoding
+argument describing the supplied signature. `random` draws up to 256 bytes of host entropy and is
+one of the 16 cryptographic operations available to an execution. Prefer HMAC with a sealed key,
+`ctx.requestId`, and a counter when deriving values from existing authority; use `random` when a
+link must originate a fresh key or nonce. `Math.random` is not cryptographically secure.
+`ctx.crypto` also provides `seal` and `open` for encrypted state tokens — see below.
 
 Return an absolute URL for a `302` redirect, return `{ status?, headers?, body? }` for a text
 response, return `{ status?, headers?, bodyBase64 }` for bytes, or return nothing for a small

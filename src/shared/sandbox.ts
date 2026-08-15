@@ -58,6 +58,7 @@ const webApiBootstrap = `
   const beginCompile = globalThis.__smartlinks_begin_compile;
   const hostCompile = globalThis.__smartlinks_host_compile;
   const CompileError = Error;
+  const WebApiTypeError = TypeError;
   const StringConstructor = String;
   const arrayIsArray = Array.isArray;
   const arrayPush = Array.prototype.push;
@@ -89,7 +90,13 @@ const webApiBootstrap = `
     return error;
   }
 
-  function encodeBase64(value) {
+  function btoa(value) {
+    if (arguments.length === 0) {
+      throw new WebApiTypeError("btoa requires an argument.");
+    }
+    if (typeof value === "symbol") {
+      throw new WebApiTypeError("btoa cannot convert a Symbol to a string.");
+    }
     const input = StringConstructor(value);
     let output = "";
     for (let index = 0; index < input.length; index += 3) {
@@ -112,7 +119,13 @@ const webApiBootstrap = `
     return output;
   }
 
-  function decodeBase64(value) {
+  function atob(value) {
+    if (arguments.length === 0) {
+      throw new WebApiTypeError("atob requires an argument.");
+    }
+    if (typeof value === "symbol") {
+      throw new WebApiTypeError("atob cannot convert a Symbol to a string.");
+    }
     const input = StringConstructor(value);
     let cleaned = "";
     for (let index = 0; index < input.length; index += 1) {
@@ -156,8 +169,8 @@ const webApiBootstrap = `
     return output;
   }
 
-  globalThis.btoa = encodeBase64;
-  globalThis.atob = decodeBase64;
+  globalThis.btoa = btoa;
+  globalThis.atob = atob;
 
   function serializeCompileValue(value, depth, state) {
     state.values += 1;

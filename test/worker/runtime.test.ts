@@ -265,9 +265,8 @@ describe("Worker routes", () => {
 
   it("returns byte-identical calendar and PNG responses", async () => {
     const calendar = new TextEncoder().encode("BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n");
-    const calendarBase64 = btoa(String.fromCharCode(...calendar));
     const calendarLink = await createSmartlink({
-      source: `return { headers: { "content-type": "text/calendar" }, bodyBase64: ${JSON.stringify(calendarBase64)} }`,
+      source: `return { headers: { "content-type": "text/calendar" }, bodyBase64: btoa("BEGIN:VCALENDAR\\r\\nEND:VCALENDAR\\r\\n") }`,
       service: origin,
       validate: validateWorkerScript,
     });
@@ -277,9 +276,8 @@ describe("Worker routes", () => {
     expect(new Uint8Array(await calendarResponse.arrayBuffer())).toEqual(calendar);
 
     const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
-    const pngBase64 = btoa(String.fromCharCode(...png));
     const pngLink = await createSmartlink({
-      source: `return { bodyBase64: ${JSON.stringify(pngBase64)} }`,
+      source: `return { bodyBase64: btoa("\\x89PNG\\r\\n\\x1a\\n") }`,
       service: origin,
       validate: validateWorkerScript,
     });

@@ -37,7 +37,7 @@ The script receives `ctx` with:
 `verifyHmacSha256(key, message, signature, encoding?)` accept strings. Encoding defaults to
 lowercase `hex`; `base64` is also supported. An execution may perform at most 16 cryptographic
 operations, with at most 1 MiB of string input per hashing or HMAC operation. Prefer deriving
-values with `hmacSha256(ctx.secrets.KEY, ctx.requestId + counter)` when the link already holds a
+values with `hmacSha256(ctx.secrets.KEY!, ctx.requestId + counter)` when the link already holds a
 sealed key; use `random` when it must originate a fresh secret. `Math.random` is not
 cryptographically secure. Simulation substitutes a reproducible stream for explicit `random`
 calls, with distinct bytes on successive calls across the whole simulated parent/child chain.

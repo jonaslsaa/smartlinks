@@ -48,6 +48,14 @@ export type GuestRandomBytes = (byteCount: number) => Uint8Array;
 
 const encoder = new TextEncoder();
 
+function parseEncoding(value: unknown): GuestCryptoEncoding {
+  const parsed = encodingSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new TypeError('Encoding must be "hex" or "base64".');
+  }
+  return parsed.data;
+}
+
 function encode(bytes: ArrayBuffer | Uint8Array, encoding: GuestCryptoEncoding): string {
   const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   if (encoding === "hex") {
@@ -197,7 +205,7 @@ export function createGuestCrypto(
       if (byteCount > MAX_RANDOM_BYTES) {
         throw new Error(`random may generate at most ${MAX_RANDOM_BYTES} bytes.`);
       }
-      const encoding = encodingSchema.parse(rawEncoding);
+      const encoding = parseEncoding(rawEncoding);
       const bytes = randomBytes(byteCount);
       if (!(bytes instanceof Uint8Array) || bytes.byteLength !== byteCount) {
         throw new Error("The runtime returned an invalid number of random bytes.");
@@ -206,12 +214,12 @@ export function createGuestCrypto(
     },
     async sha256(message, rawEncoding = "hex") {
       guard(message);
-      const encoding = encodingSchema.parse(rawEncoding);
+      const encoding = parseEncoding(rawEncoding);
       return encode(await cryptoImpl.subtle.digest("SHA-256", encoder.encode(message)), encoding);
     },
     async hmacSha256(key, message, rawEncoding = "hex") {
       guard(key, message);
-      const encoding = encodingSchema.parse(rawEncoding);
+      const encoding = parseEncoding(rawEncoding);
       const signature = await cryptoImpl.subtle.sign(
         "HMAC",
         await hmacKey(cryptoImpl, key),
@@ -221,7 +229,7 @@ export function createGuestCrypto(
     },
     async verifyHmacSha256(key, message, signature, rawEncoding = "hex") {
       guard(key, message, signature);
-      const encoding = encodingSchema.parse(rawEncoding);
+      const encoding = parseEncoding(rawEncoding);
       const decoded = decode(signature, encoding);
       if (!decoded) {
         return false;

@@ -34,6 +34,45 @@ describe("guest cryptographic primitives", () => {
         () => new Uint8Array(),
       ).random(1),
     ).rejects.toThrow("invalid number of random bytes");
+
+    await expect(createGuestCrypto().random(1, "base64url" as never)).rejects.toThrow(
+      'Encoding must be "hex" or "base64".',
+    );
+    await expect(createGuestCrypto().sha256("message", "base64url" as never)).rejects.toThrow(
+      'Encoding must be "hex" or "base64".',
+    );
+  });
+
+  it("keeps injected random bytes separate from token nonces", async () => {
+    let nonceByte = 1;
+    const nonceCalls: number[] = [];
+    const cryptoImpl = {
+      subtle: crypto.subtle,
+      getRandomValues<T extends ArrayBufferView>(array: T): T {
+        nonceCalls.push(array.byteLength);
+        new Uint8Array(array.buffer, array.byteOffset, array.byteLength).fill(nonceByte++);
+        return array;
+      },
+      randomUUID: () => crypto.randomUUID(),
+    } satisfies Crypto;
+    const injectedRandom = vi.fn((byteCount: number) => new Uint8Array(byteCount).fill(255));
+    const guest = createGuestCrypto(
+      cryptoImpl,
+      createCryptoOperationBudget(),
+      undefined,
+      injectedRandom,
+    );
+
+    await expect(guest.random(4)).resolves.toBe("ffffffff");
+    expect(injectedRandom).toHaveBeenCalledOnce();
+    injectedRandom.mockClear();
+
+    const first = await guest.seal("state", { key: "0123456789abcdef" });
+    const second = await guest.seal("state", { key: "0123456789abcdef" });
+
+    expect(injectedRandom).not.toHaveBeenCalled();
+    expect(nonceCalls).toEqual([12, 12]);
+    expect(second).not.toBe(first);
   });
 
   it("shares the existing cryptographic operation budget", async () => {
