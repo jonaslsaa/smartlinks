@@ -57,7 +57,7 @@ operations. Tokens let a link hand the client state the client can neither read 
 recover it on a later request.
 
 Without options, the token is bound to the exact artifact: only a link with identical script,
-closures, expiry, and interstitial flag can open it. Rebuilding with any change rotates the
+closures, expiry, interstitial flag, and author note can open it. Rebuilding with any change rotates the
 key and invalidates outstanding tokens; that is the identity model working as intended. Children
 minted with `ctx.compile` are distinct artifacts and never share transparent tokens with their
 parent.
