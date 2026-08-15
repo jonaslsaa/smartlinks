@@ -129,13 +129,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Compare package versions
         id: version
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           current_version="$(node -p "require('./package.json').version")"
-          git show "$GITHUB_SHA^:package.json" > "$RUNNER_TEMP/previous-package.json"
+          git show "$BEFORE_SHA:package.json" > "$RUNNER_TEMP/previous-package.json"
           previous_version="$(node -p "require('$RUNNER_TEMP/previous-package.json').version")"
 
           if [[ "$current_version" == "$previous_version" ]]; then
