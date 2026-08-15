@@ -242,7 +242,8 @@ npm run dev
 
 To deploy your own runtime, run `npx wrangler deploy`, then provision its key with the internal
 `node dist/index.js keygen --key-id 1 --set-worker` command. Set `SMARTLINKS_URL` to the new
-Worker URL when building links. Never commit `.dev.vars`.
+Worker URL when building links. Keep `RUNTIME_HOSTNAMES` in `wrangler.jsonc` synchronized with
+every public hostname that can reach the Worker. Never commit `.dev.vars`.
 
 ---
 
