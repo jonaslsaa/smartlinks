@@ -10,7 +10,7 @@ import {
 } from "../shared/request-context.js";
 import { isBinaryLiteralResponse, mapScriptResult, type ScriptResult } from "../shared/result.js";
 import { prepareSmartlinkProgram } from "./build.js";
-import { runLocalProgram } from "./local-run.js";
+import { type LocalRuntime, runLocalProgram } from "./local-run.js";
 import { LocalSimulation, type SimulationReport } from "./simulation.js";
 import { readScriptSource } from "./source.js";
 
@@ -36,6 +36,15 @@ export type LocalScriptExecution = {
   defaultPage: boolean;
   response: Response;
   simulation?: SimulationReport;
+};
+
+type LocalRequestContext = {
+  params: Record<string, string>;
+  paramValues: Record<string, string[]>;
+  method: string;
+  headers: Record<string, string>;
+  body: string | null;
+  requestId: string;
 };
 
 export class LocalScriptError extends Error {
@@ -75,50 +84,73 @@ export function createSyntheticRequest(options: SyntheticRequestOptions): Reques
   return new Request(url, init);
 }
 
+async function localRequestContext(request: Request): Promise<LocalRequestContext> {
+  const url = new URL(request.url);
+  return {
+    params: userParams(url.searchParams),
+    paramValues: userParamValues(url.searchParams),
+    method: request.method,
+    headers: guestRequestHeaders(request.headers),
+    body: await readBoundedRequestBody(request),
+    requestId: createRequestId(),
+  };
+}
+
+function mappedExecution(result: ScriptResult): LocalScriptExecution {
+  return {
+    binary: isBinaryLiteralResponse(result),
+    defaultPage: result === undefined,
+    response: mapScriptResult(result),
+  };
+}
+
 export async function executeLocalRequest(
   request: Request,
   options: LocalScriptOptions,
+  runtime?: LocalRuntime,
 ): Promise<LocalScriptExecution> {
   let simulation: LocalSimulation | undefined;
   try {
     const originalSource = await readScriptSource(options.file, { typeCheck: options.typeCheck });
     const { source, closures } = await prepareSmartlinkProgram(originalSource, options.minify);
-    const url = new URL(request.url);
-    const params = userParams(url.searchParams);
-    const paramValues = userParamValues(url.searchParams);
-    const headers = guestRequestHeaders(request.headers);
-    const body = await readBoundedRequestBody(request);
+    const context = await localRequestContext(request);
     if (options.simulate) {
       simulation = new LocalSimulation(
-        { method: request.method, params: paramValues, headers, body },
+        {
+          method: context.method,
+          params: context.paramValues,
+          headers: context.headers,
+          body: context.body,
+        },
         options.secrets,
       );
     }
-    const result: ScriptResult = await runLocalProgram({
+    const program = {
       source,
       closures,
       context: {
-        params,
-        paramValues,
-        method: request.method,
-        headers,
-        body,
+        ...context,
         secrets: options.secrets,
-        requestId: createRequestId(),
       },
-      allowNetwork: options.allowNetwork,
-      blockedHostnames: options.blockedHostnames,
       ...(simulation ? { simulation } : {}),
-    });
+    };
+    const result: ScriptResult = runtime
+      ? await runtime.executeProgram(program)
+      : await runLocalProgram({
+          ...program,
+          allowNetwork: options.allowNetwork,
+          blockedHostnames: options.blockedHostnames,
+        });
 
-    const binary = isBinaryLiteralResponse(result);
-    const response = mapScriptResult(result);
+    const execution = mappedExecution(result);
 
     return {
-      binary,
-      defaultPage: result === undefined,
-      response,
-      ...(simulation ? { simulation: await simulation.success(response.clone(), binary) } : {}),
+      ...execution,
+      ...(simulation
+        ? {
+            simulation: await simulation.success(execution.response.clone(), execution.binary),
+          }
+        : {}),
     };
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
@@ -128,5 +160,22 @@ export async function executeLocalRequest(
       cause: error,
       ...(simulation ? { simulation: await simulation.failure(error) } : {}),
     });
+  }
+}
+
+export async function executeLocalPayloadRequest(
+  request: Request,
+  payload: string,
+  runtime: LocalRuntime,
+): Promise<LocalScriptExecution> {
+  try {
+    return mappedExecution(
+      await runtime.executePayload(payload, await localRequestContext(request)),
+    );
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      throw error;
+    }
+    throw new LocalScriptError(errorMessage(error), { cause: error });
   }
 }

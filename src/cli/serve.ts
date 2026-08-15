@@ -2,7 +2,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { isPreviewRequest } from "../shared/bots.js";
 import { MAX_REQUEST_BODY_BYTES, RequestBodyTooLargeError } from "../shared/request-context.js";
 import { hardenResponse, markPreviewResponse } from "../shared/response-security.js";
-import { executeLocalRequest, LocalScriptError, type LocalScriptExecution } from "./run.js";
+import { createLocalRuntime, type LocalRuntime } from "./local-run.js";
+import {
+  executeLocalPayloadRequest,
+  executeLocalRequest,
+  LocalScriptError,
+  type LocalScriptExecution,
+} from "./run.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
 
@@ -169,6 +175,15 @@ function errorResponse(error: unknown, accept: string | undefined): Response {
   );
 }
 
+function runnerPayload(pathname: string): string | undefined {
+  const prefix = "/r/";
+  if (!pathname.startsWith(prefix)) {
+    return undefined;
+  }
+  const payload = pathname.slice(prefix.length);
+  return payload && !payload.includes("/") ? payload : undefined;
+}
+
 async function writeResponse(
   method: string | undefined,
   outgoing: ServerResponse,
@@ -191,6 +206,7 @@ async function handleRequest(
   outgoing: ServerResponse,
   origin: string,
   options: ServeOptions,
+  runtime: LocalRuntime | undefined,
 ): Promise<void> {
   try {
     validateBrowserBoundary(incoming, origin);
@@ -200,8 +216,9 @@ async function handleRequest(
       await writeResponse(incoming.method, outgoing, new Response(null, { status: 204 }));
       return;
     }
-    if (pathname !== "/") {
-      throw new ServeRequestError(404, "Only the root path is served locally.");
+    const payload = runnerPayload(pathname);
+    if (pathname !== "/" && payload === undefined) {
+      throw new ServeRequestError(404, "Only the root and locally compiled paths are served.");
     }
     if (isPreviewRequest(request)) {
       await writeResponse(
@@ -212,7 +229,12 @@ async function handleRequest(
       return;
     }
 
-    const execution: LocalScriptExecution = await executeLocalRequest(request, options);
+    if (!runtime) {
+      throw new ServeRequestError(503, "The local Smartlinks runtime is starting.");
+    }
+    const execution: LocalScriptExecution = payload
+      ? await executeLocalPayloadRequest(request, payload, runtime)
+      : await executeLocalRequest(request, options, runtime);
     const response = execution.defaultPage
       ? localPage("Smartlinks local preview", "Done", "The script completed without a response.")
       : execution.response;
@@ -228,8 +250,9 @@ async function handleRequest(
 
 export async function serveLocalScript(options: ServeOptions): Promise<void> {
   let origin = "";
+  let runtime: LocalRuntime | undefined;
   const server = createServer((request, response) => {
-    void handleRequest(request, response, origin, options).catch((error: unknown) => {
+    void handleRequest(request, response, origin, options, runtime).catch((error: unknown) => {
       response.destroy(error instanceof Error ? error : undefined);
     });
   });
@@ -261,6 +284,16 @@ export async function serveLocalScript(options: ServeOptions): Promise<void> {
     throw new Error("Could not determine the local server address.");
   }
   origin = `http://${LOOPBACK_HOST}:${address.port}`;
+  try {
+    runtime = createLocalRuntime({
+      allowNetwork: options.allowNetwork,
+      blockedHostnames: options.blockedHostnames,
+      service: origin,
+    });
+  } catch (error) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    throw error;
+  }
   options.onListen(origin);
 
   await new Promise<void>((resolve, reject) => {
