@@ -10,6 +10,7 @@ import {
 } from "../../src/shared/author.js";
 import { toBase64Url } from "../../src/shared/bytes.js";
 import { encodePayload, MAX_DECOMPRESSED_LENGTH } from "../../src/shared/codec.js";
+import { RUNTIME_CONTENT_SECURITY_POLICY } from "../../src/shared/response-security.js";
 import { generateKeyPair, sealSecret } from "../../src/shared/seal.js";
 import { decodeWorkerPayload, inflateRawWithLimit } from "../../src/worker/codec.js";
 import { exchangeGithubIdentity } from "../../src/worker/identity.js";
@@ -71,7 +72,17 @@ describe("Worker routes", () => {
 
   it("executes a CLI-built link with params and sealed secrets", async () => {
     const created = await createSmartlink({
-      source: `return { status: 201, headers: { "x-runtime": "quickjs" }, body: \`\${ctx.params.name}:\${ctx.secrets.TOKEN}\` }`,
+      source: `return {
+        status: 201,
+        headers: {
+          "content-security-policy": "img-src https://images.example",
+          "referrer-policy": "unsafe-url",
+          "x-content-type-options": "off",
+          "x-frame-options": "SAMEORIGIN",
+          "x-runtime": "quickjs"
+        },
+        body: \`\${ctx.params.name}:\${ctx.secrets.TOKEN}\`
+      }`,
       service: origin,
       secrets: { TOKEN: "sealed-value" },
       publicKey: pair,
@@ -81,7 +92,32 @@ describe("Worker routes", () => {
 
     expect(response.status).toBe(201);
     expect(response.headers.get("x-runtime")).toBe("quickjs");
+    expect(response.headers.get("content-security-policy")).toContain(
+      "img-src https://images.example",
+    );
+    expect(response.headers.get("content-security-policy")).toContain(
+      RUNTIME_CONTENT_SECURITY_POLICY,
+    );
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
     await expect(response.text()).resolves.toBe("Jonas:sealed-value");
+  });
+
+  it("hardens the runtime-owned completion page", async () => {
+    const created = await createSmartlink({
+      source: "const completed = true;",
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-security-policy")).toBe(RUNTIME_CONTENT_SECURITY_POLICY);
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    await expect(response.text()).resolves.toContain("✓ done");
   });
 
   it("round-trips guest tokens across executions of the same link only", async () => {

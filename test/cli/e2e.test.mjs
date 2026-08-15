@@ -10,9 +10,20 @@ import { runCli, withTemporaryScript } from "./helpers.mjs";
 
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const cli = fileURLToPath(new URL("../../dist/index.js", import.meta.url));
+const runtimeContentSecurityPolicy =
+  "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 const packageJson = JSON.parse(
   await readFile(new URL("../../package.json", import.meta.url), "utf8"),
 );
+
+function assertRuntimeSecurityHeaders(headers) {
+  const get = (name) =>
+    typeof headers.get === "function" ? headers.get(name) : (headers[name] ?? null);
+  assert.ok(get("content-security-policy")?.includes(runtimeContentSecurityPolicy));
+  assert.equal(get("referrer-policy"), "no-referrer");
+  assert.equal(get("x-content-type-options"), "nosniff");
+  assert.equal(get("x-frame-options"), "DENY");
+}
 
 function toBase64Url(value) {
   return Buffer.from(value).toString("base64url");
@@ -304,6 +315,7 @@ return {
     assert.equal(response.status, 201);
     assert.equal(response.headers["content-type"], "application/json");
     assert.equal(response.headers["x-smartlinks-e2e"], "run");
+    assertRuntimeSecurityHeaders(response.headers);
     const received = JSON.parse(response.body);
     assert.match(received.requestId, /^[0-9a-f-]{36}$/u);
     delete received.requestId;
@@ -420,7 +432,14 @@ test("run --serve refreshes the production sandbox from real browser requests", 
   const firstSource = `
 return {
   status: 201,
-  headers: { "content-type": "application/json", "x-smartlinks-serve": "yes" },
+  headers: {
+    "content-security-policy": "img-src https://images.example",
+    "content-type": "application/json",
+    "referrer-policy": "unsafe-url",
+    "x-content-type-options": "off",
+    "x-frame-options": "SAMEORIGIN",
+    "x-smartlinks-serve": "yes",
+  },
   body: JSON.stringify({
     params: ctx.params,
     paramValues: ctx.paramValues,
@@ -444,6 +463,10 @@ return {
       });
       assert.equal(first.status, 201);
       assert.equal(first.headers.get("x-smartlinks-serve"), "yes");
+      assert.ok(
+        first.headers.get("content-security-policy")?.includes("img-src https://images.example"),
+      );
+      assertRuntimeSecurityHeaders(first.headers);
       assert.deepEqual(await first.json(), {
         params: { tag: "two" },
         paramValues: { tag: ["one", "two"] },
@@ -505,6 +528,7 @@ return {
       const redirect = await fetch(server.origin, { redirect: "manual" });
       assert.equal(redirect.status, 302);
       assert.equal(redirect.headers.get("location"), "https://example.com/next");
+      assertRuntimeSecurityHeaders(redirect.headers);
 
       await writeFile(
         script,
@@ -522,6 +546,7 @@ return {
       await writeFile(script, "const completed = true;\n");
       const defaultPage = await fetch(server.origin, { headers: { accept: "text/html" } });
       assert.equal(defaultPage.status, 200);
+      assertRuntimeSecurityHeaders(defaultPage.headers);
       assert.match(await defaultPage.text(), /Local Smartlinks preview/u);
 
       await writeFile(

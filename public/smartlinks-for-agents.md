@@ -55,12 +55,18 @@ Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` fo
 `{ status?, headers?, bodyBase64 }` for bytes, or `undefined` for the default completion page.
 `body` and `bodyBase64` are mutually exclusive. `bodyBase64` accepts padded or unpadded Base64,
 is limited to 1 MiB after decoding, and defaults to `application/octet-stream` when headers do
-not supply a content type; `content-disposition` remains author-controlled.
+not supply a content type; `content-disposition` remains author-controlled. Every mapped response
+receives the runtime's fixed Content Security Policy, `Referrer-Policy: no-referrer`,
+`X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`. An author CSP is enforced in
+addition to the runtime policy, so it may tighten but cannot weaken the floor; other headers remain
+author-controlled.
 
 A response can be a complete HTML document. The script cannot read its own URL, but relative
 references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the
 same link with new parameters; add `cache-control: no-store` when each execution should differ.
-Escape every interpolated value — query parameters and fetched data are attacker-controlled.
+The runtime policy permits inline styles and same-origin forms while blocking scripts and external
+subresources. Escape every interpolated value — query parameters and fetched data are
+attacker-controlled.
 
 TypeScript is checked in isolation with strict compiler settings and built-in types for `ctx`,
 global `fetch`, and valid script results — no project `tsconfig`, no import resolution. The link

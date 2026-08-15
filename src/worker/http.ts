@@ -1,4 +1,5 @@
 import { RequestBodyTooLargeError, readBoundedRequestBody } from "../shared/request-context.js";
+import { hardenResponse } from "../shared/response-security.js";
 
 type HttpErrorOptions = ErrorOptions & {
   headers?: HeadersInit;
@@ -25,21 +26,10 @@ export function escapeHtml(value: string): string {
     .replaceAll("'", "&#039;");
 }
 
-const SECURITY_HEADERS = {
-  "content-security-policy":
-    "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
-  "referrer-policy": "no-referrer",
-  "x-content-type-options": "nosniff",
-  "x-frame-options": "DENY",
-} as const;
-
 export function html(body: string, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
   headers.set("content-type", "text/html; charset=utf-8");
-  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
-    headers.set(name, value);
-  }
-  return new Response(body, { ...init, headers });
+  return hardenResponse(new Response(body, { ...init, headers }));
 }
 
 export function json(value: unknown, init: ResponseInit = {}): Response {
