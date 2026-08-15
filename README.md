@@ -112,8 +112,9 @@ response, return `{ status?, headers?, bodyBase64 }` for bytes, or return nothin
 success page. `body` and `bodyBase64` are mutually exclusive. Binary responses are limited to
 1 MiB after decoding and default to `application/octet-stream` when no content type is supplied.
 Every response receives a runtime-owned browser-security floor. An author-provided Content
-Security Policy can tighten that floor but cannot replace it; other response headers remain under
-the author's control. Top-level `await` works.
+Security Policy can tighten that floor but cannot replace it. The runtime also reserves
+`x-smartlinks-preview`; other response headers remain under the author's control. Top-level `await`
+works.
 
 ## Mint a link from a link
 

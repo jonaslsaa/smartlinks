@@ -59,7 +59,7 @@ not supply a content type; `content-disposition` remains author-controlled. Ever
 receives the runtime's fixed Content Security Policy, `Referrer-Policy: no-referrer`,
 `X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`. An author CSP is enforced in
 addition to the runtime policy, so it may tighten but cannot weaken the floor; other headers remain
-author-controlled.
+author-controlled except the runtime-reserved `x-smartlinks-preview` marker.
 
 A response can be a complete HTML document. The script cannot read its own URL, but relative
 references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the
