@@ -43,6 +43,11 @@ returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirec
 Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` for a literal
 response, or `undefined` for the default completion page.
 
+A literal response can be a complete HTML document. The script cannot read its own URL, but
+relative references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter
+the same link with new parameters; add `cache-control: no-store` when each execution should differ.
+Escape every interpolated value, since query parameters and fetched data are attacker-controlled.
+
 TypeScript is checked in isolation with strict compiler settings and built-in types for `ctx`,
 global `fetch`, and valid script results. Smartlinks does not load a project `tsconfig` or resolve
 imports. The execution link and decoder contain emitted JavaScript. `--no-type-check` skips
@@ -146,5 +151,26 @@ revocable credentials. Avoid inline `NAME=value` secrets because shell history c
   intentionally best-effort.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 
-Keep the script small, explicit, and least-privileged. Use `run` first, inspect with `decode`, then
-use `build --out link.txt` or `build --copy` for the final immutable link. IF it is safe to test it, then smoke-test it to see if it works while you work.
+## Budgeting the payload
+
+The 7,800-character limit applies to the compressed payload, not to the source, so the practical
+ceiling is much higher than it suggests and depends on what a script contains rather than how long
+it is. Minification renames locals and strips formatting; compression collapses repetition. Neither
+shrinks unique string data.
+
+| Script content                                    | Source that still fits | Ratio      |
+| ------------------------------------------------- | ---------------------- | ---------- |
+| Logic: functions, branches, local names            | ~75,000 characters     | 6x to 10x  |
+| Markup: inline HTML and CSS in template literals   | ~45,000 characters     | 3x to 6x   |
+| Unique string data: word lists, tables, literals   | ~11,000 characters     | about 1.4x |
+
+Ratios improve as scripts grow, so small scripts understate the headroom: the same markup shape
+measures 2.8x at 1,900 source characters and 5.8x at 27,000. A full HTML page with inline CSS,
+escaping, and a fetch call lands near 2,500. Write readable code rather than golfing it, keep bulk
+data out of the payload, and read the size and budget percentage printed by `build --out FILE` or
+`build --copy` instead of estimating.
+
+Keep the script explicit and least-privileged; size is a payload question rather than a design
+constraint. Use `run` first, inspect with `decode`, then use `build --out link.txt` or
+`build --copy` for the final immutable link. IF it is safe to test it, then smoke-test it to see if
+it works while you work.
