@@ -20,7 +20,8 @@ decoding, previewing, and executing signed links make no GitHub request.
 ## Authoring contract
 
 Input files contain an async function body — not a module or complete function. Top-level `await`
-and `return` are valid. Imports and Node APIs are unavailable inside QuickJS.
+and `return` are valid. Imports, Node APIs, timers, `TextEncoder`, and `Intl` are unavailable
+inside QuickJS; `Date.now()` works.
 
 The script receives `ctx` with:
 
@@ -50,8 +51,9 @@ Browser-compatible globals `btoa(value)` and `atob(value)` encode and decode Lat
 strings — the standard Base64 that `bodyBase64` accepts.
 
 Global `fetch(url, options)` accepts a string URL, method, plain headers, and a string body, and
-returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirected`, `headers`,
-`bodyUsed`, `text()`, and `json()`; the body can be consumed once. Streams, `Request`, `Blob`,
+returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirected`, `headers`
+(read via `.get(name)`, unlike the plain-object request headers), `bodyUsed`, `text()`, and
+`json()`; the body can be consumed once. Streams, `Request`, `Blob`,
 `FormData`, cloning, custom redirect modes, and guest abort signals are not supported.
 
 Return an absolute HTTP(S) URL for a 302 redirect (return `{ status, headers }` with a `location`
@@ -170,7 +172,10 @@ execution that independently reapplies the same one-mint budget, validation, exp
 sealing, and payload limits. There is no built-in stored ancestry, generation counter, or depth policy.
 
 A parent whose mint branch is reachable by anyone holding its URL is an unauthenticated admin
-endpoint. Keep parent links private or verify a signed request before compiling.
+endpoint. Keep parent links private or verify a signed request before compiling. The verification
+is built from what is already here: seal an HMAC key, deliver it to intended callers out-of-band,
+and require `verifyHmacSha256` over the parameters plus a timestamp — freshness is a window
+check, and replay inside the window is the client's job, as with tokens.
 
 ## CLI discovery
 
