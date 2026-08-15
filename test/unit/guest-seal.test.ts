@@ -1,0 +1,109 @@
+import { describe, expect, it } from "vitest";
+import { fromBase64Url, toBase64Url } from "../../src/shared/bytes.js";
+import {
+  createCryptoOperationBudget,
+  createGuestCrypto,
+  type GuestTokenKeySource,
+  MIN_TOKEN_KEY_BYTES,
+} from "../../src/shared/guest-crypto.js";
+import { payloadArtifactIdentity } from "../../src/shared/seal.js";
+
+const MASTER = "unit-test-master-secret";
+const EXPLICIT_KEY = "0123456789abcdef";
+
+function identity(script: string, extras: Record<string, unknown> = {}): string {
+  return payloadArtifactIdentity({ version: "2", envelope: { s: script, ...extras } });
+}
+
+function guest(source?: GuestTokenKeySource, maxOperations?: number) {
+  return createGuestCrypto(crypto, createCryptoOperationBudget(maxOperations), source);
+}
+
+function link(script = "return 1", extras: Record<string, unknown> = {}, master = MASTER) {
+  return guest({ masterSecret: master, artifactIdentity: identity(script, extras) });
+}
+
+describe("guest token seal/open", () => {
+  it("round-trips JSON values with the transparent key", async () => {
+    const value = { step: 2, answers: [3, 1], done: false, note: null, name: "Jonas" };
+    const token = await link().seal(value);
+    await expect(link().open(token)).resolves.toEqual(value);
+    expect(token).toMatch(/^[A-Za-z0-9_-]+$/u);
+  });
+
+  it("scopes transparent tokens to the exact artifact", async () => {
+    const token = await link("return 1").seal("state");
+
+    await expect(link("return 2").open(token)).rejects.toThrow("could not be opened");
+    await expect(link("return 1", { notAfter: 2_000_000_000 }).open(token)).rejects.toThrow(
+      "could not be opened",
+    );
+    await expect(link("return 1", { i: true }).open(token)).rejects.toThrow("could not be opened");
+    await expect(link("return 1", { c: ["()=>1"] }).open(token)).rejects.toThrow(
+      "could not be opened",
+    );
+    await expect(link("return 1", {}, "other-master").open(token)).rejects.toThrow(
+      "could not be opened",
+    );
+  });
+
+  it("round-trips explicit-key tokens between different links", async () => {
+    const token = await link("return 1").seal({ tag: "v1.2.3" }, { key: EXPLICIT_KEY });
+    await expect(link("return 2").open(token, { key: EXPLICIT_KEY })).resolves.toEqual({
+      tag: "v1.2.3",
+    });
+    await expect(guest().open(token, { key: EXPLICIT_KEY })).resolves.toEqual({ tag: "v1.2.3" });
+    await expect(link("return 1").open(token)).rejects.toThrow("could not be opened");
+  });
+
+  it("rejects explicit keys under the minimum length", async () => {
+    const short = "a".repeat(MIN_TOKEN_KEY_BYTES - 1);
+    await expect(guest().seal("value", { key: short })).rejects.toThrow("at least 16 bytes");
+    await expect(guest().seal("value", { key: "a".repeat(MIN_TOKEN_KEY_BYTES) })).resolves.toMatch(
+      /^[A-Za-z0-9_-]+$/u,
+    );
+  });
+
+  it("separates token domains with the context option", async () => {
+    const token = await link().seal("cooldown", { context: "cooldown" });
+    await expect(link().open(token, { context: "cooldown" })).resolves.toBe("cooldown");
+    await expect(link().open(token, { context: "cursor" })).rejects.toThrow("could not be opened");
+    await expect(link().open(token)).rejects.toThrow("could not be opened");
+  });
+
+  it("rejects tampered, truncated, foreign, and malformed tokens", async () => {
+    const token = await link().seal({ answer: 42 });
+
+    const bytes = fromBase64Url(token);
+    bytes[bytes.length - 1] = (bytes[bytes.length - 1] ?? 0) ^ 1;
+    await expect(link().open(toBase64Url(bytes))).rejects.toThrow("could not be opened");
+
+    await expect(link().open(toBase64Url(bytes.subarray(0, 20)))).rejects.toThrow("truncated");
+    await expect(link().open("not base64url!")).rejects.toThrow("base64url");
+
+    const versioned = fromBase64Url(token);
+    versioned[0] = 9;
+    await expect(link().open(toBase64Url(versioned))).rejects.toThrow("unsupported version");
+  });
+
+  it("requires a configured transparent key only for transparent tokens", async () => {
+    await expect(guest().seal("value")).rejects.toThrow("not configured");
+    await expect(guest().seal("value", { key: EXPLICIT_KEY })).resolves.toBeDefined();
+  });
+
+  it("rejects unserializable values and unknown options", async () => {
+    await expect(link().seal(undefined)).rejects.toThrow("JSON-serializable");
+    await expect(link().seal(1, { keys: EXPLICIT_KEY } as never)).rejects.toThrow();
+  });
+
+  it("charges the crypto budget and enforces the input cap", async () => {
+    const source = { masterSecret: MASTER, artifactIdentity: identity("return 1") };
+
+    const twoOperations = guest(source, 2);
+    const token = await twoOperations.seal("state");
+    await expect(twoOperations.open(token)).resolves.toBe("state");
+    await expect(twoOperations.seal("state")).rejects.toThrow("cryptographic operations");
+
+    await expect(guest(source).seal("x".repeat(1_100_000))).rejects.toThrow("1 MB limit");
+  });
+});

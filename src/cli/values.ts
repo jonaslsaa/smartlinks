@@ -1,4 +1,6 @@
+import { randomBytes } from "node:crypto";
 import * as p from "@clack/prompts";
+import { toBase64Url } from "../shared/bytes.js";
 
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
 
@@ -45,7 +47,8 @@ export async function resolveSecrets(
     }
 
     if (separator !== -1) {
-      secrets[name] = value.slice(separator + 1);
+      const assigned = value.slice(separator + 1);
+      secrets[name] = assigned === "@random" ? toBase64Url(randomBytes(32)) : assigned;
       continue;
     }
 

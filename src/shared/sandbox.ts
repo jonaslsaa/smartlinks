@@ -13,6 +13,7 @@ import {
   createCryptoOperationBudget,
   createGuestCrypto,
   type GuestCrypto,
+  type GuestTokenOptions,
 } from "./guest-crypto.js";
 import {
   type GuestCompile,
@@ -445,9 +446,20 @@ export async function runScriptWithModule(
         );
       },
     );
+    const sealHandle = asyncHostFunction("seal", async (value, options) =>
+      guestCrypto.seal(value, options as GuestTokenOptions),
+    );
+    const openHandle = asyncHostFunction("open", async (token, options) => {
+      if (typeof token !== "string") {
+        throw new TypeError("open requires a token string.");
+      }
+      return guestCrypto.open(token, options as GuestTokenOptions);
+    });
     vm.setProp(cryptoHandle, "sha256", sha256Handle);
     vm.setProp(cryptoHandle, "hmacSha256", hmacHandle);
     vm.setProp(cryptoHandle, "verifyHmacSha256", verifyHandle);
+    vm.setProp(cryptoHandle, "seal", sealHandle);
+    vm.setProp(cryptoHandle, "open", openHandle);
     vm.setProp(contextHandle, "crypto", cryptoHandle);
     let beginCompileHandle: QuickJSHandle | undefined;
     let compileHandle: QuickJSHandle | undefined;
@@ -489,6 +501,8 @@ export async function runScriptWithModule(
       throw new Error(`Could not initialize the Smartlinks Web API: ${message}`);
     }
     bootstrap.value.dispose();
+    openHandle.dispose();
+    sealHandle.dispose();
     verifyHandle.dispose();
     hmacHandle.dispose();
     sha256Handle.dispose();

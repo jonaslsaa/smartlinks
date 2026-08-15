@@ -18,6 +18,7 @@ import {
 import {
   boundSealedSecrets,
   openSecret,
+  payloadArtifactIdentity,
   publicKeyFromPrivateSecret,
   sealedSecretKeyId,
 } from "../shared/seal.js";
@@ -156,7 +157,10 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
       fetch: createGuardedFetch({
         blockedHostnames: [url.hostname, ...env.RUNTIME_HOSTNAMES],
       }),
-      crypto: createGuestCrypto(crypto, cryptoBudget),
+      crypto: createGuestCrypto(crypto, cryptoBudget, {
+        masterSecret: readStringBinding(env, "TOKEN_MASTER_SECRET"),
+        artifactIdentity: payloadArtifactIdentity(decoded),
+      }),
       cryptoBudget,
       compile,
     });

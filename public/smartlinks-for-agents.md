@@ -28,7 +28,8 @@ The script receives `ctx` with:
 - `body`: the request body as a string or `null`.
 - `secrets`: decrypted values keyed by the names supplied during build.
 - `requestId`: an opaque per-execution correlation ID.
-- `crypto`: SHA-256, HMAC-SHA256, and constant-time HMAC verification helpers.
+- `crypto`: SHA-256, HMAC-SHA256, constant-time HMAC verification, and authenticated token
+  helpers.
 - `compile`: mint one child Smartlink from a statically packaged closure.
 
 `ctx.crypto.sha256(message, encoding?)`, `hmacSha256(key, message, encoding?)`, and
@@ -46,6 +47,38 @@ Return an absolute HTTP(S) URL for a redirect, `{ status?, headers?, body? }` fo
 `body` and `bodyBase64` are mutually exclusive. `bodyBase64` accepts standard padded or unpadded
 Base64, is limited to 1 MiB after decoding, and defaults to `application/octet-stream` when the
 headers do not supply a content type. `content-disposition` remains author-controlled.
+
+### Stateless tokens
+
+`ctx.crypto.seal(value, options?)` encrypts any JSON value into an opaque base64url token, and
+`ctx.crypto.open(token, options?)` authenticates it and returns the value, throwing on any
+tampered, truncated, foreign, or mismatched token. Each call is one of the 16 cryptographic
+operations. Tokens let a link hand the client state the client can neither read nor forge and
+recover it on a later request: stateless sessions and wizards, hidden answers, cooldown
+timestamps, signed cursors.
+
+```ts
+const state = ctx.params.s ? await ctx.crypto.open(ctx.params.s) : { step: 1, answers: [] };
+const next = await ctx.crypto.seal({ ...state, step: state.step + 1 }, { context: "wizard" });
+```
+
+Without options, the token is bound to the exact artifact: only a byte-identical link (same
+script, closures, expiry, interstitial flag) can open it. Rebuilding with any change rotates the
+key and invalidates outstanding tokens; that is the identity model working as intended. Children
+minted with `ctx.compile` are distinct artifacts and never share transparent tokens with their
+parent.
+
+`options.key` (a string of at least 16 bytes) skips artifact binding, so tokens survive rebuilds
+and cross between cooperating links. Seal the same key into each link with
+`--secret VOUCHER_KEY=@random`: the CLI generates 32 random bytes, seals them, and never prints
+them; reuse the generated value through the environment when building the counterpart link.
+`options.context` domain-separates tokens — a token sealed with `{ context: "cooldown" }` opens
+only with that context, so a cooldown token cannot be replayed where a cursor is expected.
+
+Tokens are replayable: the holder can resend an old one, and statelessness makes true once-only
+impossible. Patterns that care embed a timestamp in the value and check it after opening. Local
+`smartlinks run` executions derive tokens from an ephemeral per-run key, so local and production
+tokens never interoperate; behavior is otherwise identical.
 
 ### Runtime compilation
 

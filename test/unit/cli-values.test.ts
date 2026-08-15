@@ -14,6 +14,14 @@ describe("CLI secret resolution", () => {
     });
   });
 
+  it("generates high-entropy values for @random assignments", async () => {
+    const resolved = await resolveSecrets(["FIRST=@random", "SECOND=@random"], { prompt: false });
+
+    expect(resolved.FIRST).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(resolved.SECOND).toMatch(/^[A-Za-z0-9_-]{43}$/u);
+    expect(resolved.FIRST).not.toBe(resolved.SECOND);
+  });
+
   it("does not prompt when the command disables interactive output", async () => {
     await expect(resolveSecrets(["SMARTLINKS_TEST_SECRET"], { prompt: false })).rejects.toThrow(
       "is not set in the environment and cannot be prompted for",

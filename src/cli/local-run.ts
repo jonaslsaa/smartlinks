@@ -1,3 +1,4 @@
+import { toBase64Url } from "../shared/bytes.js";
 import {
   type DecodedPayload,
   decodePayload,
@@ -15,6 +16,7 @@ import {
   type GeneratedKeyPair,
   generateKeyPair,
   openSecret,
+  payloadArtifactIdentity,
   sealedSecretKeyId,
 } from "../shared/seal.js";
 import { encodePayloadForCli } from "./encode.js";
@@ -60,6 +62,7 @@ async function execute(
   context: SandboxContext,
   createGuestFetch: () => GuestFetch,
   getLocalKey: () => Promise<GeneratedKeyPair>,
+  masterSecret: string,
 ): Promise<ScriptResult> {
   const cryptoBudget = createCryptoOperationBudget();
   return runScript({
@@ -67,7 +70,10 @@ async function execute(
     source: decoded.envelope.s,
     context,
     fetch: createGuestFetch(),
-    crypto: createGuestCrypto(crypto, cryptoBudget),
+    crypto: createGuestCrypto(crypto, cryptoBudget, {
+      masterSecret,
+      artifactIdentity: payloadArtifactIdentity(decoded),
+    }),
     cryptoBudget,
     compile: createSmartlinkCompiler({
       parent: decoded,
@@ -113,6 +119,7 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     localKey ??= generateKeyPair(1);
     return localKey;
   };
+  const masterSecret = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   let decoded: DecodedPayload = {
     version: "2",
     envelope: {
@@ -121,7 +128,7 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
     },
   };
   let context = program.context;
-  let result = await execute(decoded, context, createGuestFetch, getLocalKey);
+  let result = await execute(decoded, context, createGuestFetch, getLocalKey, masterSecret);
 
   for (let followed = 0; ; followed += 1) {
     const url = compiledUrl(result);
@@ -150,6 +157,6 @@ export async function runLocalProgram(program: LocalProgram): Promise<ScriptResu
       secrets,
       requestId: createRequestId(),
     };
-    result = await execute(decoded, context, createGuestFetch, getLocalKey);
+    result = await execute(decoded, context, createGuestFetch, getLocalKey, masterSecret);
   }
 }

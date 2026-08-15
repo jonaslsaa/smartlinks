@@ -1,9 +1,29 @@
 import { z } from "zod";
+import { concatBytes, fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
 
 const encodingSchema = z.enum(["hex", "base64"]);
 export type GuestCryptoEncoding = z.infer<typeof encodingSchema>;
 export const MAX_CRYPTO_OPERATIONS = 16;
 const MAX_CRYPTO_INPUT_BYTES = 1_048_576;
+export const MIN_TOKEN_KEY_BYTES = 16;
+const TOKEN_VERSION = 1;
+const TOKEN_NONCE_BYTES = 12;
+const TOKEN_TAG_BYTES = 16;
+const TRANSPARENT_KEY_INFO = "smartlinks/guest-aead/v1";
+const EXPLICIT_KEY_INFO = "smartlinks/guest-aead/explicit/v1";
+
+const tokenOptionsSchema = z
+  .strictObject({
+    key: z.string().optional(),
+    context: z.string().optional(),
+  })
+  .optional();
+export type GuestTokenOptions = z.infer<typeof tokenOptionsSchema>;
+
+export type GuestTokenKeySource = {
+  masterSecret: string | undefined;
+  artifactIdentity: string;
+};
 
 export type GuestCrypto = {
   sha256(message: string, encoding?: GuestCryptoEncoding): Promise<string>;
@@ -14,6 +34,8 @@ export type GuestCrypto = {
     signature: string,
     encoding?: GuestCryptoEncoding,
   ): Promise<boolean>;
+  seal(value: unknown, options?: GuestTokenOptions): Promise<string>;
+  open(token: string, options?: GuestTokenOptions): Promise<unknown>;
 };
 
 export type CryptoOperationBudget = {
@@ -73,9 +95,36 @@ export function createCryptoOperationBudget(
   };
 }
 
+function bufferSource(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
+  return Uint8Array.from(bytes);
+}
+
+async function deriveTokenKey(
+  cryptoImpl: Crypto,
+  ikm: Uint8Array,
+  salt: Uint8Array,
+  info: string,
+): Promise<CryptoKey> {
+  const material = await cryptoImpl.subtle.importKey("raw", bufferSource(ikm), "HKDF", false, [
+    "deriveKey",
+  ]);
+  return cryptoImpl.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: bufferSource(salt), info: bufferSource(utf8(info)) },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+function tokenAad(context: string | undefined): Uint8Array<ArrayBuffer> {
+  return bufferSource(utf8(`smartlinks/guest-token/v1 ${context ?? ""}`));
+}
+
 export function createGuestCrypto(
   cryptoImpl: Crypto = crypto,
   budget: CryptoOperationBudget = createCryptoOperationBudget(),
+  tokenKeySource?: GuestTokenKeySource,
 ): GuestCrypto {
   const guard = (...values: string[]) => {
     budget.consume();
@@ -83,6 +132,31 @@ export function createGuestCrypto(
     if (bytes > MAX_CRYPTO_INPUT_BYTES) {
       throw new Error("Cryptographic input exceeds the 1 MB limit.");
     }
+  };
+
+  let transparentKey: Promise<CryptoKey> | undefined;
+  const tokenKey = async (options: GuestTokenOptions): Promise<CryptoKey> => {
+    if (options?.key !== undefined) {
+      const keyBytes = encoder.encode(options.key);
+      if (keyBytes.byteLength < MIN_TOKEN_KEY_BYTES) {
+        throw new Error(`A token key must be at least ${MIN_TOKEN_KEY_BYTES} bytes.`);
+      }
+      return deriveTokenKey(cryptoImpl, keyBytes, new Uint8Array(0), EXPLICIT_KEY_INFO);
+    }
+    if (tokenKeySource?.masterSecret === undefined) {
+      throw new Error("The transparent token key is not configured in this runtime.");
+    }
+    const { masterSecret, artifactIdentity } = tokenKeySource;
+    transparentKey ??= (async () =>
+      deriveTokenKey(
+        cryptoImpl,
+        encoder.encode(masterSecret),
+        new Uint8Array(
+          await cryptoImpl.subtle.digest("SHA-256", bufferSource(utf8(artifactIdentity))),
+        ),
+        TRANSPARENT_KEY_INFO,
+      ))();
+    return transparentKey;
   };
 
   return {
@@ -114,6 +188,62 @@ export function createGuestCrypto(
         Uint8Array.from(decoded).buffer,
         encoder.encode(message),
       );
+    },
+    async seal(value, rawOptions) {
+      const serialized = JSON.stringify(value);
+      if (serialized === undefined) {
+        throw new TypeError("seal requires a JSON-serializable value.");
+      }
+      const options = tokenOptionsSchema.parse(rawOptions);
+      guard(serialized, options?.key ?? "", options?.context ?? "");
+      const key = await tokenKey(options);
+      const nonce = cryptoImpl.getRandomValues(new Uint8Array(TOKEN_NONCE_BYTES));
+      const ciphertext = await cryptoImpl.subtle.encrypt(
+        { name: "AES-GCM", iv: nonce, additionalData: tokenAad(options?.context) },
+        key,
+        bufferSource(utf8(serialized)),
+      );
+      return toBase64Url(
+        concatBytes(Uint8Array.of(TOKEN_VERSION), nonce, new Uint8Array(ciphertext)),
+      );
+    },
+    async open(token, rawOptions) {
+      if (typeof token !== "string") {
+        throw new TypeError("open requires a token string.");
+      }
+      const options = tokenOptionsSchema.parse(rawOptions);
+      guard(token, options?.key ?? "", options?.context ?? "");
+      let bytes: Uint8Array;
+      try {
+        bytes = fromBase64Url(token);
+      } catch {
+        throw new Error("The token is not a valid base64url value.");
+      }
+      if (bytes[0] !== TOKEN_VERSION) {
+        throw new Error("The token has an unsupported version.");
+      }
+      const ciphertextStart = 1 + TOKEN_NONCE_BYTES;
+      if (bytes.byteLength < ciphertextStart + TOKEN_TAG_BYTES) {
+        throw new Error("The token is truncated.");
+      }
+      const key = await tokenKey(options);
+      let plaintext: ArrayBuffer;
+      try {
+        plaintext = await cryptoImpl.subtle.decrypt(
+          {
+            name: "AES-GCM",
+            iv: bufferSource(bytes.subarray(1, ciphertextStart)),
+            additionalData: tokenAad(options?.context),
+          },
+          key,
+          bufferSource(bytes.subarray(ciphertextStart)),
+        );
+      } catch {
+        throw new Error(
+          "The token could not be opened. It was tampered with, sealed by a different link, or sealed with a different key or context.",
+        );
+      }
+      return JSON.parse(text(plaintext)) as unknown;
     },
   };
 }
