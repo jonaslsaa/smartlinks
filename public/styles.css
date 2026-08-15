@@ -43,6 +43,12 @@ a:focus-visible {
   text-underline-offset: 3px;
 }
 
+.text-link {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 a:focus-visible {
   outline: 1px solid #fff;
   outline-offset: 4px;
@@ -104,6 +110,12 @@ section {
 
 section + section {
   padding-top: 28px;
+}
+
+.policy > section:first-of-type {
+  margin-top: 42px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border);
 }
 
 h1,
