@@ -57,6 +57,17 @@ smartlinks build hello.ts --copy
 Open the copied URL with `?name=Jonas`. Pass the link to `smartlinks decode` to audit the exact
 program without running it.
 
+To attach a verified author identity, authenticate once and sign the build:
+
+```sh
+smartlinks login
+smartlinks build hello.ts --sign --copy
+```
+
+The login uses GitHub's device flow. Smartlinks creates a dedicated local signing key and embeds a
+compact GitHub-verified certificate in signed links; opening or decoding them never contacts
+GitHub.
+
 ## What can a link do?
 
 | Idea | Example |
@@ -155,7 +166,26 @@ revocable secrets.
 
 Links without sealed secrets can also expire, but that expiry is advisory: because the source is
 public, someone can decode it and build a new link without the deadline. Preventing that would
-require a signed or stored payload, which Smartlinks deliberately does not have.
+require hiding or storing the program. Author signing makes mutation attributable and detectable,
+but cannot stop someone from republishing public source as a different unsigned link.
+
+## Verified authors
+
+`smartlinks login` verifies a GitHub account through a zero-permission GitHub App device flow, creates a
+dedicated Ed25519 key locally, and receives a compact Smartlinks author certificate. The GitHub
+access token is consumed only while the certificate is issued and is never stored. The local
+private key never leaves the machine.
+
+`build --sign` signs every immutable, authority-bearing payload field. The Worker verifies both
+the Smartlinks-issued certificate and artifact signature locally before execution; `decode`
+performs the same verification without networking. Signing proves provenance, not safety, and it
+does not grant the script additional capabilities. Invalid signed payloads are rejected. Unsigned
+links remain fully supported.
+
+Certificates expire after 90 days. Existing artifact signatures remain intact afterward, but the
+identity label becomes **author certificate expired** because there is no trusted timestamp proving
+when an immutable link was signed. Run `smartlinks login` again to renew the local identity before
+creating more signed links. Compiled children are separate artifacts and are unsigned.
 
 ## Remember across requests
 
@@ -186,10 +216,12 @@ patterns are in the [agent guide](public/smartlinks-for-agents.md).
 smartlinks build <script.js|script.ts>   Build an immutable execution URL
 smartlinks run <script.js|script.ts>     Run locally with the production sandbox
 smartlinks decode <link-or-payload>      Inspect a Smartlink without executing it
+smartlinks login                         Verify GitHub and create an author signing key
+smartlinks logout                        Remove the local author signing identity
 ```
 
 Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
-include `--secret`, `--expires`, `--interstitial`, `--copy`, `--out`, `--json`, `--no-minify`,
+include `--secret`, `--expires`, `--interstitial`, `--sign`, `--copy`, `--out`, `--json`, `--no-minify`,
 `--interstitial-note`, and `--no-type-check`. `--interstitial-note` adds a short author-provided
 note and implies `--interstitial`. `--expires` accepts a duration such as `30m`, `1h`, or `7d`, or an
 absolute ISO 8601 date. Normal execution requests after that deadline return HTTP 410 without
@@ -232,9 +264,10 @@ response contract, then transpiled from the `.ts` extension before validation an
 
 ## How the link works
 
-1. The CLI type-checks TypeScript, transpiles it, safely minifies, raw-DEFLATE compresses, and
-   base64url-encodes the function body and metadata.
-2. The runtime decodes the URL, rejects an expired execution, and opens any sealed secrets.
+1. The CLI type-checks TypeScript, transpiles it, safely minifies, optionally signs the complete
+   artifact, raw-DEFLATE compresses it, and base64url-encodes the function body and metadata.
+2. The runtime decodes the URL, verifies any author signature, rejects an expired execution, and
+   opens any sealed secrets.
 3. A fresh QuickJS sandbox runs the function with bounded memory, stack, execution, network,
    and body sizes.
 4. The return value becomes the HTTP response.
@@ -245,8 +278,9 @@ capped at 7,800 characters to remain comfortably below common URL limits.
 
 ## Know the boundary
 
-Smartlinks are immutable bearer links. They can have a build-time expiry, but there are no
-accounts, stored scripts, revocation lists, or per-link analytics. The hosted runtime allows 60
+Smartlinks are immutable bearer links. They can have a build-time expiry and a portable verified
+author certificate, but there are no server-side accounts, stored scripts, revocation lists, or
+per-link analytics. The hosted runtime allows 60
 executions per minute per client IP at each Cloudflare location; excess executions return HTTP
 429. Source code is intentionally decodable. Use an interstitial for human-triggered side effects
 and scoped secrets for authenticated actions.
@@ -309,6 +343,15 @@ To deploy your own runtime, run `npx wrangler deploy`, then provision its key wi
 without an explicit key fails). Set `SMARTLINKS_URL` to the new Worker URL when building links.
 Keep `RUNTIME_HOSTNAMES` in `wrangler.jsonc` synchronized with every public hostname that can
 reach the Worker. Never commit `.dev.vars`.
+
+Self-hosted author certificates additionally require an issuer generated with the internal
+`node dist/index.js author-keygen --key-id 128 --set-worker` command. Reserve issuer ID `1` for
+hosted Smartlinks, choose an otherwise unused ID from `2` through `255`, and set that ID as the
+runtime's `AUTHOR_CA_KEY_ID`. Put the public key in the corresponding configuration (for example,
+`AUTHOR_CA_PUBLIC_KEY_128`) and set the matching CLI variable (for example,
+`SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128`). Issuer IDs must be unique across every runtime a CLI is
+configured to trust. The hosted Smartlinks identity service does not delegate its issuer key to
+other runtimes.
 
 ---
 

@@ -5,6 +5,11 @@ import clipboard from "clipboardy";
 import { Command, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
 import {
+  generateAuthorKeyPair,
+  verifyAuthorCertificate,
+  verifyAuthorProof,
+} from "../shared/author.js";
+import {
   decodePayload,
   formatNotAfter,
   isExpired,
@@ -14,6 +19,19 @@ import {
 import { payloadFacts } from "../shared/payload-facts.js";
 import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
+import {
+  beginAuthorLogin,
+  nextAuthorPollInterval,
+  requestAuthorCertificate,
+  validateIssuedCertificate,
+} from "./author-login.js";
+import {
+  authorKey,
+  clearStoredAuthor,
+  readStoredAuthor,
+  writeStoredAuthor,
+} from "./author-store.js";
+import { trustedAuthorIssuerKeys } from "./author-trust.js";
 import { createSmartlink } from "./build.js";
 import { parseExpiry } from "./expiry.js";
 import { createSyntheticRequest, executeLocalRequest, LocalScriptError } from "./run.js";
@@ -41,6 +59,7 @@ type BuildOptions = {
   copy?: boolean;
   out?: string;
   json?: boolean;
+  sign?: boolean;
 };
 
 type RunOptions = {
@@ -87,10 +106,17 @@ function buildStats(linkLength: number, payloadLength: number, notAfter?: number
     .join(" · ");
 }
 
-function buildReceipt(stats: string, options: Pick<BuildOptions, "copy" | "out">): string {
+function buildReceipt(
+  stats: string,
+  options: Pick<BuildOptions, "copy" | "out">,
+  signing?: { githubLogin: string; overhead: number },
+): string {
   return [
     options.copy ? "Copied to clipboard" : undefined,
     stats,
+    signing
+      ? `signed by github.com/${signing.githubLogin} · +${signing.overhead.toLocaleString()} characters`
+      : undefined,
     options.out ? `written to ${options.out}` : undefined,
   ]
     .filter((part): part is string => part !== undefined)
@@ -152,6 +178,21 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   if (options.out) {
     await assertOutputDoesNotOverwriteInput(file, options.out);
   }
+  const author = options.sign ? await readStoredAuthor() : undefined;
+  if (options.sign && !author) {
+    throw new Error("No author identity is configured. Run smartlinks login first.");
+  }
+  if (author) {
+    const certificate = await verifyAuthorCertificate(author.certificate, {
+      issuerPublicKeys: trustedAuthorIssuerKeys(),
+    });
+    if (certificate.status === "invalid") {
+      throw new Error(`The local author certificate is invalid: ${certificate.reason}`);
+    }
+    if (certificate.status === "expired") {
+      throw new Error("The local author certificate has expired. Run smartlinks login again.");
+    }
+  }
   const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
   const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
@@ -175,6 +216,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
       : { interstitialNote: options.interstitialNote }),
     ...(notAfter !== undefined ? { notAfter } : {}),
     minify: options.minify,
+    ...(author ? { author: { certificate: author.certificate, key: authorKey(author) } } : {}),
   });
   if (isExpired(notAfter)) {
     throw new Error("The link expired before the build completed. Choose a later expiry.");
@@ -191,6 +233,9 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   }
 
   const stats = buildStats(created.link.length, created.payload.length, notAfter);
+  const signingReceipt = author
+    ? { githubLogin: author.certificate[3], overhead: created.signingOverhead }
+    : undefined;
 
   if (options.json) {
     console.log(
@@ -210,6 +255,8 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
           fits: true,
           ...(options.copy ? { copied: true } : {}),
           ...(options.out ? { out: options.out } : {}),
+          ...(author ? { signed: true, author: author.certificate[3] } : {}),
+          ...(author ? { signingOverhead: created.signingOverhead } : {}),
         },
         null,
         2,
@@ -219,7 +266,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   }
   if (interactive) {
     if (options.copy || options.out) {
-      p.outro(buildReceipt(stats, options));
+      p.outro(buildReceipt(stats, options, signingReceipt));
     } else {
       if (fitsInteractiveNote(created.link)) {
         p.note(created.link, "Smartlink");
@@ -228,14 +275,14 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
         p.log.message(created.link);
       }
       p.log.info("Audit: run smartlinks decode with the link above");
-      p.outro(stats);
+      p.outro(buildReceipt(stats, options, signingReceipt));
     }
   } else if (options.copy || options.out) {
-    console.log(buildReceipt(stats, options));
+    console.log(buildReceipt(stats, options, signingReceipt));
   } else {
     console.log(created.link);
     console.error("Audit: run smartlinks decode with the link above");
-    console.error(stats);
+    console.error(buildReceipt(stats, options, signingReceipt));
   }
 }
 
@@ -245,9 +292,14 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
   const closures = (decoded.envelope.c ?? []).map((closure) => formatStoredScript("2", closure));
   const metadata = payloadFacts(decoded);
   const interstitialNote = decoded.envelope.interstitialNote ?? null;
+  const author = await verifyAuthorProof(decoded, {
+    issuerPublicKeys: trustedAuthorIssuerKeys(),
+  });
 
   if (options.json) {
-    console.log(JSON.stringify({ ...metadata, interstitialNote, script, closures }, null, 2));
+    console.log(
+      JSON.stringify({ ...metadata, author, interstitialNote, script, closures }, null, 2),
+    );
     return;
   }
   const interactive = startUi("smartlinks decode", false);
@@ -263,6 +315,13 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
       `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nCompile closures: ${metadata.compileClosures}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}\nExpiry: ${metadata.expiresAt === null ? "never" : `${metadata.expiresAt}${metadata.expired ? " (expired)" : ""}`}`,
       "Metadata",
     );
+    p.log.info(
+      author.status === "unsigned"
+        ? "Author: unsigned"
+        : author.status === "invalid"
+          ? `Author: invalid signature (${author.reason})`
+          : `Author: github.com/${author.githubLogin} (${author.status})`,
+    );
     p.outro("Decoded without executing");
   } else {
     console.log(
@@ -270,7 +329,61 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
         "\n\n",
       ),
     );
-    console.error(JSON.stringify({ ...metadata, interstitialNote }));
+    console.error(JSON.stringify({ ...metadata, author, interstitialNote }));
+  }
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function loginCommand(): Promise<void> {
+  const interactive = startUi("smartlinks login", false);
+  const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
+  const spinner = interactive ? p.spinner() : undefined;
+  spinner?.start("Starting GitHub device authorization");
+  const { device, key } = await beginAuthorLogin();
+  spinner?.stop("GitHub authorization ready");
+
+  if (interactive) {
+    p.note(`${device.verification_uri}\n\nCode: ${device.user_code}`, "Authorize Smartlinks");
+    p.log.info("Waiting for GitHub authorization…");
+  } else {
+    console.log(`${device.verification_uri}\n${device.user_code}`);
+  }
+
+  const deadline = Date.now() + device.expires_in * 1_000;
+  let interval = device.interval;
+  while (Date.now() < deadline) {
+    await wait(interval * 1_000);
+    const result = await requestAuthorCertificate(service, device.device_code, key.publicKey);
+    if (result.status === "slow_down" || result.status === "pending") {
+      interval = nextAuthorPollInterval(interval, result);
+      continue;
+    }
+    await validateIssuedCertificate(result.certificate, key, trustedAuthorIssuerKeys());
+    await writeStoredAuthor({ key, certificate: result.certificate });
+    const login = result.certificate[3];
+    if (interactive) {
+      p.outro(`Signed in as github.com/${login}`);
+    } else {
+      console.log(`Signed in as github.com/${login}`);
+    }
+    return;
+  }
+  throw new Error("The GitHub authorization code expired. Run smartlinks login again.");
+}
+
+async function logoutCommand(): Promise<void> {
+  const removed = await clearStoredAuthor();
+  const message = removed
+    ? "Removed the local Smartlinks author identity."
+    : "No author identity was configured.";
+  const interactive = startUi("smartlinks logout", false);
+  if (interactive) {
+    p.outro(message);
+  } else {
+    console.log(message);
   }
 }
 
@@ -436,6 +549,42 @@ async function keygenCommand(options: {
   }
 }
 
+async function authorKeygenCommand(options: {
+  keyId: string;
+  json?: boolean;
+  setWorker?: boolean;
+}): Promise<void> {
+  const keyId = Number(options.keyId);
+  if (!Number.isInteger(keyId) || keyId < 1 || keyId > 255) {
+    throw new Error("The author issuer key ID must be an integer between 1 and 255.");
+  }
+  const generated = await generateAuthorKeyPair();
+  const name = `AUTHOR_CA_PRIVATE_KEY_${keyId}`;
+  if (options.setWorker) {
+    await storeWorkerSecret(name, generated.privateKey, options.json === true);
+  }
+  if (options.json) {
+    console.log(
+      JSON.stringify(
+        options.setWorker
+          ? { keyId, publicKey: generated.publicKey, workerSecret: name }
+          : { keyId, publicKey: generated.publicKey, privateKey: generated.privateKey },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  if (options.setWorker) {
+    console.log(`Stored ${name}.`);
+    console.error(`Public key: ${generated.publicKey}`);
+  } else {
+    console.log(generated.privateKey);
+    console.error(`Secret name: ${name}`);
+    console.error(`Public key: ${generated.publicKey}`);
+  }
+}
+
 const program = new Command()
   .name("smartlinks")
   .description("Turn small JavaScript programs into self-contained, executable URLs.")
@@ -457,9 +606,20 @@ program
   .option("--copy", "copy the link without printing it")
   .option("--out <file>", "write the link privately without printing it")
   .option("--json", "print machine-readable output")
+  .option("--sign", "sign with the author identity configured by smartlinks login")
   .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
   .addOption(new Option("--no-minify", "skip JavaScript minification"))
   .action(buildCommand);
+
+program
+  .command("login")
+  .description("Verify a GitHub identity and create a local author signing key.")
+  .action(loginCommand);
+
+program
+  .command("logout")
+  .description("Remove the local Smartlinks author signing identity.")
+  .action(logoutCommand);
 
 program
   .command("decode")
@@ -517,6 +677,14 @@ program
   .option("--set-worker", "store the private key using Wrangler instead of printing it")
   .option("--json", "print machine-readable output")
   .action(keygenCommand);
+
+program
+  .command("author-keygen", { hidden: true })
+  .description("Generate an Ed25519 author certificate issuer key pair.")
+  .option("--key-id <number>", "one-byte rotation key ID", "1")
+  .option("--set-worker", "store the private key using Wrangler instead of printing it")
+  .option("--json", "print machine-readable output")
+  .action(authorKeygenCommand);
 
 program.parseAsync().catch((error: unknown) => {
   fail(error);
