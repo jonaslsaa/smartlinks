@@ -227,6 +227,24 @@ test("whoami reports signing readiness and fails closed for unusable identities"
     assert.match(human.stdout, /^github\.com\/jonaslsaa · certificate expires \d{4}-/u);
     assert.equal(human.stderr, "");
 
+    const malformedConfig = join(directory, "malformed-author");
+    await mkdir(malformedConfig, { recursive: true });
+    await writeFile(join(malformedConfig, "author.json"), '{"version":1}\n', { mode: 0o600 });
+    await assert.rejects(
+      runCli(["whoami", "--json"], {
+        env: { ...process.env, SMARTLINKS_CONFIG_DIR: malformedConfig },
+      }),
+      (error) => {
+        const invalid = JSON.parse(error.stdout);
+        assert.deepEqual(invalid, {
+          status: "invalid",
+          reason: "The stored author credential is invalid. Run smartlinks login again.",
+        });
+        assert.equal(error.stderr, "");
+        return true;
+      },
+    );
+
     await assert.rejects(
       runCli(["whoami", "--json"], {
         env: { ...process.env, SMARTLINKS_CONFIG_DIR: validConfig },
@@ -830,10 +848,11 @@ test("build writes the link as an artifact without repeating it", async () => {
         "--out",
         output,
       ]);
-      const link = (await readFile(output, "utf8")).trim();
+      const link = await readFile(output, "utf8");
       const expectedFingerprint = fingerprint(link);
 
       assert.match(link, /^https:\/\/s\.jonaslsa\.com\/r\/2/u);
+      assert.doesNotMatch(link, /\n/u);
       assert.doesNotMatch(result.stdout, /https:\/\//u);
       assert.match(
         result.stdout,

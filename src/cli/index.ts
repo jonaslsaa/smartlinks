@@ -237,7 +237,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     await clipboard.write(created.link);
   }
   if (options.out) {
-    await writeFile(options.out, `${created.link}\n`, { encoding: "utf8", mode: 0o600 });
+    await writeFile(options.out, created.link, { encoding: "utf8", mode: 0o600 });
     if (process.platform !== "win32") {
       await chmod(options.out, 0o600);
     }
@@ -405,9 +405,13 @@ async function configuredAuthorStatus(): Promise<AuthorStatus> {
   try {
     author = await readStoredAuthor();
   } catch (error) {
+    const reason =
+      error instanceof Error && error.message.startsWith("The Smartlinks author credential at ")
+        ? error.message
+        : "The stored author credential is invalid. Run smartlinks login again.";
     return {
       status: "invalid",
-      reason: error instanceof Error ? error.message : "The author credential is invalid.",
+      reason,
     };
   }
   if (!author) {
@@ -423,12 +427,12 @@ async function configuredAuthorStatus(): Promise<AuthorStatus> {
   try {
     await signEnvelope("2", { s: "async()=>{}" }, author.certificate, authorKey(author));
     return verification;
-  } catch (error) {
+  } catch {
     return {
       status: "invalid",
       githubId: verification.githubId,
       githubLogin: verification.githubLogin,
-      reason: error instanceof Error ? error.message : "The local signing key is invalid.",
+      reason: "The stored author signing key is invalid. Run smartlinks login again.",
     };
   }
 }
