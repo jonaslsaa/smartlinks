@@ -90,7 +90,7 @@ Smartlink scripts receive one small `ctx` object:
 | `ctx.body` | Request body as a string, or `null` |
 | `ctx.secrets` | Decrypted plaintext values, keyed by secret name |
 | `ctx.requestId` | Opaque ID for correlating one execution |
-| `ctx.crypto` | Hashing, HMAC, and sealed-token helpers backed by Web Crypto |
+| `ctx.crypto` | Host entropy, hashing, HMAC, and sealed-token helpers backed by Web Crypto |
 | `ctx.compile` | Mint one immutable child Smartlink from build-time-approved code |
 
 Scripts also have a global, guarded `fetch(url, options)`. It accepts familiar string URL,

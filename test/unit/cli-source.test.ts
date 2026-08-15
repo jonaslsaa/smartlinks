@@ -84,7 +84,7 @@ describe("CLI script input", () => {
 
     await expect(
       transpileScriptSource(
-        'const random = await ctx.crypto.random(16, "base64");\nconst signature = await ctx.crypto.hmacSha256("key", "body");\nreturn { body: btoa(atob(random)) + ":" + ctx.requestId + ":" + ctx.paramValues.tag?.join(",") + ":" + signature };',
+        'const counter = 1;\nconst random = await ctx.crypto.random(16, "base64");\nconst signature = await ctx.crypto.hmacSha256(ctx.secrets.KEY!, ctx.requestId + counter);\nreturn { body: btoa(atob(random)) + ":" + ctx.requestId + ":" + ctx.paramValues.tag?.join(",") + ":" + signature };',
         "capabilities.ts",
       ),
     ).resolves.toContain("ctx.crypto.random");
