@@ -260,19 +260,11 @@ Expiry on a link with sealed secrets is enforced by that binding; without them i
 the Worker still returns HTTP 410 after the deadline, but anyone can decode the public source and
 build a separate link without it.
 
-Expiry is the zero-infrastructure kill switch. An author who already runs an endpoint gets an
-immediate one by gating execution on it:
-
-```ts
-if (!(await fetch("https://status.example.com/deploy-link")).ok) {
-  return { status: 410, body: "This link has been revoked." };
-}
-```
-
-Flipping that endpoint to 404 kills every link checking it — real revocation with no service-side
-registry. It is opt-in per link and costs what it looks like: one of the five fetches and extra
-latency on every execution, availability coupled to that endpoint (the form above fails closed
-when the host is down), and trust in the author's own hosting.
+Expiry is the zero-infrastructure kill switch; gating execution on an author-controlled endpoint
+is the immediate one — take it down and every link checking it dies, real revocation with no
+service-side registry. It costs one of the five fetches and its latency per execution, couples
+availability to that endpoint, and the author's check decides whether an unreachable endpoint
+fails open or closed.
 
 ## Runtime and link limits
 
