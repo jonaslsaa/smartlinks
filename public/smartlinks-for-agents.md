@@ -103,7 +103,7 @@ semantic checking but still transpiles TypeScript; `--no-minify` still transpile
 
 ## CLI discovery
 
-Smartlinks requires Node.js 18.18 or newer. In a fresh environment, check the runtime and CLI;
+Smartlinks requires Node.js 24 or newer. In a fresh environment, check the runtime and CLI;
 install the CLI from npm if it is unavailable:
 
 - `node --version`
