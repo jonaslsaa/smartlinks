@@ -15,7 +15,7 @@
 <p align="center">
   <a href="https://smartlinks.jonaslsa.com">Website</a> ·
   <a href="https://www.npmjs.com/package/@jonaslsa/smartlinks">npm</a> ·
-  <a href="public/smartlinks-for-agents.md">Build with an agent</a>
+  <a href="https://smartlinks.jonaslsa.com/smartlinks-for-agents.md">Build with an agent</a>
 </p>
 
 ---
