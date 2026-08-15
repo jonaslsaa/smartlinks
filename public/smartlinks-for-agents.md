@@ -141,8 +141,10 @@ a top-level `const`/function declaration. It may call transitively packaged top-
 read immutable primitive constants. Eligible constants are strings, numbers, bigints, booleans,
 `null`, or template literals without expressions. Eligible helpers are unmodified function
 declarations, `const` arrows, or anonymous `const` function expressions; they may use parameters,
-locals, supported globals, and other eligible declarations, but never the parent's `ctx`. Other
-parent values must be passed explicitly in the tuple.
+locals, supported globals, and other eligible declarations, but never the parent's `ctx`.
+Dependency helpers cannot access any `.compile` property; keep minting calls directly inside the
+compile closure. Ordinary function helpers cannot use `arguments`; declare parameters or a rest
+parameter instead. Other parent values must be passed explicitly in the tuple.
 
 Packaged helpers are copied definitions, not mutable runtime function objects. Every reference
 outside a direct `ctx.compile` closure position must therefore call the helper directly: passing,

@@ -140,9 +140,10 @@ typed positional tuple. The first closure parameter is the child execution conte
 the runtime. Closures must be inline or top-level `const`/function declarations. They may call
 transitively packaged top-level helpers and read immutable primitive constants; helpers may use
 parameters, locals, supported globals, and other eligible declarations, but never the parent's
-`ctx`. Other parent values enter through the tuple. Packaged helpers are definitions, not mutable
-runtime function objects, so every use outside a direct `ctx.compile` closure position must be a
-direct call.
+`ctx`; dependency helpers also cannot access a `.compile` property or use `arguments`. Other
+parent values enter through the tuple. Packaged helpers are definitions, not mutable runtime
+function objects, so every use outside a direct `ctx.compile` closure position must be a direct
+call.
 `ttlSeconds` can never extend a parent expiry. `interstitial` may be set explicitly or inherited;
 `note` adds a child-specific author note and implies an interstitial. `seal` accepts strings the
 parent deliberately chose: delegated, derived, or generated. A child carrying its own statically

@@ -616,9 +616,34 @@ function packageClosure(
       }
       const line = identifier.loc?.start.line;
       throw new Error(
-        `Packaged helper ${dependency.name} must only be called directly${line === undefined ? "" : `; found a non-call reference on line ${line}`}.`,
+        `Packaged function ${dependency.name} must only be called directly${line === undefined ? "" : `; found a non-call reference on line ${line}`}.`,
       );
     }
+  }
+
+  function assertDependencyHelperBody(dependency: StaticDependency): void {
+    if (!dependency.function) {
+      return;
+    }
+    const scope = scopes.acquire(dependency.function, true);
+    const argumentsBinding = scope?.set.get("arguments");
+    if (argumentsBinding?.references.some((reference) => reference.isRead())) {
+      throw new Error(
+        `Packaged helper ${dependency.name} cannot use arguments; declare parameters or a rest parameter instead.`,
+      );
+    }
+    walk(dependency.function, (node) => {
+      const member = node.type === "MemberExpression" ? (node as MemberExpression) : undefined;
+      if (
+        (member && staticPropertyName(member.property, member.computed) === "compile") ||
+        destructuresCompile(node)
+      ) {
+        throw new Error(
+          `Packaged helper ${dependency.name} cannot access a .compile property; call ctx.compile directly inside the compile closure.`,
+        );
+      }
+      return undefined;
+    });
   }
 
   function rejectDependency(path: readonly string[], dependency: StaticDependency): never {
@@ -641,8 +666,9 @@ function packageClosure(
     if (dependency.kind !== "function" || !dependency.function) {
       return;
     }
+    assertCallOnly(dependency);
     if (dependency.binding !== rootBinding) {
-      assertCallOnly(dependency);
+      assertDependencyHelperBody(dependency);
     }
     if (visiting.has(dependency.binding)) {
       return;

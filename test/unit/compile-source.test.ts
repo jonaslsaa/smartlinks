@@ -153,7 +153,7 @@ describe("compile closure extraction", () => {
         const child = async (_childCtx, value) => ({ body: escapeHtml(value) });
         return ctx.compile(child, [formatter("ok")]);
       `),
-    ).rejects.toThrow("Packaged helper escapeHtml must only be called directly");
+    ).rejects.toThrow("Packaged function escapeHtml must only be called directly");
 
     await expect(
       extractCompileClosures(`
@@ -162,7 +162,7 @@ describe("compile closure extraction", () => {
         const child = async (_childCtx, value) => ({ body: escapeHtml(value) });
         return ctx.compile(child, ["ok"]);
       `),
-    ).rejects.toThrow("Packaged helper escapeHtml must only be called directly");
+    ).rejects.toThrow("Packaged function escapeHtml must only be called directly");
 
     await expect(
       extractCompileClosures(`
@@ -173,7 +173,25 @@ describe("compile closure extraction", () => {
         const child = async (_childCtx, value) => ({ body: escapeHtml(value) });
         return ctx.compile(child, ["ok"]);
       `),
-    ).rejects.toThrow("Packaged helper escapeHtml must only be called directly");
+    ).rejects.toThrow("Packaged function escapeHtml must only be called directly");
+  });
+
+  it("rejects function-object observations through the compiled closure's own binding", async () => {
+    await expect(
+      extractCompileClosures(`
+        const child = async (_childCtx) => ({ body: String(child.label) });
+        child.label = "parent-state";
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow("Packaged function child must only be called directly");
+
+    const recursive = await extractCompileClosures(`
+      const child = async (_childCtx, value) => value === 0
+        ? { body: "done" }
+        : child(_childCtx, value - 1);
+      return ctx.compile(child, [2]);
+    `);
+    expect(recursive.closures[0]).toContain("child(_childCtx, value - 1)");
   });
 
   it("rejects named function expressions and mutable value dependencies", async () => {
@@ -214,6 +232,56 @@ describe("compile closure extraction", () => {
         return ctx.compile(child, []);
       `),
     ).rejects.toThrow("Compile closure dependency child -> render references the parent ctx");
+  });
+
+  it("rejects ctx.compile access from a packaged dependency helper", async () => {
+    await expect(
+      extractCompileClosures(`
+        const mint = (childCtx) => childCtx.compile(
+          async (_leafCtx) => ({ body: "leaf" }),
+          [],
+        );
+        const child = async (childCtx) => mint(childCtx);
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow(
+      "Packaged helper mint cannot access a .compile property; call ctx.compile directly inside the compile closure",
+    );
+
+    await expect(
+      extractCompileClosures(`
+        const compileSource = (compiler, source) => compiler.compile(source);
+        const child = async (_childCtx, compiler) => ({ body: compileSource(compiler, "source") });
+        return ctx.compile(child, [{}]);
+      `),
+    ).rejects.toThrow("Packaged helper compileSource cannot access a .compile property");
+
+    await expect(
+      extractCompileClosures(`
+        const mint = (childCtx) => {
+          const { compile } = childCtx;
+          return compile(async (_leafCtx) => ({ body: "leaf" }), []);
+        };
+        const child = async (childCtx) => mint(childCtx);
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow("Packaged helper mint cannot access a .compile property");
+  });
+
+  it("rejects arguments-based function-object access in packaged helpers", async () => {
+    await expect(
+      extractCompileClosures(`
+        const helper = function () {
+          arguments.callee.calls = (arguments.callee.calls ?? 0) + 1;
+          return arguments.callee.calls;
+        };
+        helper();
+        const child = async (_childCtx) => ({ body: String(helper()) });
+        return ctx.compile(child, []);
+      `),
+    ).rejects.toThrow(
+      "Packaged helper helper cannot use arguments; declare parameters or a rest parameter instead",
+    );
   });
 
   it("explains why direct eval cannot be combined with runtime compilation", async () => {
