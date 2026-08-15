@@ -5,13 +5,7 @@ import * as p from "@clack/prompts";
 import clipboard from "clipboardy";
 import { Command, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
-import {
-  type AuthorCertificateVerification,
-  generateAuthorKeyPair,
-  signEnvelope,
-  verifyAuthorCertificate,
-  verifyAuthorProof,
-} from "../shared/author.js";
+import { generateAuthorKeyPair, verifyAuthorProof } from "../shared/author.js";
 import {
   decodePayload,
   formatNotAfter,
@@ -28,12 +22,8 @@ import {
   requestAuthorCertificate,
   validateIssuedCertificate,
 } from "./author-login.js";
-import {
-  authorKey,
-  clearStoredAuthor,
-  readStoredAuthor,
-  writeStoredAuthor,
-} from "./author-store.js";
+import { inspectConfiguredAuthor, requireConfiguredAuthor } from "./author-status.js";
+import { authorKey, clearStoredAuthor, writeStoredAuthor } from "./author-store.js";
 import { trustedAuthorIssuerKeys } from "./author-trust.js";
 import { createSmartlink } from "./build.js";
 import { parseExpiry } from "./expiry.js";
@@ -80,8 +70,6 @@ type RunOptions = {
   json?: boolean;
 };
 
-type AuthorStatus = { status: "missing" } | AuthorCertificateVerification;
-
 function parsePort(value: string): number {
   const port = Number(value);
   if (!Number.isInteger(port) || port < 0 || port > 65_535) {
@@ -115,20 +103,23 @@ function linkFingerprint(link: string): string {
   return `sha256:${createHash("sha256").update(link).digest("hex").slice(0, 12)}`;
 }
 
-function buildReceipt(
-  stats: string,
-  options: Pick<BuildOptions, "copy" | "out">,
-  fingerprint?: string,
-  signing?: { githubLogin: string; overhead: number },
-): string {
+type BuildReceipt = {
+  stats: string;
+  copy?: boolean;
+  out?: string;
+  fingerprint?: string;
+  signing?: { githubLogin: string; overhead: number };
+};
+
+function buildReceipt(receipt: BuildReceipt): string {
   return [
-    options.copy ? "Copied to clipboard" : undefined,
-    stats,
-    fingerprint ? `fingerprint ${fingerprint}` : undefined,
-    signing
-      ? `signed by github.com/${signing.githubLogin} · +${signing.overhead.toLocaleString()} characters`
+    receipt.copy ? "Copied to clipboard" : undefined,
+    receipt.stats,
+    receipt.fingerprint ? `fingerprint ${receipt.fingerprint}` : undefined,
+    receipt.signing
+      ? `signed by github.com/${receipt.signing.githubLogin} · +${receipt.signing.overhead.toLocaleString()} characters`
       : undefined,
-    options.out ? `written to ${options.out}` : undefined,
+    receipt.out ? `written to ${receipt.out}` : undefined,
   ]
     .filter((part): part is string => part !== undefined)
     .join(" · ");
@@ -189,21 +180,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   if (options.out) {
     await assertOutputDoesNotOverwriteInput(file, options.out);
   }
-  const author = options.sign ? await readStoredAuthor() : undefined;
-  if (options.sign && !author) {
-    throw new Error("No author identity is configured. Run smartlinks login first.");
-  }
-  if (author) {
-    const certificate = await verifyAuthorCertificate(author.certificate, {
-      issuerPublicKeys: trustedAuthorIssuerKeys(),
-    });
-    if (certificate.status === "invalid") {
-      throw new Error(`The local author certificate is invalid: ${certificate.reason}`);
-    }
-    if (certificate.status === "expired") {
-      throw new Error("The local author certificate has expired. Run smartlinks login again.");
-    }
-  }
+  const author = options.sign ? await requireConfiguredAuthor() : undefined;
   const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
   const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
@@ -248,6 +225,17 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   const signingReceipt = author
     ? { githubLogin: author.certificate[3], overhead: created.signingOverhead }
     : undefined;
+  const suppressedReceipt: BuildReceipt = {
+    stats,
+    ...(options.copy ? { copy: true } : {}),
+    ...(options.out ? { out: options.out } : {}),
+    ...(fingerprint ? { fingerprint } : {}),
+    ...(signingReceipt ? { signing: signingReceipt } : {}),
+  };
+  const visibleReceipt: BuildReceipt = {
+    stats,
+    ...(signingReceipt ? { signing: signingReceipt } : {}),
+  };
 
   if (options.json) {
     console.log(
@@ -279,7 +267,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
   }
   if (interactive) {
     if (options.copy || options.out) {
-      p.outro(buildReceipt(stats, options, fingerprint, signingReceipt));
+      p.outro(buildReceipt(suppressedReceipt));
     } else {
       if (fitsInteractiveNote(created.link)) {
         p.note(created.link, "Smartlink");
@@ -288,14 +276,14 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
         p.log.message(created.link);
       }
       p.log.info("Audit: run smartlinks decode with the link above");
-      p.outro(buildReceipt(stats, options, undefined, signingReceipt));
+      p.outro(buildReceipt(visibleReceipt));
     }
   } else if (options.copy || options.out) {
-    console.log(buildReceipt(stats, options, fingerprint, signingReceipt));
+    console.log(buildReceipt(suppressedReceipt));
   } else {
     console.log(created.link);
     console.error("Audit: run smartlinks decode with the link above");
-    console.error(buildReceipt(stats, options, undefined, signingReceipt));
+    console.error(buildReceipt(visibleReceipt));
   }
 }
 
@@ -400,45 +388,8 @@ async function logoutCommand(): Promise<void> {
   }
 }
 
-async function configuredAuthorStatus(): Promise<AuthorStatus> {
-  let author: Awaited<ReturnType<typeof readStoredAuthor>>;
-  try {
-    author = await readStoredAuthor();
-  } catch (error) {
-    const reason =
-      error instanceof Error && error.message.startsWith("The Smartlinks author credential at ")
-        ? error.message
-        : "The stored author credential is invalid. Run smartlinks login again.";
-    return {
-      status: "invalid",
-      reason,
-    };
-  }
-  if (!author) {
-    return { status: "missing" };
-  }
-
-  const verification = await verifyAuthorCertificate(author.certificate, {
-    issuerPublicKeys: trustedAuthorIssuerKeys(),
-  });
-  if (verification.status !== "valid") {
-    return verification;
-  }
-  try {
-    await signEnvelope("2", { s: "async()=>{}" }, author.certificate, authorKey(author));
-    return verification;
-  } catch {
-    return {
-      status: "invalid",
-      githubId: verification.githubId,
-      githubLogin: verification.githubLogin,
-      reason: "The stored author signing key is invalid. Run smartlinks login again.",
-    };
-  }
-}
-
 async function whoamiCommand(options: { json?: boolean }): Promise<void> {
-  const status = await configuredAuthorStatus();
+  const { status } = await inspectConfiguredAuthor();
   if (options.json) {
     console.log(JSON.stringify(status, null, 2));
   } else if (status.status === "valid") {
