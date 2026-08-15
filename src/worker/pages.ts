@@ -10,8 +10,8 @@ const PAGE_STYLE = `
   pre { overflow:auto; padding:18px; border:1px solid #303030; background:#111; color:#eee; line-height:1.5 }
   button,a { color:inherit } button { border:0; border-radius:7px; background:#f3f3f3; color:#111; padding:11px 17px; font:600 15px/1.2 inherit; cursor:pointer }
   .panel { border:1px solid #303030; border-radius:9px; padding:16px 18px; background:#111; margin:20px 0 }
-  .system { border-color:#5b4821; background:#17130b } .system strong { display:block; color:#f3d58b; margin-bottom:4px }
-  .author-note { border-color:#34516b; background:#0d151c } .eyebrow { display:block; color:#8fbde5; font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-bottom:6px }
+  .system { border-color:#5b4821; background:#17130b } .system h2 { color:#f3d58b }
+  .author-note { border-color:#34516b; background:#0d151c } .eyebrow { display:block; color:#8fbde5; font-size:12px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin:0 0 6px }
   .author-note p,.system p { margin:0 }
   dl { display:grid; grid-template-columns:max-content 1fr; gap:8px 20px; margin:0 } dt { color:#888 } dd { margin:0; overflow-wrap:anywhere }
   form { margin-top:24px }
@@ -39,7 +39,7 @@ function authorNoteHtml(decoded: DecodedPayload): string {
   const note = decoded.envelope.interstitialNote;
   return note === undefined
     ? ""
-    : `<section class="panel author-note"><span class="eyebrow">Author-provided note</span><p>${escapeHtml(note)}</p></section>`;
+    : `<section class="panel author-note" aria-labelledby="author-note-heading"><h2 class="eyebrow" id="author-note-heading">Author-provided note</h2><p>${escapeHtml(note)}</p></section>`;
 }
 
 function factsHtml(decoded: DecodedPayload): string {
@@ -51,7 +51,7 @@ function factsHtml(decoded: DecodedPayload): string {
   const secrets = facts.sealedSecrets.length
     ? `${facts.sealedSecrets.length}: ${facts.sealedSecrets.map(escapeHtml).join(", ")}`
     : "None";
-  return `<section class="panel"><span class="eyebrow">Smartlink facts</span><dl><dt>Payload version</dt><dd>${facts.payloadVersion}</dd><dt>Expiry</dt><dd>${escapeHtml(expiry)}</dd><dt>Sealed secrets</dt><dd>${secrets}</dd><dt>Compile closures</dt><dd>${facts.compileClosures}</dd></dl></section>`;
+  return `<section class="panel" aria-labelledby="facts-heading"><h2 class="eyebrow" id="facts-heading">Smartlink facts</h2><dl><dt>Payload version</dt><dd>${facts.payloadVersion}</dd><dt>Expiry</dt><dd>${escapeHtml(expiry)}</dd><dt>Sealed secrets</dt><dd>${secrets}</dd><dt>Compile closures</dt><dd>${facts.compileClosures}</dd></dl></section>`;
 }
 
 export function previewPage(head = false): Response {
@@ -82,7 +82,7 @@ export function interstitialPage(decoded: DecodedPayload, action: string): Respo
   return html(
     page(
       "Confirm smartlink",
-      `<h1>Review before running</h1><section class="panel system"><strong>This link runs a program.</strong><p>Review its note, capabilities, and source before continuing.</p></section>${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
+      `<h1>Review before running</h1><section class="panel system" aria-labelledby="system-warning-heading"><h2 id="system-warning-heading">This link runs a program.</h2><p>Review its note, facts, and source before continuing.</p></section>${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
     ),
     { headers: { "cache-control": "no-store" } },
   );

@@ -56,10 +56,14 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
   }
 
   const publicKey = options.publicKey;
-  const interstitialNote =
-    options.interstitialNote === undefined
-      ? undefined
-      : interstitialNoteSchema.parse(options.interstitialNote);
+  let interstitialNote: string | undefined;
+  if (options.interstitialNote !== undefined) {
+    const parsedNote = interstitialNoteSchema.safeParse(options.interstitialNote);
+    if (!parsedNote.success) {
+      throw new Error(parsedNote.error.issues[0]?.message ?? "The interstitial note is invalid.");
+    }
+    interstitialNote = parsedNote.data;
+  }
   const interstitial = options.interstitial === true || interstitialNote !== undefined;
   const envelope = {
     s: source,

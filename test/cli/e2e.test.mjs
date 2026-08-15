@@ -627,6 +627,22 @@ test("build rejects invalid or past expiries before producing a link", async () 
   });
 });
 
+test("build reports concise author-note validation errors", async () => {
+  await withTemporaryScript("js", 'return { body: "ok" };', async (script) => {
+    for (const note of ["   ", "x".repeat(141)]) {
+      await assert.rejects(
+        runCli(["build", script, "--interstitial-note", note, "--json"]),
+        (error) => {
+          assert.equal(error.stdout, "");
+          assert.doesNotMatch(error.stderr, /\[\s*\{/u);
+          assert.match(error.stderr, /interstitial note/u);
+          return true;
+        },
+      );
+    }
+  });
+});
+
 test("decode flags an expired payload", async () => {
   const envelope = { s: "async()=>{}", notAfter: 1 };
   const payload = `2${deflateRawSync(JSON.stringify(envelope), { level: 9 }).toString("base64url")}`;

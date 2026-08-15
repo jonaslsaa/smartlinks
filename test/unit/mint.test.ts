@@ -103,9 +103,20 @@ describe("smartlink minting", () => {
     await expect(compile(0, ["sensitive-value"], undefined)).rejects.toThrow(
       "Pass it through options.seal",
     );
+    await expect(compile(0, [], { note: "sensitive-value" })).rejects.toThrow(
+      "Pass it through options.seal",
+    );
     await expect(
       compile(0, ["safe"], { seal: { CHILD_TOKEN: "sensitive-value" } }),
     ).resolves.toMatch(/^https:\/\/runtime\.example\/r\/2/u);
+  });
+
+  it("rejects parent secrets hidden by author-note whitespace normalization", async () => {
+    const compile = await compiler({ parentSecrets: { TOKEN: "line\nbreak" } });
+
+    await expect(compile(0, [], { note: "Reveals line\n break here" })).rejects.toThrow(
+      "Pass it through options.seal",
+    );
   });
 
   it("rejects escaped parent-secret bytes in tuple values and object keys", async () => {

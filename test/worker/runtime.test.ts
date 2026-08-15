@@ -329,6 +329,9 @@ describe("Worker routes", () => {
     expect(reviewHtml).toContain("Review before running");
     expect(reviewHtml).toContain("This link runs a program");
     expect(reviewHtml).toContain("Author-provided note");
+    expect(reviewHtml).toContain('aria-labelledby="system-warning-heading"');
+    expect(reviewHtml).toContain('aria-labelledby="author-note-heading"');
+    expect(reviewHtml).toContain('aria-labelledby="facts-heading"');
     expect(reviewHtml).toContain(
       "Deploys &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; after review",
     );
