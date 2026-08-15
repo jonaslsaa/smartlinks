@@ -143,6 +143,46 @@ return ctx.compile(child, [${JSON.stringify(landingUrl.href)}], {
       `Unexpected compiled child smoke body: ${body}`,
     );
   });
+  const tokenScript = join(directory, "token.js");
+  await writeFile(
+    tokenScript,
+    `if (ctx.params.t) {
+  const state = await ctx.crypto.open(ctx.params.t, { context: "smoke" });
+  return { body: \`token-ok:\${state.n}\` };
+}
+return { body: await ctx.crypto.seal({ n: 7 }, { context: "smoke" }) };
+`,
+  );
+  const tokenBuild = await execFileAsync(
+    process.execPath,
+    [join(projectRoot, "dist/index.js"), "build", tokenScript, "--expires", "10m", "--json"],
+    {
+      cwd: projectRoot,
+      env: { ...process.env, SMARTLINKS_URL: runtimeUrl.origin },
+    },
+  );
+  const tokenLink = JSON.parse(tokenBuild.stdout).link;
+
+  const token = await retry("token seal smoke", async () => {
+    const response = await fetch(tokenLink, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(30_000),
+    });
+    assert(response.status === 200, `Expected token seal status 200, received ${response.status}.`);
+    const body = await response.text();
+    assert(/^[A-Za-z0-9_-]{30,}$/u.test(body), `Expected a base64url token, received: ${body}`);
+    return body;
+  });
+
+  await retry("token open smoke", async () => {
+    const response = await fetch(`${tokenLink}?t=${token}`, {
+      redirect: "manual",
+      signal: AbortSignal.timeout(30_000),
+    });
+    const body = await response.text();
+    assert(response.status === 200, `Expected token open status 200, received ${response.status}.`);
+    assert(body === "token-ok:7", `Unexpected token open smoke body: ${body}`);
+  });
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
