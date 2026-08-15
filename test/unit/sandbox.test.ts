@@ -186,6 +186,7 @@ describe("QuickJS sandbox", () => {
           tokenKeySource: {
             masterSecret: "sandbox-master",
             artifactIdentity: "sandbox-artifact",
+            domain: "production",
           },
         }),
         cryptoBudget,

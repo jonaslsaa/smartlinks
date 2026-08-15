@@ -11,6 +11,7 @@ const TOKEN_VERSION = 1;
 const TOKEN_NONCE_BYTES = 12;
 const TOKEN_TAG_BYTES = 16;
 const TRANSPARENT_KEY_INFO = "smartlinks/guest-aead/v1";
+const LOCAL_TRANSPARENT_KEY_INFO = "smartlinks/guest-aead/local/v1";
 const EXPLICIT_KEY_INFO = "smartlinks/guest-aead/explicit/v1";
 
 const tokenOptionsSchema = z
@@ -24,6 +25,7 @@ export type GuestTokenOptions = z.infer<typeof tokenOptionsSchema>;
 export type GuestTokenKeySource = {
   masterSecret: string | undefined;
   artifactIdentity: string;
+  domain: "production" | "local";
 };
 
 export type GuestCrypto = {
@@ -190,7 +192,7 @@ export function createGuestCrypto(configuration: GuestCryptoOptions = {}): Guest
         "The transparent token key is not configured in this runtime. Set the TOKEN_MASTER_SECRET Worker secret, or pass an explicit key.",
       );
     }
-    const { masterSecret, artifactIdentity } = configuration.tokenKeySource;
+    const { masterSecret, artifactIdentity, domain } = configuration.tokenKeySource;
     transparentKey ??= (async () =>
       deriveTokenKey(
         cryptoImpl,
@@ -198,7 +200,7 @@ export function createGuestCrypto(configuration: GuestCryptoOptions = {}): Guest
         new Uint8Array(
           await cryptoImpl.subtle.digest("SHA-256", bufferSource(utf8(artifactIdentity))),
         ),
-        TRANSPARENT_KEY_INFO,
+        domain === "local" ? LOCAL_TRANSPARENT_KEY_INFO : TRANSPARENT_KEY_INFO,
       ))();
     return transparentKey;
   };

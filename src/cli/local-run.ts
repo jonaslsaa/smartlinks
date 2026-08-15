@@ -108,6 +108,7 @@ async function execute(
       tokenKeySource: {
         masterSecret: environment.token.masterSecret,
         artifactIdentity: payloadArtifactIdentity(decoded),
+        domain: "local",
       },
       ...(environment.token.openFailureHint
         ? { tokenOpenFailureHint: environment.token.openFailureHint }
