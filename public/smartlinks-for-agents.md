@@ -233,8 +233,7 @@ byte-count receipt instead of binary data.
 ## `smartlinks decode <link-or-payload> [--json]`
 
 Inspects the emitted script and metadata without executing or decrypting secrets. Renders
-`notAfter` as an absolute UTC timestamp and marks expired links; displays any author note and the
-same payload facts shown by the browser interstitial.
+`notAfter` as an absolute UTC timestamp and marks expired links; displays any author note and the same payload facts shown by the browser interstitial. `decode` is entirely local; it works offline and on expired links"
 
 ## Author signing
 
