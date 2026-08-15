@@ -33,24 +33,24 @@ const MAX_COMPILE_REDIRECTS = 10;
 // Process-wide so tokens survive across the requests of one `run --serve` session.
 const ephemeralMasterSecret = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 const LOCAL_TOKEN_KEY_ENV = "SMARTLINKS_LOCAL_TOKEN_KEY";
-const EPHEMERAL_TOKEN_HINT =
+const LOCAL_TOKEN_HINT =
   `Local tokens from another smartlinks run invocation require the same ${LOCAL_TOKEN_KEY_ENV}; ` +
   "also check that the script and token context are unchanged.";
 
 type LocalTokenConfiguration = {
   masterSecret: string;
-  openFailureHint?: string;
+  openFailureHint: string;
 };
 
 function localTokenConfiguration(): LocalTokenConfiguration {
   const configured = process.env[LOCAL_TOKEN_KEY_ENV];
   if (configured === undefined) {
-    return { masterSecret: ephemeralMasterSecret, openFailureHint: EPHEMERAL_TOKEN_HINT };
+    return { masterSecret: ephemeralMasterSecret, openFailureHint: LOCAL_TOKEN_HINT };
   }
   if (utf8(configured).byteLength < MIN_TOKEN_KEY_BYTES) {
     throw new Error(`${LOCAL_TOKEN_KEY_ENV} must contain at least ${MIN_TOKEN_KEY_BYTES} bytes.`);
   }
-  return { masterSecret: configured };
+  return { masterSecret: configured, openFailureHint: LOCAL_TOKEN_HINT };
 }
 
 type LocalProgram = {
@@ -110,9 +110,7 @@ async function execute(
         artifactIdentity: payloadArtifactIdentity(decoded),
         domain: "local",
       },
-      ...(environment.token.openFailureHint
-        ? { tokenOpenFailureHint: environment.token.openFailureHint }
-        : {}),
+      tokenOpenFailureHint: environment.token.openFailureHint,
       ...(environment.randomBytes ? { randomBytes: environment.randomBytes } : {}),
     }),
     cryptoBudget,

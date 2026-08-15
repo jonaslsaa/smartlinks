@@ -192,6 +192,18 @@ return ctx.compile(child, [state.step]);
     assert.equal(continued.stderr, "");
 
     await assert.rejects(
+      runCli(["run", script, "--simulate", "--param", `s=${token}`, "--json"], {
+        env: { ...process.env, SMARTLINKS_LOCAL_TOKEN_KEY: "different-local-token-key" },
+      }),
+      (error) => {
+        const report = JSON.parse(error.stdout);
+        assert.match(report.error, /SMARTLINKS_LOCAL_TOKEN_KEY/u);
+        assert.equal(error.stderr, "");
+        return true;
+      },
+    );
+
+    await assert.rejects(
       runCli(["run", script, "--json"], {
         env: { ...process.env, SMARTLINKS_LOCAL_TOKEN_KEY: "too-short" },
       }),
