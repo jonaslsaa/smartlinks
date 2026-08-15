@@ -26,7 +26,7 @@ a database, or a deployment pipeline.
 The program lives in the URL itself; a Cloudflare Worker decodes it, runs it in a fresh QuickJS
 sandbox, and turns the result into an HTTP response. There is no repo to create, no server to keep
 running, no account for whoever clicks, and nothing to tear down when you are done. Smartlinks
-stores nothing — when you stop sharing a link, it is gone.
+stores nothing — the only copy of your program is the URL itself.
 
 | You want | Without Smartlinks | With Smartlinks |
 | --- | --- | --- |
@@ -122,15 +122,18 @@ const deploy = async (childCtx: typeof ctx, repo: string) => {
   return { status: response.ok ? 200 : 502, body: response.ok ? "Deploy started." : "GitHub refused." };
 };
 
-return ctx.compile(deploy, ["your-org/your-app"], {
+const child = await ctx.compile(deploy, ["your-org/your-app"], {
   ttlSeconds: 3600,
   seal: { GITHUB_TOKEN: ctx.secrets.GITHUB_TOKEN! },
 });
+return { status: 201, body: child };
 ```
 
-You keep the parent private; each execution produces a fresh child link that can start exactly one
-workflow's deploys for one hour. No revocation list to maintain, no service to run — the narrow
-capability is the URL you hand out.
+Return the child in the body, not as a bare URL — a bare URL becomes a 302 redirect, which would
+execute the child on the spot instead of handing it out. You keep the parent private; each
+execution produces a fresh child link that can trigger deploys of a single repository's workflow,
+as often as its holder likes, for one hour. No revocation list to maintain, no service to run —
+the narrow capability is the URL you hand out.
 
 The CLI extracts and approves child closures at build time; runtime values enter only through a
 typed positional tuple. The first closure parameter is the child execution context, supplied by
