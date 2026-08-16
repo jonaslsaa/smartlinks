@@ -11,7 +11,7 @@
     <meta property="og:title" content="Smartlinks demos" />
     <meta
       property="og:description"
-      content="Three Smartlinks running in production — each mints new links while you watch."
+      content="Three Smartlinks — each a small program living in its URL, minting new links while you watch."
     />
     <meta property="og:type" content="website" />
     <title>Smartlinks demos</title>
@@ -48,6 +48,37 @@
         text-decoration: underline;
         text-underline-offset: 3px;
       }
+
+      .compute {
+        position: relative;
+        cursor: help;
+        text-decoration: underline dotted;
+        text-underline-offset: 3px;
+      }
+
+      .compute::after {
+        content: attr(data-tip);
+        position: absolute;
+        left: 0;
+        bottom: calc(100% + 8px);
+        width: max-content;
+        max-width: 280px;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        color: var(--text);
+        background: var(--code);
+        font-size: 12px;
+        line-height: 1.45;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s;
+        z-index: 1;
+      }
+
+      .compute:hover::after,
+      .compute:focus-visible::after {
+        opacity: 1;
+      }
     </style>
   </head>
   <body>
@@ -64,11 +95,13 @@
       <section aria-labelledby="title">
         <h1 id="title">Live demos</h1>
         <p class="lead">
-          Three Smartlinks, running in production. Each is a small program living entirely in
-          its URL — and each mints new links while you watch.
+          Three Smartlinks. Each is a small program living entirely in its URL — and each
+          mints new links while you watch.
         </p>
         <p>
-          There is no backend behind these pages: no accounts, no database, nothing deployed.
+          There is no backend behind these pages and nothing is deployed: no accounts, no
+          database,
+          <span class="compute" tabindex="0" data-tip="A fresh QuickJS sandbox inside a Cloudflare Worker, created for each request and gone after it.">just some compute</span>.
           Every demo is a signed link built from the script published next to it in the
           repository, and on any Smartlink you can swap <code>/r/</code> for <code>/d/</code>
           in the address bar to audit exactly what it runs without executing it.
