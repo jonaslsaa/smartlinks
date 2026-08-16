@@ -261,20 +261,37 @@ export function decodePayload(payload: string): DecodedPayload {
   }
 }
 
-export function payloadFromInput(input: string): string {
+export type ParsedPayloadInput = {
+  payload: string;
+  executionUrl?: string;
+};
+
+export function parsePayloadInput(input: string): ParsedPayloadInput {
   const trimmed = input.trim();
   if (/^[12][A-Za-z0-9_-]+$/u.test(trimmed)) {
-    return trimmed;
+    return { payload: trimmed };
   }
 
   try {
     const url = new URL(trimmed);
-    const match = url.pathname.match(/\/r\/([^/]+)$/u) ?? url.pathname.match(/\/d\/([^/]+)$/u);
-    if (!match?.[1]) {
+    const match = url.pathname.match(/\/([rd])\/([^/]+)$/u);
+    if (!match?.[1] || !match[2]) {
       throw new Error("missing payload path");
     }
-    return match[1];
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return { payload: match[2] };
+    }
+    if (match[1] === "d") {
+      url.pathname = url.pathname.replace(/\/d\/([^/]+)$/u, "/r/$1");
+    }
+    url.search = "";
+    url.hash = "";
+    return { payload: match[2], executionUrl: url.href };
   } catch (error) {
     throw new Error("Expected a smartlink URL or encoded payload.", { cause: error });
   }
+}
+
+export function payloadFromInput(input: string): string {
+  return parsePayloadInput(input).payload;
 }

@@ -243,7 +243,7 @@ Compiled children are separate, unsigned artifacts.
 ```text
 smartlinks build <script.js|script.ts>   Build an immutable execution URL
 smartlinks run <script.js|script.ts>     Run locally with the production sandbox
-smartlinks decode <link-or-payload>      Inspect a Smartlink without executing it
+smartlinks decode <link-or-payload|->    Inspect a Smartlink without executing it
 smartlinks login                         Verify GitHub and create an author signing key
 smartlinks whoami                        Check the configured author and certificate expiry
 smartlinks logout                        Remove the local author signing identity
@@ -273,7 +273,9 @@ token flow across separate `run` processes, set the same high-entropy
 Generated links are opaque bearer artifacts. `--copy` sends the link to the clipboard without
 printing it; `--out link.txt` writes it with owner-only POSIX permissions. Both print only a
 compact size, payload-budget, and SHA-256 fingerprint receipt — the fingerprint detects accidental
-artifact drift, not authenticity. Plain `--json` includes the execution URL once.
+artifact drift, not authenticity. Pass `-` to `decode` from stdin without putting the bearer URL
+in command arguments; full URL inputs report the same fingerprint. Plain `--json` includes the
+execution URL once.
 
 Interstitials put a confirmation page between the click and the execution — use one for any
 human-triggered side effect. The page separates immutable system guidance, an optional author

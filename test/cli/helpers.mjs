@@ -10,9 +10,9 @@ const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const cli = fileURLToPath(new URL("../../dist/index.js", import.meta.url));
 const emptyAuthorConfig = join(tmpdir(), `smartlinks-cli-no-author-${process.pid}`);
 
-export async function runCli(args, options = {}) {
-  const { env, ...execOptions } = options;
-  return exec(process.execPath, [cli, ...args], {
+export function runCli(args, options = {}) {
+  const { env, input, ...execOptions } = options;
+  const subprocess = exec(process.execPath, [cli, ...args], {
     cwd: repositoryRoot,
     ...execOptions,
     env: {
@@ -21,6 +21,10 @@ export async function runCli(args, options = {}) {
       ...env,
     },
   });
+  if (input !== undefined) {
+    subprocess.child.stdin.end(input);
+  }
+  return subprocess;
 }
 
 export async function withTemporaryScript(extension, source, callback) {
