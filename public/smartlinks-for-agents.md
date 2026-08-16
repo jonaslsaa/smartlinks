@@ -215,7 +215,8 @@ secrets nothing is fetched, so a wrong value silently emits links to a host that
   Unix seconds in UTC; past dates are rejected.
 - `--copy`: copy the execution URL and print only a compact fingerprint and size receipt.
 - `--out FILE`: write the URL to a file and print the fingerprint and size receipt; new and
-  existing files are set to owner-only permissions on POSIX.
+  existing regular files are set to owner-only permissions on POSIX. `--out /dev/null` runs the
+  whole pipeline and prints the receipt while keeping no artifact.
 - `--json`: machine-readable output; without `--copy` or `--out` it includes the execution URL
   once, never a decoder URL.
 - `--sign`: sign every immutable payload field with the identity configured by `smartlinks login`.

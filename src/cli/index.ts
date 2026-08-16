@@ -159,6 +159,17 @@ async function assertOutputDoesNotOverwriteInput(input: string, output: string):
   }
 }
 
+async function acceptsOwnerOnlyPermissions(path: string): Promise<boolean> {
+  if (process.platform === "win32") {
+    return false;
+  }
+  try {
+    return (await stat(path)).isFile();
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT";
+  }
+}
+
 async function fetchPublicKey(service: string): Promise<z.infer<typeof publicKeySchema>> {
   let response: Response;
   try {
@@ -214,8 +225,12 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     await clipboard.write(created.link);
   }
   if (options.out) {
-    await writeFile(options.out, created.link, { encoding: "utf8", mode: 0o600 });
-    if (process.platform !== "win32") {
+    const harden = await acceptsOwnerOnlyPermissions(options.out);
+    await writeFile(options.out, created.link, {
+      encoding: "utf8",
+      ...(harden ? { mode: 0o600 } : {}),
+    });
+    if (harden) {
       await chmod(options.out, 0o600);
     }
   }
