@@ -26,7 +26,13 @@ import {
 import { decodeWorkerPayload, encodeWorkerPayload } from "./codec.js";
 import { HttpError, json, readBoundedBody } from "./http.js";
 import { certificateRequestSchema, exchangeGithubIdentity } from "./identity.js";
-import { decoderPage, expiredPage, interstitialPage, previewPage } from "./pages.js";
+import {
+  confirmedRedirectPage,
+  decoderPage,
+  expiredPage,
+  interstitialPage,
+  previewPage,
+} from "./pages.js";
 import { runWorkerScript, validateWorkerScript } from "./sandbox.js";
 
 function readStringBinding(env: Env, name: string): string | undefined {
@@ -222,14 +228,42 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
     throw new HttpError(422, "The smartlink script failed.", { cause: error });
   }
 
+  let response: Response;
   try {
-    return mapScriptResult(result);
+    response = mapScriptResult(result);
   } catch (error) {
     if (error instanceof InvalidScriptResponseError) {
       throw new HttpError(422, error.message, { cause: error });
     }
     throw new HttpError(422, "The smartlink returned an invalid response.", { cause: error });
   }
+  if (decoded.envelope.i && [301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.get("location");
+    const target = location === null ? undefined : crossOriginRedirectTarget(location, url);
+    if (target) {
+      if (response.status === 307 || response.status === 308) {
+        throw new HttpError(
+          422,
+          "A confirmed smartlink cannot forward a cross-origin 307 or 308 redirect: the confirmation is a POST, and continuing would change the method. Return a 303 or a bare URL when navigation is intended.",
+        );
+      }
+      return confirmedRedirectPage(target.href);
+    }
+  }
+  return response;
+}
+
+function crossOriginRedirectTarget(location: string, requestUrl: URL): URL | undefined {
+  let target: URL;
+  try {
+    target = new URL(location, requestUrl);
+  } catch {
+    return undefined;
+  }
+  const crossOriginHttp =
+    (target.protocol === "http:" || target.protocol === "https:") &&
+    target.origin !== requestUrl.origin;
+  return crossOriginHttp ? target : undefined;
 }
 
 async function handleRequest(request: Request, env: Env): Promise<Response> {

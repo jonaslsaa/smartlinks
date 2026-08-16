@@ -61,6 +61,8 @@ returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirec
 Return an absolute HTTP(S) URL for a 302 redirect (return `{ status, headers }` with a `location`
 header for any other redirect status), `{ status?, headers?, body? }` for text,
 `{ status?, headers?, bodyBase64 }` for bytes, or `undefined` for the default completion page.
+For an interstitial Smartlink, cross-origin 307/308 redirects are rejected; return a 303 or a
+bare URL for navigation.
 `body` and `bodyBase64` are mutually exclusive. `bodyBase64` accepts padded or unpadded Base64,
 is limited to 1 MiB after decoding, and defaults to `application/octet-stream` when headers do
 not supply a content type; `content-disposition` remains author-controlled. Every mapped response
