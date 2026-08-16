@@ -248,6 +248,8 @@ The local dry-run before building a final link.
 - `--allow-network`: enable guarded `fetch`; networking is disabled by default locally.
 - `--simulate`: run one deterministic path with no network requests; see below. Cannot combine
   with `--allow-network` or `--serve`.
+- `--simulate-response STATUS`: imply simulation and set the next allowed fetch's status;
+  repeatable. Redirect statuses are unsupported.
 - `--json`: machine-readable mapped response, or the simulation report with `--simulate`.
 - `--no-type-check`, `--no-minify`: as above.
 
@@ -261,7 +263,9 @@ flags above and `--json` are intentionally unavailable. Local secrets, `--allow-
 fetches the runtime key, or contacts production.
 
 `--simulate` traces fetches, blocked fetches, and successful child mints without sending anything:
-every allowed fetch receives HTTP 200, `content-type: application/json`, and `{}`. Runtime-host,
+every allowed fetch receives HTTP 200, `content-type: application/json`, and `{}` by default.
+Configured statuses are consumed by allowed fetches in order, then fall back to that default.
+204, 205, and 304 remain bodyless. Runtime-host,
 URL, method, header, body, redirect, response-size, and five-request guards still apply; no DNS
 lookup occurs. With `--json` the report is stable: normalized input, chronological events, and
 the final mapped response or error. A mint is recorded whether its URL is returned, embedded, or

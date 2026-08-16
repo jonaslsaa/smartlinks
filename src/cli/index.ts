@@ -14,6 +14,7 @@ import {
   PayloadTooLargeError,
   payloadFromInput,
 } from "../shared/codec.js";
+import { isRedirectStatus } from "../shared/http-status.js";
 import { payloadFacts } from "../shared/payload-facts.js";
 import { formatStoredScript } from "../shared/script.js";
 import { generateKeyPair } from "../shared/seal.js";
@@ -59,6 +60,7 @@ type BuildOptions = {
 type RunOptions = {
   allowNetwork?: boolean;
   simulate?: boolean;
+  simulateResponse: number[];
   param: string[];
   secret: string[];
   header: string[];
@@ -77,6 +79,21 @@ function parsePort(value: string): number {
     throw new InvalidArgumentError("The port must be an integer from 0 to 65535.");
   }
   return port;
+}
+
+function collectSimulationResponse(value: string, previous: number[]): number[] {
+  const status = Number(value);
+  if (!Number.isInteger(status) || status < 200 || status > 599) {
+    throw new InvalidArgumentError(
+      "The simulation response must be an HTTP status from 200 to 599.",
+    );
+  }
+  if (isRedirectStatus(status)) {
+    throw new InvalidArgumentError(
+      "Redirect simulation requires a Location header, which --simulate-response does not configure.",
+    );
+  }
+  return [...previous, status];
 }
 
 function fitsInteractiveNote(value: string): boolean {
@@ -463,6 +480,7 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     minify: options.minify,
     secrets: await resolveSecrets(options.secret, { prompt: interactive }),
     simulate: options.simulate === true,
+    simulationResponses: options.simulateResponse,
     typeCheck: options.typeCheck,
   };
 
@@ -725,6 +743,16 @@ program
       "allowNetwork",
       "serve",
     ]),
+  )
+  .addOption(
+    new Option(
+      "--simulate-response <status>",
+      "status for the next allowed simulated fetch; repeatable, no redirects",
+    )
+      .argParser(collectSimulationResponse)
+      .default([])
+      .implies({ simulate: true })
+      .conflicts(["allowNetwork", "serve"]),
   )
   .option("--serve", "serve the script on a loopback HTTP server")
   .addOption(

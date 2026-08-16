@@ -4,6 +4,7 @@ import {
   type FetchImplementation,
   type GuestFetch,
 } from "../shared/guarded-fetch.js";
+import { isBodylessStatus } from "../shared/http-status.js";
 import { type PayloadFacts, payloadFacts } from "../shared/payload-facts.js";
 
 const SIMULATED_BODY = "{}";
@@ -33,6 +34,7 @@ export type SimulationEvent =
         status: number;
         headers: Record<string, string>;
         body: string;
+        configuredResponseIndex?: number;
       };
     }
   | {
@@ -88,14 +90,21 @@ function requestMethod(options: unknown): string {
 
 export class LocalSimulation {
   readonly #events: SimulationEventSlot[] = [];
+  readonly #responseStatuses: readonly number[];
   readonly #secrets: Array<readonly [name: string, value: string]> = [];
   readonly #inputs: SimulationInputs;
   #fetchQueue: Promise<void> = Promise.resolve();
+  #nextResponse = 0;
   #randomState = 0x6d2b79f5;
 
-  constructor(inputs: SimulationInputs, secrets: Record<string, string>) {
+  constructor(
+    inputs: SimulationInputs,
+    secrets: Record<string, string>,
+    responseStatuses: readonly number[] = [],
+  ) {
     this.addSecrets(secrets);
     this.#inputs = inputs;
+    this.#responseStatuses = responseStatuses;
   }
 
   addSecrets(secrets: Record<string, string>): void {
@@ -187,6 +196,9 @@ export class LocalSimulation {
           status: event.response.status,
           headers: this.#redactRecord(event.response.headers),
           body: this.redact(event.response.body),
+          ...(event.response.configuredResponseIndex === undefined
+            ? {}
+            : { configuredResponseIndex: event.response.configuredResponseIndex }),
         },
       };
     }
@@ -223,6 +235,16 @@ export class LocalSimulation {
       if (!activeSlot) {
         throw new Error("Simulation fetch executed without a trace slot.");
       }
+      const configuredStatus = this.#responseStatuses[this.#nextResponse];
+      const configuredResponseIndex =
+        configuredStatus === undefined ? undefined : this.#nextResponse + 1;
+      if (configuredStatus !== undefined) {
+        this.#nextResponse += 1;
+      }
+      const status = configuredStatus ?? SIMULATED_STATUS;
+      const bodyless = isBodylessStatus(status);
+      const body = bodyless ? "" : SIMULATED_BODY;
+      const responseHeaders = bodyless ? {} : { ...SIMULATED_HEADERS };
       activeSlot.event = {
         type: "fetch",
         request: {
@@ -232,14 +254,15 @@ export class LocalSimulation {
           body: typeof init.body === "string" ? init.body : null,
         },
         response: {
-          status: SIMULATED_STATUS,
-          headers: { ...SIMULATED_HEADERS },
-          body: SIMULATED_BODY,
+          status,
+          headers: responseHeaders,
+          body,
+          ...(configuredResponseIndex === undefined ? {} : { configuredResponseIndex }),
         },
       };
-      return new Response(SIMULATED_BODY, {
-        status: SIMULATED_STATUS,
-        headers: SIMULATED_HEADERS,
+      return new Response(bodyless ? null : body, {
+        status,
+        headers: responseHeaders,
       });
     };
     const guardedFetch = createGuardedFetch({ fetchImpl, blockedHostnames });
@@ -347,7 +370,13 @@ export function formatSimulationReport(report: SimulationReport): string {
       if (event.request.body !== null) {
         lines.push(`  Body · ${preview(event.request.body)}`);
       }
-      lines.push(`  Synthetic response · HTTP ${event.response.status} · ${event.response.body}`);
+      const responseLabel =
+        event.response.configuredResponseIndex === undefined
+          ? "Synthetic response"
+          : `Configured response ${event.response.configuredResponseIndex}`;
+      lines.push(
+        `  ${responseLabel} · HTTP ${event.response.status}${event.response.body ? ` · ${event.response.body}` : ""}`,
+      );
     } else if (event.type === "fetch-blocked") {
       lines.push(
         `${step} · Fetch blocked · ${event.request.method} ${preview(event.request.url)}`,

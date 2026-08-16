@@ -98,6 +98,49 @@ return ctx.compile(child, [], {
   });
 });
 
+test("run simulation can reach a success path that requires HTTP 204", async () => {
+  const source = `
+const response = await fetch("https://api.example/jobs/123");
+if (response.status !== 204 || await response.text() !== "") {
+  return { status: 409, body: "job still exists" };
+}
+return { status: 201, body: "deleted" };
+`;
+
+  await withTemporaryScript("js", source, async (script) => {
+    const result = await runCli(["run", script, "--simulate-response", "204", "--json"]);
+    const report = JSON.parse(result.stdout);
+
+    assert.deepEqual(report.events[0].response, {
+      status: 204,
+      headers: {},
+      body: "",
+      configuredResponseIndex: 1,
+    });
+    assert.equal(report.response.status, 201);
+    assert.equal(report.response.body, "deleted");
+    assert.equal(result.stderr, "");
+  });
+});
+
+test("run validates configured simulation statuses before reading the script", async () => {
+  await assert.rejects(runCli(["run", "missing.ts", "--simulate-response", "199"]), (error) => {
+    assert.match(error.stderr, /HTTP status from 200 to 599/u);
+    return true;
+  });
+  await assert.rejects(runCli(["run", "missing.ts", "--simulate-response", "302"]), (error) => {
+    assert.match(error.stderr, /Redirect simulation requires a Location header/u);
+    return true;
+  });
+  await assert.rejects(
+    runCli(["run", "missing.ts", "--simulate-response", "204", "--serve"]),
+    (error) => {
+      assert.match(error.stderr, /option '--simulate' cannot be used with option '--serve'/u);
+      return true;
+    },
+  );
+});
+
 test("run simulation traces a compiled child that is handed out without being followed", async () => {
   const source = `
 const page = (_childCtx: typeof ctx, name: string) => ({ body: "hello " + name });
