@@ -35,7 +35,13 @@ import { serveLocalScript } from "./serve.js";
 import { formatSimulationReport, type SimulationReport } from "./simulation.js";
 import { readScriptSource } from "./source.js";
 import { fail, startUi } from "./ui.js";
-import { collect, normalizeServiceUrl, resolveSecrets, splitAssignment } from "./values.js";
+import {
+  collect,
+  normalizeServiceUrl,
+  resolveSecrets,
+  secretNames,
+  splitAssignment,
+} from "./values.js";
 
 declare const __SMARTLINKS_VERSION__: string;
 
@@ -212,7 +218,10 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     await assertOutputDoesNotOverwriteInput(file, options.out);
   }
   const author = options.sign === false ? undefined : await configuredAuthorForBuild(service);
-  const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
+  const originalSource = await readScriptSource(file, {
+    secretNames: secretNames(options.secret),
+    typeCheck: options.typeCheck,
+  });
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
 
   let publicKey: z.infer<typeof publicKeySchema> | undefined;

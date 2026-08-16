@@ -97,6 +97,71 @@ describe("CLI script input", () => {
     ).rejects.toThrow("Argument of type '\"base64url\"' is not assignable");
   });
 
+  it("types supplied parent secrets exactly while keeping other contexts permissive", async () => {
+    await expect(
+      transpileScriptSource(
+        "const token: string = ctx.secrets.GITHUB_TOKEN;\nreturn { body: token };",
+        "known-secret.ts",
+        { secretNames: ["GITHUB_TOKEN"] },
+      ),
+    ).resolves.toContain("ctx.secrets.GITHUB_TOKEN");
+
+    await expect(
+      transpileScriptSource(
+        "const token = ctx.secrets.GITHUB_TOKEN;\nreturn { body: ctx.secrets.GITHUB_TOKN! };",
+        "secret-typo.ts",
+        { secretNames: ["GITHUB_TOKEN"] },
+      ),
+    ).rejects.toThrow(
+      "Could not type-check secret-typo.ts: 2:28: Property 'GITHUB_TOKN' does not exist on type '{ GITHUB_TOKEN: string; }'. Did you mean 'GITHUB_TOKEN'?",
+    );
+
+    await expect(
+      transpileScriptSource(
+        'return { body: ctx.secrets.UNKNOWN ?? "missing" };',
+        "unknown-secret.ts",
+      ),
+    ).resolves.toContain("ctx.secrets.UNKNOWN");
+
+    await expect(
+      transpileScriptSource(
+        `
+          const child = async (childCtx: SmartlinksContext) => ({
+            body: childCtx.secrets.CHILD_TOKEN ?? "missing",
+          });
+          return ctx.compile(child, []);
+        `,
+        "child-secret.ts",
+        { secretNames: ["PARENT_TOKEN"] },
+      ),
+    ).resolves.toContain("childCtx.secrets.CHILD_TOKEN");
+
+    await expect(
+      transpileScriptSource(
+        `
+          const child = async (childCtx: typeof ctx) => ({
+            body: childCtx.secrets.PARENT_TOKEN,
+          });
+          return ctx.compile(child, []);
+        `,
+        "inherited-secret-context.ts",
+        { secretNames: ["PARENT_TOKEN"] },
+      ),
+    ).resolves.toContain("childCtx.secrets.PARENT_TOKEN");
+
+    await expect(
+      transpileScriptSource(
+        `
+          type EnrichedContext = SmartlinksContext & { admin: true };
+          const child = async (childCtx: EnrichedContext) => ({ body: String(childCtx.admin) });
+          return ctx.compile(child, []);
+        `,
+        "invented-child-context.ts",
+        { secretNames: ["PARENT_TOKEN"] },
+      ),
+    ).rejects.toThrow("Property 'admin' is missing");
+  });
+
   it("allows an omitted return for the default completion page", async () => {
     await expect(
       transpileScriptSource("const name = ctx.params.name;", "no-return.ts"),
@@ -189,7 +254,7 @@ describe("CLI script input", () => {
         `,
         "compile-old-signature.ts",
       ),
-    ).rejects.toThrow("not assignable to parameter of type '(childContext: SmartlinksContext)");
+    ).rejects.toThrow("Types of parameters 'name' and 'childContext' are incompatible.");
   });
 
   it("can explicitly skip semantic type checking", async () => {

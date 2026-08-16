@@ -32,7 +32,9 @@ The script receives `ctx` with:
 - `method`: the incoming HTTP method.
 - `headers`: incoming headers with lowercase names; `cookie` is omitted.
 - `body`: the request body as a string or `null`.
-- `secrets`: decrypted values keyed by the names supplied during build.
+- `secrets`: decrypted values keyed by the names supplied to `build` or `run`. In top-level
+  TypeScript, supplied names are required string properties, so misspellings fail type checking.
+  With no supplied names, and inside compiled child contexts, access remains `string | undefined`.
 - `requestId`: an opaque per-execution correlation ID.
 - `crypto`: `sha256(message, encoding?)`, `hmacSha256(key, message, encoding?)`,
   `verifyHmacSha256(key, message, signature, encoding?)` (constant-time),
@@ -43,7 +45,7 @@ The script receives `ctx` with:
   one-attempt limit is separate.
 - `compile`: mint one child Smartlink from a statically packaged closure.
 
-Prefer deriving values with `hmacSha256(ctx.secrets.KEY!, ctx.requestId + counter)` when the link
+Prefer deriving values with `hmacSha256(ctx.secrets.KEY, ctx.requestId + counter)` when the link
 already holds a sealed key; use `random` when it must originate a fresh secret — `Math.random` is
 not cryptographically secure. Simulation substitutes a reproducible stream for explicit `random`
 calls, with distinct bytes on successive calls across the whole simulated parent/child chain.
@@ -127,7 +129,7 @@ guess, a **cooldown** that seals `Date.now()` so the client carries its own rate
 a **voucher** one link issues and a different link redeems via a shared `options.key`:
 
 ```ts
-const claim = await ctx.crypto.open(ctx.params.v!, { key: ctx.secrets.VOUCHER_KEY! });
+const claim = await ctx.crypto.open(ctx.params.v!, { key: ctx.secrets.VOUCHER_KEY });
 ```
 
 ### Runtime compilation
@@ -135,9 +137,10 @@ const claim = await ctx.crypto.open(ctx.params.v!, { key: ctx.secrets.VOUCHER_KE
 `ctx.compile(closure, args, options?)` returns a child execution URL. The closure's first
 parameter is the child execution context, supplied by the runtime — annotate it
 `SmartlinksContext` on a named TypeScript closure; inline closures are contextually typed.
-`typeof ctx` also works when the parameter has another name. `args` is a positional JSON tuple
-whose TypeScript types must match the remaining closure parameters. The closure must be inline or
-a top-level `const`/function declaration. When a self-recursive closure and packaged helper form a
+`typeof ctx` also works when the child inherits the root's secret shape; use `SmartlinksContext`
+when it receives a different delegated set. `args` is a positional JSON tuple whose TypeScript
+types must match the remaining closure parameters. The closure must be inline or a top-level
+`const`/function declaration. When a self-recursive closure and packaged helper form a
 TypeScript inference cycle, annotate the closure's return type as `Promise<SmartlinksResult>`. It
 may call transitively packaged top-level helpers and read immutable primitive constants. Eligible
 constants are strings, numbers, bigints, booleans,

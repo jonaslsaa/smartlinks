@@ -4,6 +4,32 @@ import { toBase64Url } from "../shared/bytes.js";
 
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/u;
 
+type SecretInput = {
+  name: string;
+  assigned: string | undefined;
+};
+
+function parseSecretInputs(values: readonly string[]): SecretInput[] {
+  const names = new Set<string>();
+  return values.map((value) => {
+    const separator = value.indexOf("=");
+    const name = separator === -1 ? value : value.slice(0, separator);
+    if (!SECRET_NAME.test(name)) {
+      throw new Error(
+        `Invalid secret name ${JSON.stringify(name)}. Use an uppercase environment name.`,
+      );
+    }
+    if (names.has(name)) {
+      throw new Error(`Secret ${name} was provided more than once.`);
+    }
+    names.add(name);
+    return {
+      name,
+      assigned: separator === -1 ? undefined : value.slice(separator + 1),
+    };
+  });
+}
+
 export function collect(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
@@ -28,26 +54,18 @@ export function assignments(values: readonly string[], label: string): Record<st
   return result;
 }
 
+export function secretNames(values: readonly string[]): string[] {
+  return parseSecretInputs(values).map(({ name }) => name);
+}
+
 export async function resolveSecrets(
   values: readonly string[],
   options: { prompt: boolean },
 ): Promise<Record<string, string>> {
   const secrets: Record<string, string> = {};
 
-  for (const value of values) {
-    const separator = value.indexOf("=");
-    const name = separator === -1 ? value : value.slice(0, separator);
-    if (!SECRET_NAME.test(name)) {
-      throw new Error(
-        `Invalid secret name ${JSON.stringify(name)}. Use an uppercase environment name.`,
-      );
-    }
-    if (name in secrets) {
-      throw new Error(`Secret ${name} was provided more than once.`);
-    }
-
-    if (separator !== -1) {
-      const assigned = value.slice(separator + 1);
+  for (const { name, assigned } of parseSecretInputs(values)) {
+    if (assigned !== undefined) {
       secrets[name] = assigned === "@random" ? toBase64Url(randomBytes(32)) : assigned;
       continue;
     }

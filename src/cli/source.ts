@@ -3,9 +3,12 @@ import { extname, resolve } from "node:path";
 import type { Diagnostic } from "typescript";
 import { assertScriptLength } from "../shared/script.js";
 
-type ScriptSourceOptions = { typeCheck?: boolean };
+type ScriptSourceOptions = {
+  secretNames?: readonly string[];
+  typeCheck?: boolean;
+};
 
-const TYPE_CHECK_PREFIX = `
+const TYPE_CHECK_PREAMBLE = `
 type __SmartlinksStringMap = { [name: string]: string | undefined };
 type __SmartlinksFetchOptions = {
   method?: string;
@@ -73,6 +76,10 @@ type SmartlinksContext = {
   };
   compile: __SmartlinksCompile;
 };
+type __SmartlinksContextWithSecrets<Secrets extends __SmartlinksStringMap> = Omit<
+  SmartlinksContext,
+  "secrets"
+> & { secrets: Secrets };
 type __SmartlinksLiteralResponse = {
   status?: number;
   headers?: Record<string, string>;
@@ -94,16 +101,28 @@ type __SmartlinksCompileOptions = {
   interstitial?: boolean;
   note?: string;
 };
-type __SmartlinksCompile = <const Args extends readonly __SmartlinksJson[]>(
+type __SmartlinksCompile = <
+  const Args extends readonly __SmartlinksJson[],
+  ChildSecrets extends __SmartlinksStringMap = __SmartlinksStringMap,
+>(
   closure: (
-    childContext: SmartlinksContext,
+    childContext: __SmartlinksContextWithSecrets<ChildSecrets>,
     ...args: Args
   ) => SmartlinksResult | Promise<SmartlinksResult>,
   args: Args,
   options?: __SmartlinksCompileOptions,
 ) => Promise<string>;
-async function __smartlinks_entry(ctx: SmartlinksContext): Promise<SmartlinksResult> {
 `;
+
+function typeCheckPrefix(secretNames: readonly string[]): string {
+  const context =
+    secretNames.length === 0
+      ? "SmartlinksContext"
+      : `__SmartlinksContextWithSecrets<{ ${secretNames
+          .map((name) => `${JSON.stringify(name)}: string;`)
+          .join(" ")} }>`;
+  return `${TYPE_CHECK_PREAMBLE}async function __smartlinks_entry(ctx: ${context}): Promise<SmartlinksResult> {\n`;
+}
 
 function diagnosticLocation(diagnostic: Diagnostic): string {
   if (!diagnostic.file || diagnostic.start === undefined) {
@@ -117,12 +136,13 @@ function typeDiagnosticLocation(
   diagnostic: Diagnostic,
   source: string,
   file: string,
+  prefixLength: number,
   ts: typeof import("typescript"),
 ): string {
   if (diagnostic.start === undefined) {
     return "";
   }
-  const sourcePosition = diagnostic.start - TYPE_CHECK_PREFIX.length;
+  const sourcePosition = diagnostic.start - prefixLength;
   if (sourcePosition < 0 || sourcePosition > source.length) {
     return "";
   }
@@ -134,6 +154,7 @@ function typeDiagnosticLocation(
 function typeCheckScriptSource(
   source: string,
   file: string,
+  secretNames: readonly string[],
   ts: typeof import("typescript"),
 ): void {
   // TypeScript normalizes compiler-host paths to forward slashes, including on Windows.
@@ -147,7 +168,8 @@ function typeCheckScriptSource(
     noEmit: true,
     skipLibCheck: true,
   } satisfies import("typescript").CompilerOptions;
-  const wrappedSource = `${TYPE_CHECK_PREFIX}${source}\n}\n`;
+  const prefix = typeCheckPrefix(secretNames);
+  const wrappedSource = `${prefix}${source}\n}\n`;
   const input = ts.createSourceFile(
     virtualFile,
     wrappedSource,
@@ -169,7 +191,7 @@ function typeCheckScriptSource(
   if (error) {
     const message = ts.flattenDiagnosticMessageText(error.messageText, " ");
     throw new Error(
-      `Could not type-check ${file}: ${typeDiagnosticLocation(error, source, file, ts)}${message}`,
+      `Could not type-check ${file}: ${typeDiagnosticLocation(error, source, file, prefix.length, ts)}${message}`,
     );
   }
 }
@@ -201,7 +223,7 @@ export async function transpileScriptSource(
     throw new Error(`Could not transpile ${file}: ${diagnosticLocation(error)}${message}`);
   }
   if (options.typeCheck !== false) {
-    typeCheckScriptSource(source, file, ts);
+    typeCheckScriptSource(source, file, options.secretNames ?? [], ts);
   }
   return result.outputText;
 }
