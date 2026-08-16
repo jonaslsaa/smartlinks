@@ -26,7 +26,13 @@ import {
 import { decodeWorkerPayload, encodeWorkerPayload } from "./codec.js";
 import { HttpError, json, readBoundedBody } from "./http.js";
 import { certificateRequestSchema, exchangeGithubIdentity } from "./identity.js";
-import { decoderPage, expiredPage, interstitialPage, previewPage } from "./pages.js";
+import {
+  confirmedRedirectPage,
+  decoderPage,
+  expiredPage,
+  interstitialPage,
+  previewPage,
+} from "./pages.js";
 import { runWorkerScript, validateWorkerScript } from "./sandbox.js";
 
 function readStringBinding(env: Env, name: string): string | undefined {
@@ -222,14 +228,32 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
     throw new HttpError(422, "The smartlink script failed.", { cause: error });
   }
 
+  let response: Response;
   try {
-    return mapScriptResult(result);
+    response = mapScriptResult(result);
   } catch (error) {
     if (error instanceof InvalidScriptResponseError) {
       throw new HttpError(422, error.message, { cause: error });
     }
     throw new HttpError(422, "The smartlink returned an invalid response.", { cause: error });
   }
+  if (decoded.envelope.i && [301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.get("location");
+    if (location && isCrossOriginHttpUrl(location, url.origin)) {
+      return confirmedRedirectPage(location);
+    }
+  }
+  return response;
+}
+
+function isCrossOriginHttpUrl(location: string, origin: string): boolean {
+  let target: URL;
+  try {
+    target = new URL(location);
+  } catch {
+    return false;
+  }
+  return (target.protocol === "http:" || target.protocol === "https:") && target.origin !== origin;
 }
 
 async function handleRequest(request: Request, env: Env): Promise<Response> {

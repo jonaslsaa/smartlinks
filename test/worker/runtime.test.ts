@@ -722,6 +722,37 @@ describe("Worker routes", () => {
     await expect(execution.text()).resolves.toBe("confirmed");
   });
 
+  it("delivers a confirmed interstitial redirect as a continuation page", async () => {
+    const created = await createSmartlink({
+      source: 'return "https://example.com/next?a=1&note=<b>"',
+      service: origin,
+      interstitial: true,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const execution = await worker.fetch(
+      new Request(`${created.link}?__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    expect(execution.status).toBe(200);
+    expect(execution.headers.get("content-type")).toContain("text/html");
+    const continuation = await execution.text();
+    expect(continuation).toContain(
+      'http-equiv="refresh" content="0;url=https://example.com/next?a=1&amp;note=%3Cb%3E"',
+    );
+    expect(continuation).toContain("Continuing");
+
+    const plain = await createSmartlink({
+      source: 'return "https://example.com/next"',
+      service: origin,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const redirect = await worker.fetch(new Request(plain.link, { redirect: "manual" }), testEnv());
+    expect(redirect.status).toBe(302);
+    expect(redirect.headers.get("location")).toBe("https://example.com/next");
+  });
+
   it("rate limits executions without charging previews or interstitial reviews", async () => {
     const limit = vi.fn(async () => ({ success: false }));
     const limitedEnv = testEnv({ limit });

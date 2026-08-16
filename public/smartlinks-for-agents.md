@@ -214,7 +214,10 @@ not exist.
 - `--interstitial`: require browser confirmation — GET renders the confirmation page, a POST
   carrying `?__confirm=1` executes, and any other request receives HTTP 405. Unsuitable for
   multi-step flows: relative links and `<form method=get>` re-enter by GET, so every step
-  reconfirms.
+  reconfirms. A confirmed execution mapping to a cross-origin redirect is delivered as a
+  runtime continuation page (meta refresh plus a visible link) rather than a raw 3xx, because
+  browsers enforce `form-action 'self'` against a form submission's redirect chain; same-origin
+  redirects pass through unchanged.
 - `--interstitial-note TEXT`: add an author note (whitespace-normalized, 140 Unicode characters
   max) and require confirmation.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline.

@@ -23,8 +23,8 @@ const PAGE_STYLE = `
   code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace }
 `;
 
-function page(title: string, content: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><style>${PAGE_STYLE}</style></head><body>${content}</body></html>`;
+function page(title: string, content: string, head = ""): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title>${head}<style>${PAGE_STYLE}</style></head><body>${content}</body></html>`;
 }
 
 function compileClosureHtml(decoded: DecodedPayload): string {
@@ -112,6 +112,21 @@ export function interstitialPage(
     page(
       "Confirm smartlink",
       `<h1>Review before running</h1>${authorHtml(author)}${authorNoteHtml(decoded)}${factsHtml(decoded)}<h2>Source</h2><pre><code>${escapeHtml(script)}</code></pre>${closures}<form method="post" action="${escapeHtml(action)}"><button type="submit">Run this smartlink</button></form>`,
+    ),
+    { headers: { "cache-control": "no-store" } },
+  );
+}
+
+// Browsers enforce form-action against a form submission's redirect chain, so a confirmed
+// interstitial POST cannot answer with a cross-origin 302 under the runtime CSP. A meta-refresh
+// navigation is exempt from form-action, keeping the policy intact.
+export function confirmedRedirectPage(location: string): Response {
+  const escaped = escapeHtml(location);
+  return html(
+    page(
+      "Continuing",
+      `<h1>Continuing</h1><p>This smartlink redirects to:</p><pre><code>${escaped}</code></pre><p><a href="${escaped}">Continue</a> if you are not redirected automatically.</p>`,
+      `<meta http-equiv="refresh" content="0;url=${escaped}">`,
     ),
     { headers: { "cache-control": "no-store" } },
   );
