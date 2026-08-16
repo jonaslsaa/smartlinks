@@ -49,7 +49,7 @@ describe("smartlink minting", () => {
     expect(envelope?.s).toContain('{\\"a\\":2,\\"z\\":1}');
   });
 
-  it("inherits parent expiry and interstitial when options are omitted", async () => {
+  it("inherits parent expiry, interstitial, and crawler policy when options are omitted", async () => {
     const encode = vi.fn(async (envelope, version) => encodePayload(envelope, version));
     const compile = await compiler({
       parent: {
@@ -58,6 +58,7 @@ describe("smartlink minting", () => {
           s: "async ctx=>ctx.compile(0,[])",
           c: ["async _ctx=>({body:'ok'})"],
           i: true,
+          allowCrawlers: true,
           notAfter: 2_000,
         },
       },
@@ -65,7 +66,14 @@ describe("smartlink minting", () => {
     });
 
     await compile(0, [], undefined);
-    expect(encode.mock.calls[0]?.[0]).toMatchObject({ i: true, notAfter: 2_000 });
+    expect(encode.mock.calls[0]?.[0]).toMatchObject({
+      i: true,
+      allowCrawlers: true,
+      notAfter: 2_000,
+    });
+
+    await compile(0, [], { allowCrawlers: false });
+    expect(encode.mock.calls[1]?.[0].allowCrawlers).toBeUndefined();
   });
 
   it("lets children opt into their own note without inheriting the parent's note", async () => {

@@ -102,7 +102,7 @@ function artifactSigningBytes(
   envelope: Omit<Envelope, "u">,
   certificate: AuthorCertificate,
 ): Uint8Array {
-  const { s, i, a, c, k, notAfter, interstitialNote, ...unhandled } = envelope;
+  const { s, i, a, c, k, allowCrawlers, notAfter, interstitialNote, ...unhandled } = envelope;
   const exhaustive: Record<string, never> = unhandled;
   void exhaustive;
   const sealedSecrets = Object.entries(envelope.k ?? {}).sort(([left], [right]) =>
@@ -119,7 +119,8 @@ function artifactSigningBytes(
     interstitialNote ?? null,
     certificateFields(certificate),
   ];
-  return concatBytes(ARTIFACT_DOMAIN, utf8(JSON.stringify(artifact)));
+  const authenticatedArtifact = allowCrawlers === true ? [...artifact, true] : artifact;
+  return concatBytes(ARTIFACT_DOMAIN, utf8(JSON.stringify(authenticatedArtifact)));
 }
 
 async function importPublicKey(encoded: string): Promise<CryptoKey> {

@@ -30,6 +30,34 @@ describe("preview request detection", () => {
     ).toBe(true);
   });
 
+  it("allows only crawler GETs when the artifact opts in", () => {
+    const crawlerHeaders = { "user-agent": "github-camo" };
+
+    expect(
+      isPreviewRequest(new Request("https://example.com", { headers: crawlerHeaders }), true),
+    ).toBe(false);
+    expect(
+      isPreviewRequest(
+        new Request("https://example.com", { method: "POST", headers: crawlerHeaders }),
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      isPreviewRequest(
+        new Request("https://example.com", {
+          headers: { ...crawlerHeaders, purpose: "prefetch" },
+        }),
+        true,
+      ),
+    ).toBe(true);
+    expect(
+      isPreviewRequest(
+        new Request("https://example.com", { method: "HEAD", headers: crawlerHeaders }),
+        true,
+      ),
+    ).toBe(true);
+  });
+
   it("does not require browser-only headers", () => {
     expect(isPreviewRequest(new Request("https://example.com"))).toBe(false);
   });

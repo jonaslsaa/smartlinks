@@ -28,6 +28,7 @@ async function signedPayload(now = FIXTURE_NOW) {
       a: 2,
       c: ['async ctx=>({body:"child"})'],
       k: { TOKEN: "sealed-value" },
+      allowCrawlers: true,
       notAfter: now + 1_800,
       interstitialNote: "Signed release helper",
     },
@@ -83,6 +84,10 @@ describe("author signatures", () => {
     ["script", (decoded: DecodedPayload) => ({ ...decoded.envelope, s: `${decoded.envelope.s} ` })],
     ["interstitial", withoutInterstitial],
     ["binding mode", withoutBindingMode],
+    [
+      "crawler policy",
+      (decoded: DecodedPayload) => ({ ...decoded.envelope, allowCrawlers: undefined }),
+    ],
     ["closures", (decoded: DecodedPayload) => ({ ...decoded.envelope, c: [] })],
     [
       "sealed secrets",

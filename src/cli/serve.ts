@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { isPreviewRequest } from "../shared/bots.js";
+import { isCrawlerRequest, isPreviewRequest } from "../shared/bots.js";
+import { decodePayload } from "../shared/codec.js";
 import { MAX_REQUEST_BODY_BYTES, RequestBodyTooLargeError } from "../shared/request-context.js";
 import { hardenResponse, markPreviewResponse } from "../shared/response-security.js";
 import { createLocalRuntime, type LocalRuntime } from "./local-run.js";
@@ -220,7 +221,11 @@ async function handleRequest(
     if (pathname !== "/" && payload === undefined) {
       throw new ServeRequestError(404, "Only the root and locally compiled paths are served.");
     }
-    if (isPreviewRequest(request)) {
+    const allowCrawlers =
+      payload !== undefined && isCrawlerRequest(request)
+        ? decodePayload(payload).envelope.allowCrawlers === true
+        : false;
+    if (isPreviewRequest(request, allowCrawlers)) {
       await writeResponse(
         incoming.method,
         outgoing,

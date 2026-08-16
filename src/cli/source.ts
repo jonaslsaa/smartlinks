@@ -99,6 +99,7 @@ type __SmartlinksCompileOptions = {
   seal?: Record<string, string>;
   ttlSeconds?: number;
   interstitial?: boolean;
+  allowCrawlers?: boolean;
   note?: string;
 };
 type __SmartlinksCompile = <

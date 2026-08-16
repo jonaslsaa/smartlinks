@@ -63,6 +63,7 @@ const envelopeObjectSchema = z
     a: z.union([z.literal(1), z.literal(2)]).optional(),
     c: z.array(z.string().min(1).max(MAX_SCRIPT_LENGTH)).max(MAX_COMPILE_CLOSURES).optional(),
     k: sealedSecretSchema.optional(),
+    allowCrawlers: z.literal(true).optional(),
     notAfter: notAfterSchema.optional(),
     interstitialNote: interstitialNoteSchema.optional(),
     u: authorProofSchema.optional(),
@@ -85,8 +86,9 @@ export const envelopeSchema = envelopeObjectSchema.superRefine((envelope, contex
 });
 
 const wireEnvelopeSchema = envelopeObjectSchema
-  .omit({ notAfter: true, interstitialNote: true })
+  .omit({ allowCrawlers: true, notAfter: true, interstitialNote: true })
   .extend({
+    p: z.literal(true).optional(),
     n: notAfterSchema.optional(),
     m: interstitialNoteSchema.optional(),
     // Decode links authored before expiry received its compact wire key.
@@ -126,10 +128,11 @@ export type RawDeflates = readonly [RawDeflate, ...RawDeflate[]];
 
 export function serializeEnvelope(input: Envelope): Uint8Array {
   const envelope = envelopeSchema.parse(input);
-  const { notAfter, interstitialNote, ...wireEnvelope } = envelope;
+  const { allowCrawlers, notAfter, interstitialNote, ...wireEnvelope } = envelope;
   const serialized = utf8(
     JSON.stringify({
       ...wireEnvelope,
+      ...(allowCrawlers === true ? { p: true } : {}),
       ...(notAfter === undefined ? {} : { n: notAfter }),
       ...(interstitialNote === undefined ? {} : { m: interstitialNote }),
     }),
@@ -234,6 +237,7 @@ export function parseDecompressedPayload(
   const {
     n,
     m,
+    p,
     notAfter: legacyNotAfter,
     ...wireEnvelope
   } = wireEnvelopeSchema.parse(JSON.parse(text(decompressed)));
@@ -241,6 +245,7 @@ export function parseDecompressedPayload(
     version,
     envelope: envelopeSchema.parse({
       ...wireEnvelope,
+      ...(p === true ? { allowCrawlers: true } : {}),
       ...(n === undefined && legacyNotAfter === undefined ? {} : { notAfter: n ?? legacyNotAfter }),
       ...(m === undefined ? {} : { interstitialNote: m }),
     }),
