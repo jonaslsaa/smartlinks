@@ -58,8 +58,8 @@ if (!label || !value) {
     `<p class="eyebrow">Demo 2 · Badge</p>
      <h1>Mint a live SVG badge</h1>
      <p>Pick a label and a value and this page compiles a Smartlink that serves that badge
-     as an SVG image — embeddable in any HTML page. The badge has no expiry: the URL is the
-     entire program, so there is nothing anywhere that needs cleaning up.</p>
+     as an SVG image — embeddable in a README or any HTML page. The badge has no expiry: the
+     URL is the entire program, so there is nothing anywhere that needs cleaning up.</p>
      <form method="get">
        <label for="label">Label</label>
        <input id="label" name="label" required maxlength="32" placeholder="build">
@@ -110,6 +110,7 @@ const child = await ctx.compile(
     };
   },
   [label, value, color],
+  { allowCrawlers: true },
 );
 
 return htmlResponse(
@@ -120,9 +121,11 @@ return htmlResponse(
    <code>${escapeHtml(label)}: ${escapeHtml(value)}</code> badge as an SVG, forever.
    Nothing is stored anywhere — delete the URL and the badge never existed.</p>
    <pre>${escapeHtml(child)}</pre>
-   <p>Embed it in any HTML page — every view executes the link and renders the SVG fresh.
-   (GitHub READMEs are the one exception: GitHub proxies images through a crawler the
-   runtime deliberately answers with a non-executing preview.)</p>
+   <p>Embed it in a GitHub README — every view executes the link and renders the SVG fresh.
+   This badge explicitly allows image proxies and crawlers to execute it; the audit page
+   shows that choice.</p>
+   <pre>![${escapeHtml(label)}](${escapeHtml(child)})</pre>
+   <p>Or in any HTML page:</p>
    <pre>&lt;img src="${escapeHtml(child)}" alt="${escapeHtml(label)}: ${escapeHtml(value)}"&gt;</pre>
    <p><a href="${escapeHtml(child)}">Open it</a> ·
    <a href="${escapeHtml(child.replace("/r/", "/d/"))}">Audit it without executing</a> ·
