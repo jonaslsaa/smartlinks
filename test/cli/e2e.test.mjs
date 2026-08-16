@@ -267,14 +267,14 @@ try {
 
 test("run locally executes a sealed child with typed tuple arguments", async () => {
   const source = `
-const leaf = async (leafCtx: typeof ctx, name: string) => ({
+const leaf = async (leafCtx: SmartlinksContext, name: string) => ({
   body: name + ":" + leafCtx.secrets.CHILD_TOKEN,
 });
-const child = async (childCtx: typeof ctx, name: string) => childCtx.compile(leaf, [name], {
+const child = async (childCtx: SmartlinksContext, name: string) => childCtx.compile(leaf, [name], {
   seal: { CHILD_TOKEN: childCtx.secrets.CHILD_TOKEN! },
 });
 return ctx.compile(child, [ctx.params.name ?? "world"], {
-  seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN! },
+  seal: { CHILD_TOKEN: ctx.secrets.PARENT_TOKEN },
   ttlSeconds: 60,
 });
 `;
@@ -517,7 +517,7 @@ return {
       await writeFile(
         script,
         `
-const leaf = async (leafCtx: typeof ctx, name: string) => ({
+const leaf = async (leafCtx: SmartlinksContext, name: string) => ({
   headers: { "content-type": "application/json" },
   body: JSON.stringify({
     name,
@@ -529,7 +529,7 @@ const leaf = async (leafCtx: typeof ctx, name: string) => ({
     undelegated: leafCtx.secrets.LOCAL_TOKEN ?? null,
   }),
 });
-const child = async (childCtx: typeof ctx) => {
+const child = async (childCtx: SmartlinksContext) => {
   const leafUrl = await childCtx.compile(leaf, [childCtx.params.name ?? "world"], {
     seal: { DELEGATED: childCtx.secrets.DELEGATED! },
   });
@@ -539,7 +539,7 @@ const child = async (childCtx: typeof ctx) => {
   };
 };
 const childUrl = await ctx.compile(child, [], {
-  seal: { DELEGATED: ctx.secrets.LOCAL_TOKEN! },
+  seal: { DELEGATED: ctx.secrets.LOCAL_TOKEN },
 });
 return {
   headers: { "content-type": "text/html" },
@@ -941,6 +941,32 @@ test("TypeScript is checked by default and can be explicitly transpiled without 
     );
     assert.equal(response.status, 200);
     assert.equal(response.body, "runtime");
+  });
+});
+
+test("build and run type supplied secret names exactly", async () => {
+  const typo = "return { body: ctx.secrets.GITHUB_TOKN! };\n";
+
+  await withTemporaryScript("ts", typo, async (script) => {
+    for (const command of ["build", "run"]) {
+      await assert.rejects(
+        runCli([command, script, "--secret", "GITHUB_TOKEN=value", "--json"]),
+        (error) => {
+          assert.equal(error.stdout, "");
+          assert.match(error.stderr, /Property 'GITHUB_TOKN' does not exist/u);
+          assert.match(error.stderr, /Did you mean 'GITHUB_TOKEN'/u);
+          return true;
+        },
+      );
+    }
+  });
+
+  const known = "const token: string = ctx.secrets.GITHUB_TOKEN;\nreturn { body: token };\n";
+  await withTemporaryScript("ts", known, async (script) => {
+    const response = JSON.parse(
+      (await runCli(["run", script, "--secret", "GITHUB_TOKEN=typed-secret", "--json"])).stdout,
+    );
+    assert.equal(response.body, "typed-secret");
   });
 });
 

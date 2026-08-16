@@ -112,7 +112,10 @@ export async function executeLocalRequest(
 ): Promise<LocalScriptExecution> {
   let simulation: LocalSimulation | undefined;
   try {
-    const originalSource = await readScriptSource(options.file, { typeCheck: options.typeCheck });
+    const originalSource = await readScriptSource(options.file, {
+      secretNames: Object.keys(options.secrets),
+      typeCheck: options.typeCheck,
+    });
     const { source, closures } = await prepareSmartlinkProgram(originalSource, options.minify);
     const context = await localRequestContext(request);
     if (options.simulate) {

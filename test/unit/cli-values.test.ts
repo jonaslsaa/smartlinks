@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveSecrets } from "../../src/cli/values.js";
+import { resolveSecrets, secretNames } from "../../src/cli/values.js";
 
 describe("CLI secret resolution", () => {
   afterEach(() => {
@@ -20,6 +20,18 @@ describe("CLI secret resolution", () => {
     expect(resolved.FIRST).toMatch(/^[A-Za-z0-9_-]{43}$/u);
     expect(resolved.SECOND).toMatch(/^[A-Za-z0-9_-]{43}$/u);
     expect(resolved.FIRST).not.toBe(resolved.SECOND);
+  });
+
+  it("extracts and validates secret names without resolving their values", () => {
+    expect(secretNames(["FIRST=value", "SECOND=@random", "THIRD"])).toEqual([
+      "FIRST",
+      "SECOND",
+      "THIRD",
+    ]);
+    expect(() => secretNames(["invalid=value"])).toThrow("Invalid secret name");
+    expect(() => secretNames(["DUPLICATE=one", "DUPLICATE=two"])).toThrow(
+      "Secret DUPLICATE was provided more than once.",
+    );
   });
 
   it("does not prompt when the command disables interactive output", async () => {

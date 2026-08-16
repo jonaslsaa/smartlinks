@@ -124,7 +124,7 @@ const deploy = async (ctx: SmartlinksContext, repo: string) => {
 
 const child = await ctx.compile(deploy, ["your-org/your-app"], {
   ttlSeconds: 3600,
-  seal: { GITHUB_TOKEN: ctx.secrets.GITHUB_TOKEN! },
+  seal: { GITHUB_TOKEN: ctx.secrets.GITHUB_TOKEN },
 });
 return { status: 201, body: child };
 ```
@@ -215,8 +215,10 @@ replace that floor. Other headers remain author-controlled except `Set-Cookie` a
 `X-Smartlinks-Preview` so executed responses cannot impersonate previews.
 
 TypeScript input is strictly type-checked against the Smartlinks `ctx`, global `fetch`, and
-response contract, then transpiled. `--no-type-check` skips semantic checking and only strips
-types.
+response contract, then transpiled. Secret names supplied with `--secret` become required string
+properties on the top-level `ctx.secrets`, so misspellings fail type checking. Compiled child
+contexts remain open-ended because each child chooses what to seal into the next link.
+`--no-type-check` skips semantic checking and only strips types.
 
 ## Verified authors
 
