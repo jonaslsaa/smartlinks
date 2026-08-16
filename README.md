@@ -373,9 +373,10 @@ npm run check
 `npm run check` covers formatting, strict TypeScript, unit tests, Workers-runtime tests,
 end-to-end tests of the built CLI, generated bindings, and a Wrangler production dry-run.
 
-Pull requests run the full check. Merging a current, green PR to protected `main` deploys the
-Worker and smoke-tests an expiring, sealed link against the live runtime; the same pre-merge checks
-are not repeated after merge.
+Before merging, dispatch the **CI** workflow on the pull request branch and wait for its full check.
+Protected `main` requires that exact branch head to pass **Quality**. Merging it deploys the Worker
+and smoke-tests an expiring, sealed link against the live runtime; the same pre-merge checks are not
+repeated after merge.
 For a package release, run the **Release npm package** workflow and choose patch, minor, or major.
 Open the release PR linked in the run summary, then merge it after CI passes. Publishing waits for
 that exact merge commit's **Deploy Worker** workflow and production smoke test, then publishes to
