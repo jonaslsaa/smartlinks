@@ -227,15 +227,16 @@ leaves the machine.
 
 ```sh
 smartlinks login
-smartlinks build latest.ts --sign --copy
+smartlinks build latest.ts --copy
 ```
 
-`build --sign` signs every immutable, authority-bearing payload field. The Worker verifies the
-certificate and signature before execution; `decode` performs the same verification offline.
-Signing proves provenance, not safety, and grants no extra capabilities. Certificates expire
-after 90 days — `smartlinks whoami` checks readiness (with `--json` for CI), and `smartlinks
-login` renews. Unsigned links remain fully supported; compiled children are separate, unsigned
-artifacts.
+After login, builds for that runtime automatically sign every immutable, authority-bearing payload
+field. The Worker verifies the certificate and signature before execution; `decode` performs the
+same verification offline. Signing proves provenance, not safety, and grants no extra capabilities.
+Certificates expire after 90 days — `smartlinks whoami` checks readiness (with `--json` for CI),
+and `smartlinks login` renews. A build with no configured identity stays unsigned. An unusable or
+wrong-runtime identity fails closed; use `--no-sign` when an unsigned artifact is intentional.
+Compiled children are separate, unsigned artifacts.
 
 ## The CLI
 
@@ -249,7 +250,7 @@ smartlinks logout                        Remove the local author signing identit
 ```
 
 Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
-include `--secret`, `--expires`, `--interstitial`, `--interstitial-note`, `--sign`, `--copy`,
+include `--secret`, `--expires`, `--interstitial`, `--interstitial-note`, `--no-sign`, `--copy`,
 `--out`, `--json`, `--no-minify`, and `--no-type-check`. `--expires` accepts a duration such as
 `30m`, `1h`, or `7d`, or an absolute ISO 8601 date.
 

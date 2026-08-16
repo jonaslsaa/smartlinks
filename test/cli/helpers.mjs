@@ -8,11 +8,18 @@ import { promisify } from "node:util";
 const exec = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const cli = fileURLToPath(new URL("../../dist/index.js", import.meta.url));
+const emptyAuthorConfig = join(tmpdir(), `smartlinks-cli-no-author-${process.pid}`);
 
 export async function runCli(args, options = {}) {
+  const { env, ...execOptions } = options;
   return exec(process.execPath, [cli, ...args], {
     cwd: repositoryRoot,
-    ...options,
+    ...execOptions,
+    env: {
+      ...process.env,
+      SMARTLINKS_CONFIG_DIR: emptyAuthorConfig,
+      ...env,
+    },
   });
 }
 

@@ -7,7 +7,8 @@ import { type AuthorKeyPair, authorCertificateSchema } from "../shared/author.js
 
 const storedAuthorSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
+    service: z.string().url(),
     privateKey: z.string().min(1),
     publicKey: z.string().min(1),
     certificate: authorCertificateSchema,
@@ -66,15 +67,26 @@ export async function readStoredAuthor(
       `The Smartlinks author credential at ${path} is readable by other users. Restrict it to mode 0600.`,
     );
   }
-  return storedAuthorSchema.parse(JSON.parse(await readFile(path, "utf8")));
+  const raw: unknown = JSON.parse(await readFile(path, "utf8"));
+  if (typeof raw === "object" && raw !== null && "version" in raw && raw.version === 1) {
+    throw new StoredAuthorAccessError(
+      "The stored author identity predates runtime-scoped signing. Run smartlinks login again.",
+    );
+  }
+  return storedAuthorSchema.parse(raw);
 }
 
 export async function writeStoredAuthor(
-  author: { key: AuthorKeyPair; certificate: StoredAuthor["certificate"] },
+  author: {
+    service: string;
+    key: AuthorKeyPair;
+    certificate: StoredAuthor["certificate"];
+  },
   path = authorConfigPath(),
 ): Promise<void> {
   const stored = storedAuthorSchema.parse({
-    version: 1,
+    version: 2,
+    service: author.service,
     privateKey: author.key.privateKey,
     publicKey: author.key.publicKey,
     certificate: author.certificate,

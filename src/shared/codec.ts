@@ -5,6 +5,15 @@ import { fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
 
 export const CURRENT_PAYLOAD_VERSION = "2" as const;
 export const MAX_PAYLOAD_LENGTH = 7_800;
+
+export class PayloadTooLargeError extends Error {
+  constructor(payloadLength: number) {
+    super(
+      `The encoded payload is ${payloadLength.toLocaleString()} characters; the limit is ${MAX_PAYLOAD_LENGTH.toLocaleString()}.`,
+    );
+    this.name = "PayloadTooLargeError";
+  }
+}
 export const MAX_SCRIPT_LENGTH = 1_000_000;
 // A single JavaScript code unit can occupy six UTF-8 bytes after JSON escaping
 // (for example, a lone surrogate). Keep extra room for envelope metadata and secrets.
@@ -137,9 +146,7 @@ export function payloadFromCompressed(
 ): string {
   const payload = `${version}${toBase64Url(compressed)}`;
   if (payload.length > MAX_PAYLOAD_LENGTH) {
-    throw new Error(
-      `The encoded payload is ${payload.length.toLocaleString()} characters; the limit is ${MAX_PAYLOAD_LENGTH.toLocaleString()}.`,
-    );
+    throw new PayloadTooLargeError(payload.length);
   }
   return payload;
 }
@@ -191,9 +198,7 @@ export function encodePayloadWith(
     .reduce((shortest, candidate) => (candidate.length < shortest.length ? candidate : shortest));
 
   if (payload.length > MAX_PAYLOAD_LENGTH) {
-    throw new Error(
-      `The encoded payload is ${payload.length.toLocaleString()} characters; the limit is ${MAX_PAYLOAD_LENGTH.toLocaleString()}.`,
-    );
+    throw new PayloadTooLargeError(payload.length);
   }
 
   return payload;
