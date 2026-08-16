@@ -14,6 +14,7 @@
 
 <p align="center">
   <a href="https://smartlinks.jonaslsa.com">Website</a> ·
+  <a href="https://smartlinks.jonaslsa.com/demo/">Live demo</a> ·
   <a href="https://www.npmjs.com/package/@jonaslsa/smartlinks">npm</a> ·
   <a href="https://smartlinks.jonaslsa.com/smartlinks-for-agents.md">Build with an agent</a>
 </p>
@@ -35,6 +36,9 @@ stores nothing — the only copy of your program is the URL itself.
 | An adapter between two webhook formats | A server someone has to keep running | A URL that costs nothing while nothing calls it |
 
 ## What can a link do?
+
+See for yourself: the [live demos](https://smartlinks.jonaslsa.com/demo/) are three production
+Smartlinks that mint working links in your browser.
 
 | Outcome | Example |
 | --- | --- |
