@@ -121,9 +121,8 @@ return htmlResponse(
    Nothing is stored anywhere — delete the URL and the badge never existed.</p>
    <pre>${escapeHtml(child)}</pre>
    <p>Embed it in any HTML page — every view executes the link and renders the SVG fresh.
-   (GitHub is the exception: READMEs, issues, and comments all proxy images through a
-   crawler the runtime deliberately answers with a non-executing preview, so the badge
-   will not render there.)</p>
+   (GitHub READMEs are the one exception: GitHub proxies images through a crawler the
+   runtime deliberately answers with a non-executing preview.)</p>
    <pre>&lt;img src="${escapeHtml(child)}" alt="${escapeHtml(label)}: ${escapeHtml(value)}"&gt;</pre>
    <p><a href="${escapeHtml(child)}">Open it</a> ·
    <a href="${escapeHtml(child.replace("/r/", "/d/"))}">Audit it without executing</a> ·
