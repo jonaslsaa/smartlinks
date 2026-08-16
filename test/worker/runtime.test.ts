@@ -910,7 +910,7 @@ describe("Worker routes", () => {
     expect(review.status).toBe(200);
     const reviewBody = await review.text();
     expect(reviewBody).toContain("Review before running");
-    expect(reviewBody).toContain("<dt>Crawler execution</dt><dd>Allowed</dd>");
+    expect(reviewBody).toContain("<dt>Known crawler GETs</dt><dd>Allowed</dd>");
     expect(limit).toHaveBeenCalledTimes(1);
 
     const expired = encodePayload({
@@ -951,7 +951,7 @@ describe("Worker routes", () => {
     expect(decodedHtml).toContain("Smartlink facts");
     expect(decodedHtml).toContain("<dt>Payload version</dt><dd>2</dd>");
     expect(decodedHtml).toContain("<dt>Confirmation required</dt><dd>Yes</dd>");
-    expect(decodedHtml).toContain("<dt>Crawler execution</dt><dd>Blocked</dd>");
+    expect(decodedHtml).toContain("<dt>Known crawler GETs</dt><dd>Previewed</dd>");
     expect(decodedHtml).toContain(new Date(notAfter * 1_000).toISOString());
     expect(decodedHtml).toContain("<dt>Sealed secrets</dt><dd>1: RELEASE_TOKEN</dd>");
     expect(decodedHtml).not.toContain("encrypted-value-must-not-render");

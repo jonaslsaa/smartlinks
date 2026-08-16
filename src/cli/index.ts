@@ -366,7 +366,7 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
   const metadataLines = [
     `Version: ${metadata.payloadVersion}`,
     `Confirmation: ${metadata.interstitial ? "yes" : "no"}`,
-    `Crawler execution: ${metadata.allowCrawlers ? "allowed" : "blocked"}`,
+    `Known crawler GETs: ${metadata.allowCrawlers ? "allowed" : "previewed"}`,
     `Compile closures: ${metadata.compileClosures}`,
     `Sealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}`,
     `Expiry: ${metadata.expiresAt === null ? "never" : `${metadata.expiresAt}${metadata.expired ? " (expired)" : ""}`}`,
