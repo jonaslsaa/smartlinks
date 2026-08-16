@@ -12,6 +12,7 @@ export type CreateSmartlinkOptions = {
   service: string;
   interstitial?: boolean;
   interstitialNote?: string;
+  allowCrawlers?: boolean;
   notAfter?: number;
   secrets?: Record<string, string>;
   publicKey?: PublicKey;
@@ -74,6 +75,7 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
   const envelope = {
     s: source,
     ...(interstitial ? { i: true as const } : {}),
+    ...(options.allowCrawlers === true ? { allowCrawlers: true as const } : {}),
     ...(closures.length ? { c: closures } : {}),
     ...(secretEntries.length ? { a: options.author ? (2 as const) : (1 as const) } : {}),
     ...(options.notAfter !== undefined ? { notAfter: options.notAfter } : {}),

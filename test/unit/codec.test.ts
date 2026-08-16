@@ -22,6 +22,7 @@ describe("payload codec", () => {
       a: 1 as const,
       c: ["async value=>value"],
       k: { TOKEN: "AQID" },
+      allowCrawlers: true as const,
       notAfter: 2_000_000_000,
       interstitialNote: "Deploys the reviewed release",
     };
@@ -39,6 +40,17 @@ describe("payload codec", () => {
     expect(JSON.parse(serialized)).toEqual({ s: envelope.s, n: envelope.notAfter });
     expect(serialized).not.toContain("notAfter");
     expect(decodePayload(encodePayload(envelope)).envelope).toEqual(envelope);
+  });
+
+  it("uses an optional compact crawler-policy key on the wire", () => {
+    const defaultSerialized = new TextDecoder().decode(serializeEnvelope({ s: "async()=>1" }));
+    const allowed = { s: "async()=>1", allowCrawlers: true as const };
+    const allowedSerialized = new TextDecoder().decode(serializeEnvelope(allowed));
+
+    expect(JSON.parse(defaultSerialized)).toEqual({ s: "async()=>1" });
+    expect(JSON.parse(allowedSerialized)).toEqual({ s: allowed.s, p: true });
+    expect(allowedSerialized).not.toContain("allowCrawlers");
+    expect(decodePayload(encodePayload(allowed)).envelope).toEqual(allowed);
   });
 
   it("normalizes author notes and uses a compact wire key", () => {

@@ -158,7 +158,7 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
     });
   }
   const author = await verifiedAuthor(decoded, env);
-  if (isPreviewRequest(request)) {
+  if (isPreviewRequest(request, decoded.envelope.allowCrawlers === true)) {
     return previewPage(decoded, author, request.method === "HEAD");
   }
 

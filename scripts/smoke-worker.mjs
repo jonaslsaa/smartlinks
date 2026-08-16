@@ -82,6 +82,7 @@ try {
 };
 return ctx.compile(child, [${JSON.stringify(landingUrl.href)}], {
   ttlSeconds: 120,
+  allowCrawlers: true,
   seal: { CHILD_SECRET: ctx.secrets.SMARTLINKS_SMOKE_SECRET },
 });
 `,
@@ -129,6 +130,7 @@ return ctx.compile(child, [${JSON.stringify(landingUrl.href)}], {
 
   await retry("sealed compiled child and global fetch smoke", async () => {
     const response = await fetch(childLink, {
+      headers: { "user-agent": "github-camo" },
       redirect: "manual",
       signal: AbortSignal.timeout(30_000),
     });

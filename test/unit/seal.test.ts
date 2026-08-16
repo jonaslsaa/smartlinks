@@ -57,6 +57,7 @@ describe("sealed secrets", () => {
       s: "async()=>1",
       c: ["async value=>value"],
       i: true as const,
+      allowCrawlers: true as const,
       notAfter: 2_000_000_000,
       interstitialNote: "Deploys the reviewed release",
     };
@@ -68,6 +69,7 @@ describe("sealed secrets", () => {
       artifactSecretBinding("2", { ...envelope, s: "async()=>2" }, "TOKEN"),
       artifactSecretBinding("2", { ...envelope, c: ["async value=>String(value)"] }, "TOKEN"),
       artifactSecretBinding("2", { ...envelope, i: undefined }, "TOKEN"),
+      artifactSecretBinding("2", { ...envelope, allowCrawlers: undefined }, "TOKEN"),
       artifactSecretBinding("2", { ...envelope, notAfter: envelope.notAfter + 1 }, "TOKEN"),
       artifactSecretBinding("2", { ...envelope, interstitialNote: "Changed note" }, "TOKEN"),
       artifactSecretBinding("2", { ...envelope, interstitialNote: undefined }, "TOKEN"),
@@ -92,6 +94,19 @@ describe("sealed secrets", () => {
           interstitialNote: "Injected note",
           k: { TOKEN: blob },
         },
+      }),
+    ).toThrow("complete-artifact binding");
+  });
+
+  it("does not let legacy sealed links gain unauthenticated crawler execution", async () => {
+    const pair = await generateKeyPair(1);
+    const script = "async()=>1";
+    const blob = await sealSecret("top secret", { script }, pair);
+
+    expect(() =>
+      boundSealedSecrets({
+        version: "2",
+        envelope: { s: script, allowCrawlers: true, k: { TOKEN: blob } },
       }),
     ).toThrow("complete-artifact binding");
   });

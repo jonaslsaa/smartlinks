@@ -3,6 +3,7 @@ import { type DecodedPayload, formatNotAfter, isExpired } from "./codec.js";
 export type PayloadFacts = {
   payloadVersion: number;
   interstitial: boolean;
+  allowCrawlers: boolean;
   compileClosures: number;
   sealedSecrets: string[];
   notAfter: number | null;
@@ -15,6 +16,7 @@ export function payloadFacts(decoded: DecodedPayload): PayloadFacts {
   return {
     payloadVersion: Number(decoded.version),
     interstitial: decoded.envelope.i === true,
+    allowCrawlers: decoded.envelope.allowCrawlers === true,
     compileClosures: decoded.envelope.c?.length ?? 0,
     sealedSecrets: Object.keys(decoded.envelope.k ?? {}),
     notAfter: notAfter ?? null,
