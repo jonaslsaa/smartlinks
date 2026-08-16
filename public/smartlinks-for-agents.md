@@ -197,7 +197,8 @@ Smartlinks requires Node.js 24 or newer: `npm install --global @jonaslsa/smartli
 the installed help as authoritative (`smartlinks --help`, `help build`, `help run`,
 `help decode`, `help whoami`). There is no `compile` or `dry-run` command: `build` performs the whole pipeline
 without executing the script (QuickJS validation is compile-only); `run` is the local execution
-and validation path.
+and validation path. Execution URLs are bearer artifacts — read "Treat the generated link as a
+compiled artifact" below before printing or copying one.
 
 `SMARTLINKS_URL` overrides the runtime origin, including the host baked into built links. An
 automatically selected author identity must belong to that origin. With no secrets and no identity
@@ -233,7 +234,9 @@ The execution URL is opaque and carries bearer authority. Do not repeat it to th
 into reasoning, plans, or other working context. Iterate with `run`, then finish with
 `build --out link.txt` (keep the file out of version control) or `--copy` when the user should
 receive the link directly; if clipboard access is unavailable, ask the user to run the final
-command rather than printing the URL. Both modes suppress the URL and report character count,
+command rather than printing the URL. The flags combine, and the clipboard is shared state the
+CLI cannot re-check — prefer `--copy --out link.txt` so a clobbered clipboard can be re-verified
+and refilled from the file instead of rebuilding. Both modes suppress the URL and report character count,
 payload version, budget usage, a short fingerprint — the first 12 hex characters of SHA-256 over
 the full execution URL — and any expiry as an absolute UTC timestamp. Compare the fingerprint
 when checking an opaque clipboard or file artifact; it is not an authenticity guarantee.
@@ -301,7 +304,9 @@ and on expired links, so neither expiry nor rate limits affect what a reader lea
 
 `smartlinks login` runs a zero-permission GitHub App device flow, generates a local author key, and
 stores only that private key and its 90-day Smartlinks certificate. The temporary GitHub token is
-discarded during issuance. `smartlinks whoami [--json]` verifies the certificate and local signing
+discarded during issuance. Run `whoami` as a preflight before a build that must sign, before
+composing a command that carries secrets — a stale identity fails the build itself.
+`smartlinks whoami [--json]` verifies the certificate and local signing
 key without building; it exits nonzero when the identity is missing, expired, or invalid.
 `smartlinks logout` removes the local author identity. The credential is scoped to the runtime that
 issued it. Builds for that runtime sign automatically; builds without an identity stay unsigned.
