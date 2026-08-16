@@ -772,6 +772,22 @@ test("build writes the link as an artifact without repeating it", async () => {
   );
 });
 
+test("build keeps no artifact when writing to a character device", {
+  skip: process.platform === "win32",
+}, async () => {
+  await withTemporaryScript("js", 'return { body: "hi" };\n', async (script) => {
+    const result = await runCli(["build", script, "--out", "/dev/null"]);
+
+    assert.equal(result.stderr, "");
+    assert.doesNotMatch(result.stdout, /https:\/\//u);
+    assert.match(
+      result.stdout,
+      /^\d+ characters · payload v2 · fits \(\d+% of budget\) · fingerprint sha256:[0-9a-f]{12} · written to \/dev\/null/u,
+    );
+    assert.equal((await stat("/dev/null")).mode & 0o777, 0o666);
+  });
+});
+
 test("build rejects invalid or past expiries before producing a link", async () => {
   await withTemporaryScript("js", 'return "https://example.com";\n', async (script) => {
     for (const expires of ["yesterday", "2020-01-01T00:00:00Z"]) {
