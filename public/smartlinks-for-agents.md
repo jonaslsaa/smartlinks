@@ -1,7 +1,6 @@
 # Smartlinks agent guide
 
-Operational contract for creating Smartlinks. Execution URLs are bearer artifacts — read "Treat
-the generated link as a compiled artifact" below before printing or copying one.
+Operational contract for creating Smartlinks.
 
 ## What Smartlinks is
 
@@ -198,7 +197,8 @@ Smartlinks requires Node.js 24 or newer: `npm install --global @jonaslsa/smartli
 the installed help as authoritative (`smartlinks --help`, `help build`, `help run`,
 `help decode`, `help whoami`). There is no `compile` or `dry-run` command: `build` performs the whole pipeline
 without executing the script (QuickJS validation is compile-only); `run` is the local execution
-and validation path.
+and validation path. Execution URLs are bearer artifacts — read "Treat the generated link as a
+compiled artifact" below before printing or copying one.
 
 `SMARTLINKS_URL` overrides the runtime origin, including the host baked into built links. An
 automatically selected author identity must belong to that origin. With no secrets and no identity
@@ -304,8 +304,9 @@ and on expired links, so neither expiry nor rate limits affect what a reader lea
 
 `smartlinks login` runs a zero-permission GitHub App device flow, generates a local author key, and
 stores only that private key and its 90-day Smartlinks certificate. The temporary GitHub token is
-discarded during issuance. Run `whoami` as a preflight before any `--sign` build, before
-composing a command that carries secrets. `smartlinks whoami [--json]` verifies the certificate and local signing
+discarded during issuance. Run `whoami` as a preflight before a build that must sign, before
+composing a command that carries secrets — a stale identity fails the build itself.
+`smartlinks whoami [--json]` verifies the certificate and local signing
 key without building; it exits nonzero when the identity is missing, expired, or invalid.
 `smartlinks logout` removes the local author identity. The credential is scoped to the runtime that
 issued it. Builds for that runtime sign automatically; builds without an identity stay unsigned.
