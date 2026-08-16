@@ -53,6 +53,16 @@ describe("guest token seal/open", () => {
     await expect(link("return 1", { c: ["()=>1"] }).open(token)).rejects.toThrow(
       "could not be opened",
     );
+    await expect(
+      link("return 1", { a: 1, k: { PASSWORD: "different-sealed-secret" } }).open(token),
+    ).rejects.toThrow("could not be opened");
+    const secretToken = await link("return 1", {
+      a: 1,
+      k: { PASSWORD: "victim-sealed-secret" },
+    }).seal("state");
+    await expect(
+      link("return 1", { a: 1, k: { PASSWORD: "attacker-sealed-secret" } }).open(secretToken),
+    ).rejects.toThrow("could not be opened");
     await expect(link("return 1", {}, "other-master").open(token)).rejects.toThrow(
       "could not be opened",
     );

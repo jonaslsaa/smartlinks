@@ -59,17 +59,23 @@ function artifactIdentityValues(identity: ArtifactIdentity): readonly unknown[] 
 export function payloadArtifactIdentity(
   decoded: Pick<DecodedPayload, "version" | "envelope">,
 ): string {
+  const identity = artifactIdentityValues({
+    version: decoded.version,
+    script: decoded.envelope.s,
+    closures: decoded.envelope.c ?? [],
+    ...(decoded.envelope.notAfter === undefined ? {} : { notAfter: decoded.envelope.notAfter }),
+    interstitial: decoded.envelope.i === true,
+    ...(decoded.envelope.interstitialNote === undefined
+      ? {}
+      : { interstitialNote: decoded.envelope.interstitialNote }),
+  });
+  const sealedSecrets = Object.entries(decoded.envelope.k ?? {}).sort(([left], [right]) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
   return JSON.stringify(
-    artifactIdentityValues({
-      version: decoded.version,
-      script: decoded.envelope.s,
-      closures: decoded.envelope.c ?? [],
-      ...(decoded.envelope.notAfter === undefined ? {} : { notAfter: decoded.envelope.notAfter }),
-      interstitial: decoded.envelope.i === true,
-      ...(decoded.envelope.interstitialNote === undefined
-        ? {}
-        : { interstitialNote: decoded.envelope.interstitialNote }),
-    }),
+    decoded.envelope.a === undefined && sealedSecrets.length === 0
+      ? identity
+      : [...identity, decoded.envelope.a ?? null, sealedSecrets],
   );
 }
 
