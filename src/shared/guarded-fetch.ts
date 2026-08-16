@@ -1,5 +1,6 @@
 import ipaddr from "ipaddr.js";
 import { z } from "zod";
+import { isRedirectStatus } from "./http-status.js";
 
 export const MAX_FETCHES = 5;
 export const MAX_FETCH_RESPONSE_BYTES = 1_048_576;
@@ -7,7 +8,6 @@ const MAX_FETCH_REQUEST_BYTES = 1_048_576;
 const MAX_HEADER_BYTES = 16_384;
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 3;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const encoder = new TextEncoder();
 
 const fetchOptionsSchema = z
@@ -199,7 +199,7 @@ export function createGuardedFetch(options: GuardedFetchOptions = {}): GuestFetc
         signal: AbortSignal.timeout(timeoutMs),
       });
 
-      if (REDIRECT_STATUSES.has(response.status)) {
+      if (isRedirectStatus(response.status)) {
         const location = response.headers.get("location");
         await response.body?.cancel();
         if (!location) {

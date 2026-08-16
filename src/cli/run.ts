@@ -21,6 +21,7 @@ type LocalScriptOptions = {
   minify: boolean;
   secrets: Record<string, string>;
   simulate?: boolean;
+  simulationResponses?: readonly number[];
   typeCheck: boolean;
 };
 
@@ -123,6 +124,7 @@ export async function executeLocalRequest(
           body: context.body,
         },
         options.secrets,
+        options.simulationResponses,
       );
     }
     const program = {

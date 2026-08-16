@@ -256,7 +256,9 @@ include `--secret`, `--expires`, `--interstitial`, `--interstitial-note`, `--sig
 `smartlinks run` is the local dry-run: the same wrapper, QuickJS engine, and policies as
 production, so what you test is what ships. Networking is off by default; opt in with
 `--allow-network`, or use `--simulate` to trace a networked script's fetches and successful child
-mints without sending anything. For browser-based iteration, `run --serve` serves the script on
+mints without sending anything. Repeat `--simulate-response STATUS` to return specific statuses
+to successive allowed fetches; unconfigured fetches retain the default HTTP 200 JSON response.
+For browser-based iteration, `run --serve` serves the script on
 `http://127.0.0.1:8787` (`--port` to change), re-reading and checking the root file on every root
 request, never building a production link or contacting production. In serve mode, local
 `ctx.compile` returns a clickable URL on that loopback server; compiled children and grandchildren
