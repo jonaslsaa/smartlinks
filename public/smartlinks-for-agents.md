@@ -204,9 +204,10 @@ secrets nothing is fetched, so a wrong value silently emits links to a host that
 
 ## `smartlinks build <script.js|script.ts>`
 
-- `--interstitial`: require browser confirmation — GET renders the confirmation page, the
-  confirming POST executes, and any other request receives HTTP 405. Unsuitable for multi-step
-  flows: relative links and `<form method=get>` re-enter by GET, so every step reconfirms.
+- `--interstitial`: require browser confirmation — GET renders the confirmation page, a POST
+  carrying `?__confirm=1` executes, and any other request receives HTTP 405. Unsuitable for
+  multi-step flows: relative links and `<form method=get>` re-enter by GET, so every step
+  reconfirms.
 - `--interstitial-note TEXT`: add an author note (whitespace-normalized, 140 Unicode characters
   max) and require confirmation.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline.
@@ -230,9 +231,9 @@ into reasoning, plans, or other working context. Iterate with `run`, then finish
 `build --out link.txt` (keep the file out of version control) or `--copy` when the user should
 receive the link directly; if clipboard access is unavailable, ask the user to run the final
 command rather than printing the URL. Both modes suppress the URL and report character count,
-payload version, budget usage, a short SHA-256 fingerprint, and any expiry as an absolute UTC
-timestamp. Compare the fingerprint when checking an opaque clipboard or file artifact; it is not
-an authenticity guarantee.
+payload version, budget usage, a short fingerprint — the first 12 hex characters of SHA-256 over
+the full execution URL — and any expiry as an absolute UTC timestamp. Compare the fingerprint
+when checking an opaque clipboard or file artifact; it is not an authenticity guarantee.
 
 ## `smartlinks run <script.js|script.ts>`
 
