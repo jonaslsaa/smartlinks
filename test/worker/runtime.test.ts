@@ -180,6 +180,53 @@ describe("Worker routes", () => {
     expect(rejected.status).toBe(422);
   });
 
+  it("rejects a token minted by the same source with different sealed authority", async () => {
+    const source = `
+      if (ctx.params.action === "mint") {
+        if (ctx.params.password !== ctx.secrets.PASSWORD) {
+          return { status: 403, body: "denied" };
+        }
+        return { body: await ctx.crypto.seal({ role: "admin" }) };
+      }
+      const state = await ctx.crypto.open(ctx.params.token);
+      return { body: "opened:" + state.role + ":" + ctx.secrets.PASSWORD };
+    `;
+    const victim = await createSmartlink({
+      source,
+      service: origin,
+      secrets: { PASSWORD: "victim-pass" },
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const attacker = await createSmartlink({
+      source,
+      service: origin,
+      secrets: { PASSWORD: "attacker-pass" },
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+
+    const forged = await worker.fetch(
+      new Request(`${attacker.link}?action=mint&password=attacker-pass`),
+      testEnv(),
+    );
+    expect(forged.status).toBe(200);
+    const token = await forged.text();
+
+    const direct = await worker.fetch(
+      new Request(`${victim.link}?action=mint&password=attacker-pass`),
+      testEnv(),
+    );
+    expect(direct.status).toBe(403);
+
+    const opened = await worker.fetch(
+      new Request(`${victim.link}?action=open&token=${encodeURIComponent(token)}`),
+      testEnv(),
+    );
+    expect(opened.status).toBe(422);
+    await expect(opened.text()).resolves.not.toContain("opened:admin:victim-pass");
+  });
+
   it("fails transparent tokens with 422 when the master secret is unset", async () => {
     const created = await createSmartlink({
       source: `return { body: await ctx.crypto.seal(1) }`,
