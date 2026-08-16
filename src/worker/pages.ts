@@ -49,7 +49,7 @@ function authorNoteHtml(decoded: DecodedPayload): string {
 
 function authorHtml(author: AuthorVerification): string {
   if (author.status === "unsigned") {
-    return `<section class="panel" aria-labelledby="author-heading"><h2 class="eyebrow" id="author-heading">Author</h2><p>Unsigned</p></section>`;
+    return "";
   }
   if (author.status === "invalid") {
     return `<section class="panel system" aria-labelledby="author-heading"><h2 class="eyebrow" id="author-heading">Author</h2><p>Invalid author signature</p></section>`;

@@ -138,7 +138,8 @@ test("the built CLI exposes its version and public subcommands", async () => {
   assert.match(buildHelp.stdout, /--no-type-check\b/u);
   assert.match(buildHelp.stdout, /--expires <duration-or-date>/u);
   assert.match(buildHelp.stdout, /--interstitial-note <text>/u);
-  assert.match(buildHelp.stdout, /--sign\s+sign with the author identity/u);
+  assert.match(buildHelp.stdout, /--no-sign\s+build unsigned even when an author identity/u);
+  assert.doesNotMatch(buildHelp.stdout, /(^|\s)--sign(?:\s|$)/u);
   assert.match(buildHelp.stdout, /--copy\s+copy the link and print a fingerprint receipt/u);
   assert.match(
     buildHelp.stdout,
