@@ -753,6 +753,54 @@ describe("Worker routes", () => {
     expect(redirect.headers.get("location")).toBe("https://example.com/next");
   });
 
+  it("resolves confirmed redirect targets against the request URL", async () => {
+    const protocolRelative = await createSmartlink({
+      source: 'return { status: 302, headers: { location: "//example.com/path" } }',
+      service: origin,
+      interstitial: true,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const continuation = await worker.fetch(
+      new Request(`${protocolRelative.link}?__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    expect(continuation.status).toBe(200);
+    await expect(continuation.text()).resolves.toContain(
+      'content="0;url=https://example.com/path"',
+    );
+
+    const sameOriginRelative = await createSmartlink({
+      source: 'return { status: 302, headers: { location: "/somewhere/else" } }',
+      service: origin,
+      interstitial: true,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const passthrough = await worker.fetch(
+      new Request(`${sameOriginRelative.link}?__confirm=1`, { method: "POST", redirect: "manual" }),
+      testEnv(),
+    );
+    expect(passthrough.status).toBe(302);
+    expect(passthrough.headers.get("location")).toBe("/somewhere/else");
+  });
+
+  it("rejects confirmed cross-origin redirects that preserve the POST method", async () => {
+    const created = await createSmartlink({
+      source: 'return { status: 307, headers: { location: "https://example.com/hook" } }',
+      service: origin,
+      interstitial: true,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(
+      new Request(`${created.link}?__confirm=1`, { method: "POST", redirect: "manual" }),
+      testEnv(),
+    );
+    expect(response.status).toBe(422);
+    await expect(response.text()).resolves.toContain("Return a 303");
+  });
+
   it("rate limits executions without charging previews or interstitial reviews", async () => {
     const limit = vi.fn(async () => ({ success: false }));
     const limitedEnv = testEnv({ limit });

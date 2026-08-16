@@ -239,21 +239,31 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
   }
   if (decoded.envelope.i && [301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get("location");
-    if (location && isCrossOriginHttpUrl(location, url.origin)) {
-      return confirmedRedirectPage(location);
+    const target = location === null ? undefined : crossOriginRedirectTarget(location, url);
+    if (target) {
+      if (response.status === 307 || response.status === 308) {
+        throw new HttpError(
+          422,
+          "A confirmed smartlink cannot forward a cross-origin 307 or 308 redirect: the confirmation is a POST, and continuing would change the method. Return a 303 or a bare URL when navigation is intended.",
+        );
+      }
+      return confirmedRedirectPage(target.href);
     }
   }
   return response;
 }
 
-function isCrossOriginHttpUrl(location: string, origin: string): boolean {
+function crossOriginRedirectTarget(location: string, requestUrl: URL): URL | undefined {
   let target: URL;
   try {
-    target = new URL(location);
+    target = new URL(location, requestUrl);
   } catch {
-    return false;
+    return undefined;
   }
-  return (target.protocol === "http:" || target.protocol === "https:") && target.origin !== origin;
+  const crossOriginHttp =
+    (target.protocol === "http:" || target.protocol === "https:") &&
+    target.origin !== requestUrl.origin;
+  return crossOriginHttp ? target : undefined;
 }
 
 async function handleRequest(request: Request, env: Env): Promise<Response> {
