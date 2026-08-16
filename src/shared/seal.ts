@@ -31,6 +31,7 @@ type ArtifactIdentityFields = {
   notAfter?: number;
   interstitial: boolean;
   interstitialNote?: string;
+  allowCrawlers: boolean;
 };
 
 type ArtifactSecretFields = ArtifactIdentityFields & {
@@ -53,7 +54,9 @@ function artifactIdentityValues(identity: ArtifactIdentity): readonly unknown[] 
     identity.notAfter ?? null,
     identity.interstitial,
   ];
-  return identity.interstitialNote === undefined ? values : [...values, identity.interstitialNote];
+  const noted =
+    identity.interstitialNote === undefined ? values : [...values, identity.interstitialNote];
+  return identity.allowCrawlers ? [...noted, true] : noted;
 }
 
 function compareSealedSecretEntries(
@@ -78,6 +81,7 @@ export function payloadArtifactIdentity(
     closures: decoded.envelope.c ?? [],
     ...(decoded.envelope.notAfter === undefined ? {} : { notAfter: decoded.envelope.notAfter }),
     interstitial: decoded.envelope.i === true,
+    allowCrawlers: decoded.envelope.allowCrawlers === true,
     ...(decoded.envelope.interstitialNote === undefined
       ? {}
       : { interstitialNote: decoded.envelope.interstitialNote }),
@@ -88,7 +92,10 @@ export function payloadArtifactIdentity(
 
 export function artifactSecretBinding(
   version: PayloadVersion,
-  envelope: Pick<Envelope, "s" | "c" | "i" | "a" | "notAfter" | "interstitialNote">,
+  envelope: Pick<
+    Envelope,
+    "s" | "c" | "i" | "a" | "allowCrawlers" | "notAfter" | "interstitialNote"
+  >,
   secretName: string,
   authorCertificate?: AuthorCertificate,
 ): ArtifactSecretBinding {
@@ -102,6 +109,7 @@ export function artifactSecretBinding(
     closures: envelope.c ?? [],
     ...(envelope.notAfter === undefined ? {} : { notAfter: envelope.notAfter }),
     interstitial: envelope.i === true,
+    allowCrawlers: envelope.allowCrawlers === true,
     ...(envelope.interstitialNote === undefined
       ? {}
       : { interstitialNote: envelope.interstitialNote }),
@@ -126,6 +134,9 @@ function payloadSecretBinding(decoded: DecodedPayload, secretName: string): Secr
   }
   if (decoded.envelope.interstitialNote !== undefined) {
     throw new Error("Sealed interstitial notes require complete-artifact binding.");
+  }
+  if (decoded.envelope.allowCrawlers === true) {
+    throw new Error("Sealed crawler execution requires complete-artifact binding.");
   }
   return decoded.envelope.notAfter === undefined
     ? { script: decoded.envelope.s }

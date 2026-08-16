@@ -61,6 +61,8 @@ returns a Response-like value with `status`, `statusText`, `ok`, `url`, `redirec
 Return an absolute HTTP(S) URL for a 302 redirect (return `{ status, headers }` with a `location`
 header for any other redirect status), `{ status?, headers?, body? }` for text,
 `{ status?, headers?, bodyBase64 }` for bytes, or `undefined` for the default completion page.
+For an interstitial Smartlink, cross-origin 307/308 redirects are rejected; return a 303 or a
+bare URL for navigation.
 `body` and `bodyBase64` are mutually exclusive. `bodyBase64` accepts padded or unpadded Base64,
 is limited to 1 MiB after decoding, and defaults to `application/octet-stream` when headers do
 not supply a content type; `content-disposition` remains author-controlled. Every mapped response
@@ -94,10 +96,10 @@ Tokens let a link hand the client state the client can neither read nor forge, a
 a later request.
 
 Without options, a token is bound to the exact artifact: identical script, closures, expiry,
-interstitial flag, author note, authority, and sealed-secret ciphertexts. Rebuilding with any
-change (including rebuilding the same secrets, whose sealing uses fresh randomness) rotates the
-key and invalidates outstanding tokens by design; children minted with `ctx.compile` are distinct
-artifacts and never share transparent tokens with their parent.
+interstitial and crawler-execution policy, author note, authority, and sealed-secret ciphertexts.
+Rebuilding with any change (including rebuilding the same secrets, whose sealing uses fresh
+randomness) rotates the key and invalidates outstanding tokens by design; children minted with
+`ctx.compile` are distinct artifacts and never share transparent tokens with their parent.
 
 `options.key` (a string of at least 16 bytes) skips artifact binding, so tokens survive rebuilds
 and cross between cooperating links: generate the key once and supply it to both builds through
@@ -172,6 +174,8 @@ Options:
   deadline. Omission inherits the parent deadline, and a parent without one may mint a child
   without one.
 - `interstitial?: boolean` — explicit value overrides the parent; omission inherits.
+- `allowCrawlers?: boolean` — allow known crawler and image-proxy GETs to execute; explicit value
+  overrides the parent and omission inherits. `HEAD` and explicit prefetch remain non-executing.
 - `note?: string` — child-specific author note, implies an interstitial. Notes do not inherit,
   and `note` cannot combine with `interstitial: false`.
 - `seal?: Record<string, string>` — strings to encrypt for the child's `ctx.secrets`, each value
@@ -217,6 +221,8 @@ not exist.
   reconfirms.
 - `--interstitial-note TEXT`: add an author note (whitespace-normalized, 140 Unicode characters
   max) and require confirmation.
+- `--allow-crawlers`: allow known crawler and image-proxy GETs to execute. Use only when the
+  response itself is meant for them; all ordinary execution policies still apply.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline.
 - `--expires VALUE`: a duration (`30m`, `1h`, `7d`) or absolute ISO 8601 date, stored as integer
   Unix seconds in UTC; past dates are rejected.
@@ -375,10 +381,12 @@ fails open or closed.
   redirects are rejected. A Smartlink cannot invoke the runtime by HTTP; use `ctx.compile` to
   create a child link. Local `run --allow-network` additionally resolves and pins DNS connections
   to validated public addresses.
-- Known crawler, preview, prefetch, and `HEAD` requests do not execute scripts; they receive a
-  non-executing HTTP 200 preview with `x-smartlinks-preview: 1`, even after expiry. Its presence
-  confirms that guest code did not run only on the immediate response from the configured
-  Smartlinks runtime: disable redirect following and verify the response origin before trusting it.
+- Known crawler, preview, prefetch, and `HEAD` requests do not execute scripts by default; they
+  receive a non-executing HTTP 200 preview with `x-smartlinks-preview: 1`, even after expiry.
+  `--allow-crawlers` lets known crawler and image-proxy GETs execute; `HEAD` and explicit prefetch
+  remain non-executing. Its presence confirms that guest code did not run only on the immediate
+  response from the configured Smartlinks runtime: disable redirect following and verify the
+  response origin before trusting it.
   Absence alone does not prove execution. Detection is intentionally best-effort.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 

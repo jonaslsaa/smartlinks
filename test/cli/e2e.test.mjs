@@ -138,6 +138,10 @@ test("the built CLI exposes its version and public subcommands", async () => {
   assert.match(buildHelp.stdout, /--no-type-check\b/u);
   assert.match(buildHelp.stdout, /--expires <duration-or-date>/u);
   assert.match(buildHelp.stdout, /--interstitial-note <text>/u);
+  assert.match(
+    buildHelp.stdout,
+    /--allow-crawlers\s+let known crawlers and image proxies execute/u,
+  );
   assert.match(buildHelp.stdout, /--no-sign\s+build unsigned even when an author identity/u);
   assert.doesNotMatch(buildHelp.stdout, /(^|\s)--sign(?:\s|$)/u);
   assert.match(buildHelp.stdout, /--copy\s+copy the link and print a fingerprint receipt/u);
@@ -501,7 +505,7 @@ return {
 
       await writeFile(
         script,
-        'const child = async (_childCtx: typeof ctx, name: string) => ({ body: "compiled:" + name });\nreturn ctx.compile(child, [ctx.params.name ?? "world"]);\n',
+        'const child = async (_childCtx: typeof ctx, name: string) => ({ body: "compiled:" + name });\nreturn ctx.compile(child, [ctx.params.name ?? "world"], { allowCrawlers: true });\n',
       );
       const compiledRedirect = await fetch(`${server.origin}/?name=Browser`, {
         redirect: "manual",
@@ -513,6 +517,13 @@ return {
       const compiled = await fetch(compiledLocation);
       assert.equal(compiled.status, 200);
       assert.equal(await compiled.text(), "compiled:Browser");
+
+      const crawlerExecution = await fetch(compiledLocation, {
+        headers: { "user-agent": "github-camo" },
+      });
+      assert.equal(crawlerExecution.status, 200);
+      assert.equal(crawlerExecution.headers.get("x-smartlinks-preview"), null);
+      assert.equal(await crawlerExecution.text(), "compiled:Browser");
 
       await writeFile(
         script,
@@ -663,6 +674,7 @@ return "https://example.com/" + name;
                 "E2E_TOKEN=value",
                 "--interstitial-note",
                 "  Deploys\n the reviewed release  ",
+                "--allow-crawlers",
                 "--expires",
                 "2100-01-01T00:00:00Z",
                 "--no-minify",
@@ -681,6 +693,7 @@ return "https://example.com/" + name;
         assert.equal(built.expiresAt, "2100-01-01T00:00:00.000Z");
         assert.equal(built.expired, false);
         assert.equal(built.interstitialNote, "Deploys the reviewed release");
+        assert.equal(built.allowCrawlers, true);
         assert.equal(built.characters, built.link.length);
         assert.equal(built.fits, true);
         assert.equal(typeof built.payloadCharacters, "number");
@@ -692,6 +705,7 @@ return "https://example.com/" + name;
         assert.equal(decodedFromUrl.fingerprint, expectedFingerprint);
         assert.equal(decodedFromUrl.payloadVersion, 2);
         assert.equal(decodedFromUrl.interstitial, true);
+        assert.equal(decodedFromUrl.allowCrawlers, true);
         assert.equal(decodedFromUrl.compileClosures, 2);
         assert.equal(decodedFromUrl.closures.length, 2);
         assert.match(decodedFromUrl.closures[0], /first-sentinel/u);

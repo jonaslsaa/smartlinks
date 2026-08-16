@@ -147,11 +147,10 @@ parameters, locals, supported globals, and other eligible declarations, but neve
 `ctx`; dependency helpers also cannot access a `.compile` property or use `arguments`. Other
 parent values enter through the tuple. Packaged helpers are definitions, not mutable runtime
 function objects, so every use outside a direct `ctx.compile` closure position must be a direct
-call.
-`ttlSeconds` can never extend a parent expiry. `interstitial` may be set explicitly or inherited;
-`note` adds a child-specific author note and implies an interstitial. `seal` accepts strings the
-parent deliberately chose: delegated, derived, or generated. A child carrying its own statically
-approved closures can mint again.
+call. `ttlSeconds` can never extend a parent expiry. `interstitial` and `allowCrawlers` may be set
+explicitly or inherited; `note` adds a child-specific author note and implies an interstitial.
+`seal` accepts strings the parent deliberately chose: delegated, derived, or generated. A child
+carrying its own statically approved closures can mint again.
 
 Two rules keep this safe. A parent whose mint branch is reachable by anyone holding its URL is an
 unauthenticated admin endpoint — keep parents private or verify a signed request before compiling.
@@ -256,9 +255,9 @@ smartlinks logout                        Remove the local author signing identit
 ```
 
 Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
-include `--secret`, `--expires`, `--interstitial`, `--interstitial-note`, `--no-sign`, `--copy`,
-`--out`, `--json`, `--no-minify`, and `--no-type-check`. `--expires` accepts a duration such as
-`30m`, `1h`, or `7d`, or an absolute ISO 8601 date.
+include `--secret`, `--expires`, `--interstitial`, `--interstitial-note`, `--allow-crawlers`,
+`--no-sign`, `--copy`, `--out`, `--json`, `--no-minify`, and `--no-type-check`. `--expires`
+accepts a duration such as `30m`, `1h`, or `7d`, or an absolute ISO 8601 date.
 
 `smartlinks run` is the local dry-run: the same wrapper, QuickJS engine, and policies as
 production, so what you test is what ships. Networking is off by default; opt in with
@@ -321,10 +320,12 @@ section before putting authority into one.
   republishing as a different unsigned link.
 - **Tokens are replayable.** Statelessness makes true once-only impossible; anything
   time-sensitive should carry its own timestamp.
-- **Crawlers never execute.** Known crawler, prefetch, and `HEAD` requests receive a
-  non-executing HTTP 200 preview carrying `x-smartlinks-preview: 1`, even after expiry — so a
-  pasted link does not fire in chat unfurls. The header's presence confirms non-execution only on
-  the immediate response from the configured runtime: disable redirect following and verify the
+- **Crawlers execute only when the author opts in.** By default, known crawler, prefetch, and
+  `HEAD` requests receive a non-executing HTTP 200 preview carrying `x-smartlinks-preview: 1`,
+  even after expiry — so a pasted link does not fire in chat unfurls. `--allow-crawlers` lets
+  known crawler and image-proxy GETs execute; `HEAD` and explicit prefetch still never do. The
+  header's presence confirms non-execution only on the immediate response from the configured
+  runtime: disable redirect following and verify the
   response origin before trusting it. Absence alone does not prove execution.
 - **Simulation is an authoring aid, not a safety verdict.** It exercises one deterministic path
   with no DNS lookup. Exact supplied secret values are redacted from its records; derived or

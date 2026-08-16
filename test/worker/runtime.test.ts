@@ -722,6 +722,85 @@ describe("Worker routes", () => {
     await expect(execution.text()).resolves.toBe("confirmed");
   });
 
+  it("delivers a confirmed interstitial redirect as a continuation page", async () => {
+    const created = await createSmartlink({
+      source: 'return "https://example.com/next?a=1&note=<b>"',
+      service: origin,
+      interstitial: true,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const execution = await worker.fetch(
+      new Request(`${created.link}?__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    expect(execution.status).toBe(200);
+    expect(execution.headers.get("content-type")).toContain("text/html");
+    const continuation = await execution.text();
+    expect(continuation).toContain(
+      'http-equiv="refresh" content="0;url=https://example.com/next?a=1&amp;note=%3Cb%3E"',
+    );
+    expect(continuation).toContain("Continuing");
+
+    const plain = await createSmartlink({
+      source: 'return "https://example.com/next"',
+      service: origin,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const redirect = await worker.fetch(new Request(plain.link, { redirect: "manual" }), testEnv());
+    expect(redirect.status).toBe(302);
+    expect(redirect.headers.get("location")).toBe("https://example.com/next");
+  });
+
+  it("resolves confirmed redirect targets against the request URL", async () => {
+    const protocolRelative = await createSmartlink({
+      source: 'return { status: 302, headers: { location: "//example.com/path" } }',
+      service: origin,
+      interstitial: true,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const continuation = await worker.fetch(
+      new Request(`${protocolRelative.link}?__confirm=1`, { method: "POST" }),
+      testEnv(),
+    );
+    expect(continuation.status).toBe(200);
+    await expect(continuation.text()).resolves.toContain(
+      'content="0;url=https://example.com/path"',
+    );
+
+    const sameOriginRelative = await createSmartlink({
+      source: 'return { status: 302, headers: { location: "/somewhere/else" } }',
+      service: origin,
+      interstitial: true,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const passthrough = await worker.fetch(
+      new Request(`${sameOriginRelative.link}?__confirm=1`, { method: "POST", redirect: "manual" }),
+      testEnv(),
+    );
+    expect(passthrough.status).toBe(302);
+    expect(passthrough.headers.get("location")).toBe("/somewhere/else");
+  });
+
+  it("rejects confirmed cross-origin redirects that preserve the POST method", async () => {
+    const created = await createSmartlink({
+      source: 'return { status: 307, headers: { location: "https://example.com/hook" } }',
+      service: origin,
+      interstitial: true,
+      publicKey: pair,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(
+      new Request(`${created.link}?__confirm=1`, { method: "POST", redirect: "manual" }),
+      testEnv(),
+    );
+    expect(response.status).toBe(422);
+    await expect(response.text()).resolves.toContain("Return a 303");
+  });
+
   it("rate limits executions without charging previews or interstitial reviews", async () => {
     const limit = vi.fn(async () => ({ success: false }));
     const limitedEnv = testEnv({ limit });
@@ -759,7 +838,7 @@ describe("Worker routes", () => {
     expect(limit).toHaveBeenCalledTimes(1);
   });
 
-  it("never executes preview or prefetch requests", async () => {
+  it("does not execute default preview or prefetch requests", async () => {
     const payload = encodePayload({ s: "this is not valid JavaScript", notAfter: 1 });
     const response = await worker.fetch(
       new Request(`${origin}/r/${payload}`, {
@@ -769,7 +848,7 @@ describe("Worker routes", () => {
     );
     expect(response.status).toBe(200);
     expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBe("1");
-    await expect(response.text()).resolves.toContain("Preview requests never execute it");
+    await expect(response.text()).resolves.toContain("This preview request did not execute it");
 
     const prefetch = await worker.fetch(
       new Request(`${origin}/r/${payload}`, { headers: { purpose: "prefetch" } }),
@@ -777,7 +856,7 @@ describe("Worker routes", () => {
     );
     expect(prefetch.status).toBe(200);
     expect(prefetch.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBe("1");
-    await expect(prefetch.text()).resolves.toContain("Preview requests never execute it");
+    await expect(prefetch.text()).resolves.toContain("This preview request did not execute it");
 
     const head = await worker.fetch(
       new Request(`${origin}/r/${payload}`, { method: "HEAD" }),
@@ -786,6 +865,65 @@ describe("Worker routes", () => {
     expect(head.status).toBe(200);
     expect(head.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBe("1");
     await expect(head.text()).resolves.toBe("");
+  });
+
+  it("executes opted-in crawler GETs without executing HEAD or prefetch", async () => {
+    const limit = vi.fn(async () => ({ success: true }));
+    const created = await createSmartlink({
+      source: 'return { headers: { "content-type": "image/svg+xml" }, body: "crawler-ok" }',
+      service: origin,
+      allowCrawlers: true,
+      validate: validateWorkerScript,
+    });
+    const crawlerHeaders = { "user-agent": "github-camo" };
+
+    const execution = await worker.fetch(
+      new Request(created.link, { headers: crawlerHeaders }),
+      testEnv({ limit }),
+    );
+    expect(execution.status).toBe(200);
+    expect(execution.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBeNull();
+    await expect(execution.text()).resolves.toBe("crawler-ok");
+    expect(limit).toHaveBeenCalledTimes(1);
+
+    for (const init of [
+      { headers: { ...crawlerHeaders, purpose: "prefetch" } },
+      { method: "HEAD", headers: crawlerHeaders },
+    ]) {
+      const preview = await worker.fetch(new Request(created.link, init), testEnv({ limit }));
+      expect(preview.status).toBe(200);
+      expect(preview.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBe("1");
+    }
+    expect(limit).toHaveBeenCalledTimes(1);
+
+    const interstitial = await createSmartlink({
+      source: 'return { body: "confirmed" }',
+      service: origin,
+      interstitial: true,
+      allowCrawlers: true,
+      validate: validateWorkerScript,
+    });
+    const review = await worker.fetch(
+      new Request(interstitial.link, { headers: crawlerHeaders }),
+      testEnv({ limit }),
+    );
+    expect(review.status).toBe(200);
+    const reviewBody = await review.text();
+    expect(reviewBody).toContain("Review before running");
+    expect(reviewBody).toContain("<dt>Known crawler GETs</dt><dd>Allowed</dd>");
+    expect(limit).toHaveBeenCalledTimes(1);
+
+    const expired = encodePayload({
+      s: "this is not valid JavaScript",
+      allowCrawlers: true,
+      notAfter: 1,
+    });
+    const gone = await worker.fetch(
+      new Request(`${origin}/r/${expired}`, { headers: crawlerHeaders }),
+      testEnv({ limit }),
+    );
+    expect(gone.status).toBe(410);
+    expect(limit).toHaveBeenCalledTimes(1);
   });
 
   it("provides a non-executing decoder page", async () => {
@@ -813,6 +951,7 @@ describe("Worker routes", () => {
     expect(decodedHtml).toContain("Smartlink facts");
     expect(decodedHtml).toContain("<dt>Payload version</dt><dd>2</dd>");
     expect(decodedHtml).toContain("<dt>Confirmation required</dt><dd>Yes</dd>");
+    expect(decodedHtml).toContain("<dt>Known crawler GETs</dt><dd>Previewed</dd>");
     expect(decodedHtml).toContain(new Date(notAfter * 1_000).toISOString());
     expect(decodedHtml).toContain("<dt>Sealed secrets</dt><dd>1: RELEASE_TOKEN</dd>");
     expect(decodedHtml).not.toContain("encrypted-value-must-not-render");

@@ -27,6 +27,7 @@ const compileOptionsSchema = z
       .optional(),
     ttlSeconds: z.number().int().positive().max(MAX_NOT_AFTER).optional(),
     interstitial: z.boolean().optional(),
+    allowCrawlers: z.boolean().optional(),
     note: interstitialNoteSchema.optional(),
   })
   .strict();
@@ -212,6 +213,8 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
       compileOptions.note !== undefined
         ? true
         : (compileOptions.interstitial ?? options.parent.envelope.i === true);
+    const allowCrawlers =
+      compileOptions.allowCrawlers ?? options.parent.envelope.allowCrawlers === true;
     const source = compiledChildSource(closure, argumentJson);
     assertNoPlaintextSecrets(
       source,
@@ -228,6 +231,7 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
     const envelope = {
       s: source,
       ...(interstitial ? { i: true as const } : {}),
+      ...(allowCrawlers ? { allowCrawlers: true as const } : {}),
       ...(closures.length ? { c: closures } : {}),
       ...(secretEntries.length ? { a: 1 as const } : {}),
       ...(notAfter === undefined ? {} : { notAfter }),

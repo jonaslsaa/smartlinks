@@ -54,6 +54,7 @@ const publicKeySchema = z.object({
 type BuildOptions = {
   interstitial?: boolean;
   interstitialNote?: string;
+  allowCrawlers?: boolean;
   secret: string[];
   minify: boolean;
   typeCheck: boolean;
@@ -240,6 +241,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
       secrets,
       ...(publicKey ? { publicKey } : {}),
       ...(options.interstitial ? { interstitial: true } : {}),
+      ...(options.allowCrawlers ? { allowCrawlers: true } : {}),
       ...(options.interstitialNote === undefined
         ? {}
         : { interstitialNote: options.interstitialNote }),
@@ -298,6 +300,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
           characters: created.link.length,
           payloadCharacters: created.payload.length,
           payloadVersion: 2,
+          allowCrawlers: options.allowCrawlers === true,
           ...(created.interstitialNote === undefined
             ? {}
             : { interstitialNote: created.interstitialNote }),
@@ -363,6 +366,7 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
   const metadataLines = [
     `Version: ${metadata.payloadVersion}`,
     `Confirmation: ${metadata.interstitial ? "yes" : "no"}`,
+    `Known crawler GETs: ${metadata.allowCrawlers ? "allowed" : "previewed"}`,
     `Compile closures: ${metadata.compileClosures}`,
     `Sealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}`,
     `Expiry: ${metadata.expiresAt === null ? "never" : `${metadata.expiresAt}${metadata.expired ? " (expired)" : ""}`}`,
@@ -704,6 +708,7 @@ program
   .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to encode")
   .option("-i, --interstitial", "require browser confirmation before execution")
   .option("--interstitial-note <text>", "add an author note and require browser confirmation")
+  .option("--allow-crawlers", "let known crawlers and image proxies execute GET requests")
   .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
   .option("--expires <duration-or-date>", "expire after a duration or at an ISO 8601 date")
   .option("--copy", "copy the link and print a fingerprint receipt")
