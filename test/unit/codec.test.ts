@@ -8,6 +8,7 @@ import {
   encodePayloadWith,
   MAX_SCRIPT_LENGTH,
   parseDecompressedPayload,
+  parsePayloadInput,
   payloadFromInput,
   serializeEnvelope,
 } from "../../src/shared/codec.js";
@@ -142,6 +143,11 @@ describe("payload codec", () => {
     expect(payloadFromInput(`https://run.example/r/${payload}?name=value`)).toBe(payload);
     expect(payloadFromInput(`https://run.example/d/${payload}`)).toBe(payload);
     expect(payloadFromInput(payload)).toBe(payload);
+    expect(parsePayloadInput(`https://RUN.example/d/${payload}?name=value#result`)).toEqual({
+      payload,
+      executionUrl: `https://run.example/r/${payload}`,
+    });
+    expect(parsePayloadInput(payload)).toEqual({ payload });
   });
 
   it("rejects unknown versions and corrupt data", () => {

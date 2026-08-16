@@ -151,6 +151,10 @@ test("the built CLI exposes its version and public subcommands", async () => {
   assert.match(runHelp.stdout, /--serve\b/u);
   assert.match(runHelp.stdout, /--port <number>/u);
   assert.match(runHelp.stdout, /--simulate\b/u);
+
+  const decodeHelp = await runCli(["help", "decode"]);
+  assert.match(decodeHelp.stdout, /<link-or-payload\|->/u);
+  assert.match(decodeHelp.stdout, /or - for stdin/u);
 });
 
 test("keygen emits a usable key pair for the requested key ID", async () => {
@@ -684,6 +688,8 @@ return "https://example.com/" + name;
         assert.equal(publicKeyRequests, 1);
 
         const decodedFromUrl = JSON.parse((await runCli(["decode", built.link, "--json"])).stdout);
+        const expectedFingerprint = fingerprint(built.link);
+        assert.equal(decodedFromUrl.fingerprint, expectedFingerprint);
         assert.equal(decodedFromUrl.payloadVersion, 2);
         assert.equal(decodedFromUrl.interstitial, true);
         assert.equal(decodedFromUrl.compileClosures, 2);
@@ -699,12 +705,52 @@ return "https://example.com/" + name;
 
         const payload = new URL(built.link).pathname.slice("/r/".length);
         const decodedFromPayload = JSON.parse((await runCli(["decode", payload, "--json"])).stdout);
-        assert.deepEqual(decodedFromPayload, decodedFromUrl);
+        assert.equal("fingerprint" in decodedFromPayload, false);
+        const { fingerprint: _fingerprint, ...decodedUrlWithoutFingerprint } = decodedFromUrl;
+        assert.deepEqual(decodedFromPayload, decodedUrlWithoutFingerprint);
+
+        const decoderUrl = new URL(built.link);
+        decoderUrl.pathname = decoderUrl.pathname.replace("/r/", "/d/");
+        decoderUrl.searchParams.set("name", "runtime input");
+        decoderUrl.hash = "ignored";
+        const decodedFromStdinResult = await runCli(["decode", "-", "--json"], {
+          input: `${decoderUrl.href}\n`,
+        });
+        const decodedFromStdin = JSON.parse(decodedFromStdinResult.stdout);
+        assert.equal(decodedFromStdin.fingerprint, expectedFingerprint);
+        assert.equal(
+          `${decodedFromStdinResult.stdout}${decodedFromStdinResult.stderr}`.includes(
+            decoderUrl.href,
+          ),
+          false,
+        );
+
+        const decodedPayloadFromStdin = JSON.parse(
+          (await runCli(["decode", "-", "--json"], { input: payload })).stdout,
+        );
+        assert.equal("fingerprint" in decodedPayloadFromStdin, false);
+        assert.deepEqual(decodedPayloadFromStdin, decodedFromPayload);
+
+        const humanDecode = await runCli(["decode", "-"], { input: built.link });
+        assert.equal(JSON.parse(humanDecode.stderr).fingerprint, expectedFingerprint);
+        assert.equal(`${humanDecode.stdout}${humanDecode.stderr}`.includes(built.link), false);
       },
     );
   } finally {
     await close(server);
   }
+});
+
+test("decode bounds stdin before parsing it", async () => {
+  await assert.rejects(
+    runCli(["decode", "-", "--json"], { input: "x".repeat(16_385) }),
+    (error) => {
+      assert.equal(error.stdout, "");
+      assert.match(error.stderr, /stdin exceeds the 16 KB limit/u);
+      assert.ok(error.stderr.length < 500);
+      return true;
+    },
+  );
 });
 
 test("build writes the link as an artifact without repeating it", async () => {

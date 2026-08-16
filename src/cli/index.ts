@@ -12,7 +12,7 @@ import {
   isExpired,
   MAX_PAYLOAD_LENGTH,
   PayloadTooLargeError,
-  payloadFromInput,
+  parsePayloadInput,
 } from "../shared/codec.js";
 import { isRedirectStatus } from "../shared/http-status.js";
 import { payloadFacts } from "../shared/payload-facts.js";
@@ -28,6 +28,7 @@ import { configuredAuthorForBuild, inspectConfiguredAuthor } from "./author-stat
 import { authorKey, clearStoredAuthor, writeStoredAuthor } from "./author-store.js";
 import { trustedAuthorIssuerKeys } from "./author-trust.js";
 import { createSmartlink } from "./build.js";
+import { readDecodeInput } from "./decode-input.js";
 import { parseExpiry } from "./expiry.js";
 import { createSyntheticRequest, executeLocalRequest, LocalScriptError } from "./run.js";
 import { serveLocalScript } from "./serve.js";
@@ -332,7 +333,8 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
 }
 
 async function decodeCommand(input: string, options: { json?: boolean }): Promise<void> {
-  const decoded = decodePayload(payloadFromInput(input));
+  const parsedInput = parsePayloadInput(await readDecodeInput(input));
+  const decoded = decodePayload(parsedInput.payload);
   const script = formatStoredScript(decoded.version, decoded.envelope.s);
   const closures = (decoded.envelope.c ?? []).map((closure) => formatStoredScript("2", closure));
   const metadata = payloadFacts(decoded);
@@ -340,11 +342,26 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
   const author = await verifyAuthorProof(decoded, {
     issuerPublicKeys: trustedAuthorIssuerKeys(),
   });
+  const fingerprint = parsedInput.executionUrl
+    ? linkFingerprint(parsedInput.executionUrl)
+    : undefined;
+  const decodedMetadata = {
+    ...metadata,
+    ...(fingerprint ? { fingerprint } : {}),
+    author,
+    interstitialNote,
+  };
+  const metadataLines = [
+    `Version: ${metadata.payloadVersion}`,
+    `Confirmation: ${metadata.interstitial ? "yes" : "no"}`,
+    `Compile closures: ${metadata.compileClosures}`,
+    `Sealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}`,
+    `Expiry: ${metadata.expiresAt === null ? "never" : `${metadata.expiresAt}${metadata.expired ? " (expired)" : ""}`}`,
+    fingerprint ? `Execution fingerprint: ${fingerprint}` : undefined,
+  ].filter((line): line is string => line !== undefined);
 
   if (options.json) {
-    console.log(
-      JSON.stringify({ ...metadata, author, interstitialNote, script, closures }, null, 2),
-    );
+    console.log(JSON.stringify({ ...decodedMetadata, script, closures }, null, 2));
     return;
   }
   const interactive = startUi("smartlinks decode", false);
@@ -356,10 +373,7 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
     closures.forEach((closure, index) => {
       p.note(closure, `Compile closure ${index}`);
     });
-    p.note(
-      `Version: ${metadata.payloadVersion}\nConfirmation: ${metadata.interstitial ? "yes" : "no"}\nCompile closures: ${metadata.compileClosures}\nSealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}\nExpiry: ${metadata.expiresAt === null ? "never" : `${metadata.expiresAt}${metadata.expired ? " (expired)" : ""}`}`,
-      "Metadata",
-    );
+    p.note(metadataLines.join("\n"), "Metadata");
     p.log.info(
       author.status === "unsigned"
         ? "Author: unsigned"
@@ -374,7 +388,7 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
         "\n\n",
       ),
     );
-    console.error(JSON.stringify({ ...metadata, author, interstitialNote }));
+    console.error(JSON.stringify(decodedMetadata));
   }
 }
 
@@ -710,7 +724,7 @@ program
 program
   .command("decode")
   .description("Inspect a smartlink without executing it.")
-  .argument("<link-or-payload>", "smartlink URL or encoded payload")
+  .argument("<link-or-payload|->", "smartlink URL, encoded payload, or - for stdin")
   .option("--json", "print machine-readable output")
   .action(decodeCommand);
 

@@ -239,7 +239,8 @@ CLI cannot re-check — prefer `--copy --out link.txt` so a clobbered clipboard 
 and refilled from the file instead of rebuilding. Both modes suppress the URL and report character count,
 payload version, budget usage, a short fingerprint — the first 12 hex characters of SHA-256 over
 the full execution URL — and any expiry as an absolute UTC timestamp. Compare the fingerprint
-when checking an opaque clipboard or file artifact; it is not an authenticity guarantee.
+when checking an opaque clipboard or file artifact; `smartlinks decode - < link.txt` does this
+without putting the bearer URL in command arguments. It is not an authenticity guarantee.
 
 ## `smartlinks run <script.js|script.ts>`
 
@@ -293,12 +294,14 @@ contacts `/pk`, uses production key material, or publishes a durable bearer link
 responses, `--json` emits `bodyBase64`; redirected plain stdout receives the exact bytes; an
 interactive terminal prints a byte-count receipt instead of binary data.
 
-## `smartlinks decode <link-or-payload> [--json]`
+## `smartlinks decode <link-or-payload|-> [--json]`
 
 Inspects the emitted script and metadata without executing or decrypting secrets. Renders
 `notAfter` as an absolute UTC timestamp and marks expired links; displays any author note and the
 same payload facts shown by the browser interstitial. `decode` is entirely local: it works offline
 and on expired links, so neither expiry nor rate limits affect what a reader learns from a payload.
+Pass `-` to read stdin. Full URL inputs report the canonical execution fingerprint; decoder routes
+are normalized to `/r/`, and query parameters and fragments are excluded. Bare payloads omit it.
 
 ## Author signing
 
