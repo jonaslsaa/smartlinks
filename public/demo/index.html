@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Live Smartlinks demos: three small programs running entirely from their URLs, each minting new links in the browser."
+    />
+    <meta name="theme-color" content="#000000" />
+    <meta property="og:title" content="Smartlinks demos" />
+    <meta
+      property="og:description"
+      content="Three Smartlinks running in production — each mints new links while you watch."
+    />
+    <meta property="og:type" content="website" />
+    <title>Smartlinks demos</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .demo-actions {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 18px;
+        margin-top: 20px;
+      }
+
+      .demo-actions .primary {
+        padding: 12px 16px;
+        border: 1px solid var(--accent);
+        color: #03140d;
+        background: var(--accent);
+        font-weight: 700;
+        text-decoration: none;
+      }
+
+      .demo-actions .primary:hover,
+      .demo-actions .primary:focus-visible {
+        color: #03140d;
+        background: #a0ffda;
+        text-decoration: none;
+      }
+
+      .demo-actions .secondary {
+        color: var(--muted);
+        font-size: 14px;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">Smartlinks <span>[demos]</span></a>
+      <nav aria-label="Primary navigation">
+        <a href="/">Overview</a>
+        <a class="active" href="/demo/">Demos</a>
+        <a href="https://github.com/jonaslsaa/smartlinks">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <section aria-labelledby="title">
+        <h1 id="title">Live demos</h1>
+        <p class="lead">
+          Three Smartlinks, running in production. Each is a small program living entirely in
+          its URL — and each mints new links while you watch.
+        </p>
+        <p>
+          There is no backend behind these pages: no accounts, no database, nothing deployed.
+          Every demo is a signed link built from the script published next to it in the
+          repository, and on any Smartlink you can swap <code>/r/</code> for <code>/d/</code>
+          in the address bar to audit exactly what it runs without executing it.
+        </p>
+      </section>
+
+      <section aria-labelledby="redirect-title">
+        <p class="eyebrow">Demo 1 · Redirect</p>
+        <h2 id="redirect-title">Mint a redirect link</h2>
+        <p>
+          Enter any URL and get back a freshly compiled Smartlink that redirects to it — behind
+          a confirmation page, for a lifetime you choose between 15 minutes and 24 hours, then
+          it expires. Handing someone an action without handing them anything else.
+        </p>
+        <div class="demo-actions">
+          <a class="primary" href="https://s.jonaslsa.com/r/2pVjdVuPIEX6VXs0k2GclS7KNbeQfDpkfwizMhIGdDTueQFtq2T1IatHdwvZ4OSdXuc5F3iX3eZR9klS1ZGMYZs_mBHOwpO766aqvviqxspQVWFQts5Cw4WgVikxpoodwzRqS5QkN2UGS1MbWH8eWDX9pmvfHVv3h2qBcS_TXS6NyafrV0s7Y2sGVm0I8IbZTij1r7eGanQ1rzM7qw9HV4LtIhHqZMzLTaTIaj7MBXpCEZtPh2GIZmsSHjEbmImWaknBGpWIaNhQ6dnrVHrOU0ZTB81vO5rmQemwRiIFmGW6e80jPhhG75SFzzI1NeMY1p4mjQpqwoV-p0lwnbPR8pWusfjdwy1tcUHpZXk1EtFwZHUHKsxpIhzXf8_5AHNLu5Yu63W168NVPqZzyLPAILbToT2h4PZWiyKLgmed5_VAkQgbP4l389EFtDM4GfidfuH5jd5cU3FE0U45ikse2WirNUqfg9v3DOxDC4DC5ymkU8WwaNEGceMTfzRf9iZCw5EyE1iINfFhQIuERedbcw08f7TmKf2GB34bt5nbO-HSmg67n3SsnKqfZqjyMk7BYB6i9cr-3ix8jHLQ9sIx2wPVUZALkQmZvrlBjSnm2cbZdOtuBYOFagy3ZRIr52lTleO_eWLcXd8JmaayzC8aa3zSGAU2Y1hAAvEdzDa_H0r5mC-1oCUGMhUyDIs-ZDKky3s381SZnoN1bR8UEqYVBSnjGnFkZJL_h7_Yf2XAaXoulqCsHVYsSaUGnjaq2VW8datLDD4okdMKSVcQVVM8ymCQivF4L-VWoHottJ7FVhpFneaFtxRIW6gqlCM7-vTu7CM_-Ogt4TBPJCjBPIMVg3oBJ0ogXKniM3gfYpvgpk8QBQpJrdGtSQDY3MNIiDx56ganEUz7hRZX2xy6A0soLr-W3veiBF9tQqbx4jPB-WEgF4rngwBLSJE2yr9K28RDzL26ZjBMxdxZBWdTfClnlGYvwYwL4dIjuc9efz7hmBkksAEecuaR5fw4GnIlk9Dowfx2aJOgpXT3MgIF1xEIhqeYiC8AOk4jWcmVz64g4BvoMKrDEQugt-kBcAszMuatwY6a-ebyt6q8O0iz1DtwNWw7cDYEjcW4oncnRGaBBg1fXigyQZEYfI5aKTyCMN6UgbDMED8QBpJwBI5tLfFY6PxpQMpMsBpKfaZ2rwHXVRm_js8ioShRthCJ1UbsLNP_rP_5JoDkRvFcDl47If_5NzmdckZxOGYFvrqGAYkLJxsUALKo5zYkrXQLUQdzIhQ5C9IwRiJ5kSpEJlUQLoPuIa1QBQStkyMic65koNGELFhYaAg2LjYFb-W9itAmNa5rhlS2wT2pbQKesrZSmGjAv9vebnmeXYVHBamxVDc7BNjq2grGF2TYq-ptOWfVJaMIhDWfMQRkpErM9E47SQoLsnY0uBBlard_VbQr2GzmVNFUNDUXL9P7-2MLuriVPa_U-j2vf0bpkupAZEdDoT6CMIGKSRVwC9xCMGpjdGeQkTKhS2NNLhocUvITQEx_j_r7aP3BzDADBn8HMHz2lDqLj32_KR6-wcAnNluTH98fwHUE61lmEhOc8YQp0TIDuIydj8_t0wkaqN8oVpg1yslZ9DknF7WYnRxUIBxM5AB-LSC7FFEITkEyARUwoJBsDGaE3c-AbZht_OGY9ByNqrRsWM7IUBaAv5BFrPDg39iQCw8xMRBAuCHo5lJDyZ2A6BKIPFsukmFAqwJQpewzDwDW7tsVMSyA82pJaD0ube0QQDlUSgAFxuSk4HgbIMGHZFEansQXQ8wABG7XEDHkzkQAYt4qPLWCwTBgW3G84r8HM6BjDm_CYaZ6yJ_wum1jlOEpsvDbiW66QgchNAG5pUuCOPfR15O8SmNAKzaDKyw2_KdTqoBQpzbJo5BMoW_m7RJu-kR11jMjvM9eDBoMyzfY3hYAKjTPbj8pOuk6YKiYpRxiYekE2Kgul3HWPLBehNdop69b9m8nWPpCaa37Pvn_u8gbESddo_ZdfaKPM-qjJWtslfpSB79AGAGb_R2WfY-lFAkoTqockQiAIroFGS_g-LHEsxWgL4WkBbzUT2JwROoGmBMkleJiaqhsSEMDamgCva9K0AbGGBimkU6qHpZZvNQ5gttG5XBI6hfLGhoA7d2xIT71fvkfJ4dsinTC5RYo6qRjR5tVig6sjYKQpbJP1_ROqZw18QSgv6KImbYBl3TZ5rweINjsf0jlFkmhUfFXz7I_0k70C9WfQzrNIBdyGOLGgZFgoysnS5Hmre2IjCx6yGS0pkdxyxYGYIAxCsQbwfN1WQ-4a48mQD_Bin7sd73tAflUs0Br84XCo4HhlCcCDq-crdVfi9Kq_BYkLeLLhSZhQoiUg4-p_Rgbi4l4VW3ClER7zLThAxg4MK1fkS-ZUrVk-sqFqqflG1mUwGcLcBf0ZIoGxwlgAuYg5-fXv_wIKBhHTKkrNpl9IhjMSixrk6FFjGKAy80ZI8Y3Q3JkR4PkqubNLFRMGbQDIH185Yy7TEqyo2EYHMhJxphrkrQA_JQyRYCFliBmcNfobHyGGeFmdcAuwA5gIjQs5uoA3m6Dcw7hah1C_y8Ek19VsU219uG_9lg45hJHGzAcw0gCcjYKDaob5enb5hs79NQVRbIlMrqvoqn5n2VZoBR_L_03UlJ3ATJNYn2yrgKcffdu3u91Wu9lp2tZ6XKMg07vQeff8uBC9Of9wGb1q6Q-H9P1l9-cvpxcdf-_g8nLZe3P6Nr45PrJsv9vr9NreXrsLl3vtjt_BS-syY538L5fxT0fzl_Snm_Dm1vuw67-cXbw4EIlzGB7--fC0_ZpxP3acsw_iIGydyZk-f_m5GXfbJ_HyFb3ZO397pI--zJzwh8PrZtzx_nSKvr86ni75UTeO8jP2o1_A9Ns7fdc8-qF9sncTnc-zvS_y8NWbVqyiz68_nBywTvzz8t308vDd7cXs5YvP1xd0cXhymrTZMX9zc_v6r0czlb44sD7d_Rc">Open the demo →</a>
+          <a class="secondary" href="https://s.jonaslsa.com/d/2pVjdVuPIEX6VXs0k2GclS7KNbeQfDpkfwizMhIGdDTueQFtq2T1IatHdwvZ4OSdXuc5F3iX3eZR9klS1ZGMYZs_mBHOwpO766aqvviqxspQVWFQts5Cw4WgVikxpoodwzRqS5QkN2UGS1MbWH8eWDX9pmvfHVv3h2qBcS_TXS6NyafrV0s7Y2sGVm0I8IbZTij1r7eGanQ1rzM7qw9HV4LtIhHqZMzLTaTIaj7MBXpCEZtPh2GIZmsSHjEbmImWaknBGpWIaNhQ6dnrVHrOU0ZTB81vO5rmQemwRiIFmGW6e80jPhhG75SFzzI1NeMY1p4mjQpqwoV-p0lwnbPR8pWusfjdwy1tcUHpZXk1EtFwZHUHKsxpIhzXf8_5AHNLu5Yu63W168NVPqZzyLPAILbToT2h4PZWiyKLgmed5_VAkQgbP4l389EFtDM4GfidfuH5jd5cU3FE0U45ikse2WirNUqfg9v3DOxDC4DC5ymkU8WwaNEGceMTfzRf9iZCw5EyE1iINfFhQIuERedbcw08f7TmKf2GB34bt5nbO-HSmg67n3SsnKqfZqjyMk7BYB6i9cr-3ix8jHLQ9sIx2wPVUZALkQmZvrlBjSnm2cbZdOtuBYOFagy3ZRIr52lTleO_eWLcXd8JmaayzC8aa3zSGAU2Y1hAAvEdzDa_H0r5mC-1oCUGMhUyDIs-ZDKky3s381SZnoN1bR8UEqYVBSnjGnFkZJL_h7_Yf2XAaXoulqCsHVYsSaUGnjaq2VW8datLDD4okdMKSVcQVVM8ymCQivF4L-VWoHottJ7FVhpFneaFtxRIW6gqlCM7-vTu7CM_-Ogt4TBPJCjBPIMVg3oBJ0ogXKniM3gfYpvgpk8QBQpJrdGtSQDY3MNIiDx56ganEUz7hRZX2xy6A0soLr-W3veiBF9tQqbx4jPB-WEgF4rngwBLSJE2yr9K28RDzL26ZjBMxdxZBWdTfClnlGYvwYwL4dIjuc9efz7hmBkksAEecuaR5fw4GnIlk9Dowfx2aJOgpXT3MgIF1xEIhqeYiC8AOk4jWcmVz64g4BvoMKrDEQugt-kBcAszMuatwY6a-ebyt6q8O0iz1DtwNWw7cDYEjcW4oncnRGaBBg1fXigyQZEYfI5aKTyCMN6UgbDMED8QBpJwBI5tLfFY6PxpQMpMsBpKfaZ2rwHXVRm_js8ioShRthCJ1UbsLNP_rP_5JoDkRvFcDl47If_5NzmdckZxOGYFvrqGAYkLJxsUALKo5zYkrXQLUQdzIhQ5C9IwRiJ5kSpEJlUQLoPuIa1QBQStkyMic65koNGELFhYaAg2LjYFb-W9itAmNa5rhlS2wT2pbQKesrZSmGjAv9vebnmeXYVHBamxVDc7BNjq2grGF2TYq-ptOWfVJaMIhDWfMQRkpErM9E47SQoLsnY0uBBlard_VbQr2GzmVNFUNDUXL9P7-2MLuriVPa_U-j2vf0bpkupAZEdDoT6CMIGKSRVwC9xCMGpjdGeQkTKhS2NNLhocUvITQEx_j_r7aP3BzDADBn8HMHz2lDqLj32_KR6-wcAnNluTH98fwHUE61lmEhOc8YQp0TIDuIydj8_t0wkaqN8oVpg1yslZ9DknF7WYnRxUIBxM5AB-LSC7FFEITkEyARUwoJBsDGaE3c-AbZht_OGY9ByNqrRsWM7IUBaAv5BFrPDg39iQCw8xMRBAuCHo5lJDyZ2A6BKIPFsukmFAqwJQpewzDwDW7tsVMSyA82pJaD0ube0QQDlUSgAFxuSk4HgbIMGHZFEansQXQ8wABG7XEDHkzkQAYt4qPLWCwTBgW3G84r8HM6BjDm_CYaZ6yJ_wum1jlOEpsvDbiW66QgchNAG5pUuCOPfR15O8SmNAKzaDKyw2_KdTqoBQpzbJo5BMoW_m7RJu-kR11jMjvM9eDBoMyzfY3hYAKjTPbj8pOuk6YKiYpRxiYekE2Kgul3HWPLBehNdop69b9m8nWPpCaa37Pvn_u8gbESddo_ZdfaKPM-qjJWtslfpSB79AGAGb_R2WfY-lFAkoTqockQiAIroFGS_g-LHEsxWgL4WkBbzUT2JwROoGmBMkleJiaqhsSEMDamgCva9K0AbGGBimkU6qHpZZvNQ5gttG5XBI6hfLGhoA7d2xIT71fvkfJ4dsinTC5RYo6qRjR5tVig6sjYKQpbJP1_ROqZw18QSgv6KImbYBl3TZ5rweINjsf0jlFkmhUfFXz7I_0k70C9WfQzrNIBdyGOLGgZFgoysnS5Hmre2IjCx6yGS0pkdxyxYGYIAxCsQbwfN1WQ-4a48mQD_Bin7sd73tAflUs0Br84XCo4HhlCcCDq-crdVfi9Kq_BYkLeLLhSZhQoiUg4-p_Rgbi4l4VW3ClER7zLThAxg4MK1fkS-ZUrVk-sqFqqflG1mUwGcLcBf0ZIoGxwlgAuYg5-fXv_wIKBhHTKkrNpl9IhjMSixrk6FFjGKAy80ZI8Y3Q3JkR4PkqubNLFRMGbQDIH185Yy7TEqyo2EYHMhJxphrkrQA_JQyRYCFliBmcNfobHyGGeFmdcAuwA5gIjQs5uoA3m6Dcw7hah1C_y8Ek19VsU219uG_9lg45hJHGzAcw0gCcjYKDaob5enb5hs79NQVRbIlMrqvoqn5n2VZoBR_L_03UlJ3ATJNYn2yrgKcffdu3u91Wu9lp2tZ6XKMg07vQeff8uBC9Of9wGb1q6Q-H9P1l9-cvpxcdf-_g8nLZe3P6Nr45PrJsv9vr9NreXrsLl3vtjt_BS-syY538L5fxT0fzl_Snm_Dm1vuw67-cXbw4EIlzGB7--fC0_ZpxP3acsw_iIGydyZk-f_m5GXfbJ_HyFb3ZO397pI--zJzwh8PrZtzx_nSKvr86ni75UTeO8jP2o1_A9Ns7fdc8-qF9sncTnc-zvS_y8NWbVqyiz68_nBywTvzz8t308vDd7cXs5YvP1xd0cXhymrTZMX9zc_v6r0czlb44sD7d_Rc">Audit the link</a>
+          <a class="secondary" href="https://github.com/jonaslsaa/smartlinks/blob/main/public/demo/redirect.ts">Script source</a>
+        </div>
+      </section>
+
+      <section aria-labelledby="badge-title">
+        <p class="eyebrow">Demo 2 · Badge</p>
+        <h2 id="badge-title">Mint a live SVG badge</h2>
+        <p>
+          Pick a label, a value, and a color and get back a Smartlink that serves that badge as
+          an SVG image, embeddable in any HTML page. It never expires, because there is nothing
+          anywhere to expire — the URL is the entire program.
+        </p>
+        <div class="demo-actions">
+          <a class="primary" href="https://s.jonaslsa.com/r/2zVjdVttIEn6VjpNd7Ilkyz_YRjbmMANDmEAmAZZMEudAW2pZHdpq0WphOw7nzNVe78W-y97vo8yTbFVLlg2BnMxcLT4Hdavrr6u-rqrWopSU3BJN5pFH2PZg4cko0STahjGrKhYL6rFdIcrD0t-HJQv-00ncG5Yqd9f62ZrQXy8NsqXxV0sbw9IGrlyn8gG2jYztaXML1yy6XWYWrWwPLvtPfOnpecxIqCdiMBxGfRwQQaPx9rDEIlSJLxn1zWDCNCVeSFXCNBCkOrC7OY1ZiuiEwfsbzqaxVHpYIuADzSIknnJfh9s-u-Ees83EIjzimlNhJx4VbLuei9JcCzZ4tojKrHLbr2VTXEj0PBuNpD9fGBnuhEdl4PbKdcf5G7FJqxvPKlan4cCjN6FqzCPXITTVsjei3tVYyTTy3aeO4_Q8KaRynwab-OuB2ACMdevteFarVzc3ScrthEaJnTDFAyuZJ5pN7JRbq5e3wITOYWoRU9_n0dhtADtxSH0znvVGUsGSPZJay4lbh4VECu6Tp40t_PVQn53wz8ytt4DcTKeMj0PtdhxnJZwkMY0W2WZswQLtovTc_O4m_gyz23JAM-oB0ycyksDnMasYocQJ5VFhbCsztg3OwrUqm7ORktOlqtzw7kpZpxu0vUamrL0JyhqPKkOHCqY1OADnqK7qdNmkp9lM21qBEwOpJm4ax0x5NDHWhfVFETOQ7iy9YpzURCcJHjE7zJxUr9Y3e_d02FWnySYoKwZRswxpbruFotZFr21q1MUfsgg6YmLh8wROz9wdCeldLZnquavus60HsZm5kUdxqq2ECebpHKUIzt7KnE2EZ28ZBdym8WQOmAeQYjBvwKSoz9PEvY_eO9im-MuCxAFCims0a5RCNAsYaRm7d63AUOIuH7AiD_t9E0BoboXTrLcc_44V61DJrbiP8J6XqgTYY8khSygTNMW-ClthIcZf3jAVCDm1Z252qB9zWW4Z8_FnHPiwi1ax601DrplBEnPBEHuqaNybggJ7pBi9cs1_mwqBltLF3QgYWPvMk4pqLiMX9DCFaM1WiqktgwDSp5uDJZBSr6UPxCXAzOw7dzdG6tHtrZ3-fCONTG6_VmTLfq1I4Jg4i5TO1OAU0KDBqquE9DHJDD74bCI_AjNOMkYgMwkeEgckZQoZ2QzxXWb8oE9JqFgAST7UOk7cWi0p5FY_yYgmIqFVT05qKL0Gaf6Pf_6LQHEiOE_6NTog__0POQt5QmI6ZgSeXMMBCgglhYkuaEymNCY1VSOQOkjNr0EFITpkBLynWJKQEVVES0j3PtcoApyWKo-RKdehTDVhM-alGhwNi9V-Lbff-KhwTc0Uw0tLY52MLA2VsrxINNWAeb2z03AcK3NL4i6GpbzA2VhGhyV3WMJoGxG9olLmdRKKsEe9kNnIo6Qw5JG0Ey0V8N5aaIJLUWvltmJJ0F-NqaKTpGoS087OsITFXSs-KVcstbZ-Q0XK7q73eFB-Ir98eaIqiulUgaOgFziGkwZOHVEf3IxeBbM2-jHxBE0SrPlZBYAQ7UFoSAPj8iMS92sxeofgXz-sD3JBgt8wcnp-kEkE39VXVPHgNfeukAitJzTyYWwsNWNdhBuQEXPBkvVowzLVBKrsDbw3Y6NhKZwCcWQU8wmK-OP3fxM2GTHfpyPBEBY0mpMXZ8dHRkUVwMXyXYfAG0mAQszV3DXw-cfJEWIOhkv5EFKuGImVHIODLcARrioDzUiC6QAh0DA174x5EWN-An5kNMLFNK7ecRnWOgJNUih9cPOY6azZIdlfP3MREMGiGcPyET77NTNdpzX1hXB_RbpsvJZTxa5TMN8nkEoFi8bQeA1LzQasmLYwlALgC69GKRf-44aYWMHyOT6_bUhOWnSA-fR7DYkBfeC1x00x6W5pCjGzBwzKam5mUc6xtGgpYEUN9DLGVJ1hEmigl8SeNZPCfIPxfi0j-iajKRwg_C0-v4uDAlbRnF18fhcHeBHoT5j_ADXka2Pz-qus3BPMS8CdpKMJR8yZc6uXhwHSniFb4bSGQB1smPQhq1nMBs3Gly9qNVlPKGdSEiExdH8tj7xkLIZkTJIQLgz388dRkTjytAGHjUEKhbQDuwFYQa5vNkyepRAxldw9c_FaZYLcODhTc0LHULyw4iDlhgUdc6WXXdT49gIBADk5711gSyaw-CYr8vDGBM68CbygDUG3IDDZvEM7FNO42OYfisxscJdl5o87O7yKKqx4m04pbJpV89RXdqwP0lKW-FjprTn3HVSvPGtB3oHuw5-Dwss_52f08pogNuOJxiQ2XfM2uAoTpEm84HI5RX2UBFBUQzFfJmh_mQ_vJOc5yM6leNLPLm6ycusSHCi8wZnXufoicVt4shl0c9WM-VWeVUGxKYj-Kr9icvcB4JoV2TorIMuUHqGcbGfMX8NAH7o4Y0-MZuCk2O4-FgsE3v1SkZUSkDcneI_NWwZThHIHoW7FsJ_LXmIVMp7Kd1I-4PpFOiIn-7t7x_uJQS3SyQi97zFzel2SU4FLZxzEmzqGAqFFHYfgfE_RqYBtFVVJpVCUJgxdwQGEVDMIDVyjpmgIdjjAFMnIXjU5sGPcQ7VyzyX4dYFPxiRRHmAodxBkPip0Pl8PYPbJ4Z7_VierYB_8GrMIXJr3cznpXbrllwkAN7RxpieCNg66FiNgN-_bvu7XHpG5s8xoFIsyZtLsYF9WbktWySu5H0rlcqX4FsP-z77FLM-6-WZU1pawqCUr65-OyqJicXjQJe3iW72nwVAtuRk_n31v_xmnI8E9Cwu0DczbTccpWtHLPogiICpK8t4eWvvpdFqdNqtSjWvQCjuoDZCTfd3BIB9THVZBWrnecKzuD2WR143nNB9UnrfaBm3ZLR6YGl1sFaTAQgWwRCAqTm1T3jPgGDByhEhfYYVfqsN79bqkfB5wgYz5NQ8g9qfY4Axh75KAj67QpPzKZcRgd09myNICkjkOttYUZt8E8AVeyAI64QJpHv5CsiTDexsKasL2cK_9GmpZ0_Vs0f2hcGOjffuA5mcLefvX1ZK1izm2hdJ0hejxpS0Y5sHl7e1tpVwpfbRKKRytD3WrbnU6zVaj3bBKy3sehYPXfafjztlRKrtTfn7h7zf1-QE9uei8__zmXbu-tXtxMe_-8uZVcH10WLLqnW6723K2Wh0YbrXa9TYOSxcRa8evL4K3h9M9-vbau75xzjfre-G7n3alsA-8gxcHb1o_M14PbPv0XO56zVMV6rO9T42g0zoO5vv0euvs1aE-_Bza3suDq0bQdn58g7bH186bl3LvfN5Kp7_9-v56c3c2PzyaqcMX-ifd_TmMW-K4c_L25dvRL76Of6P7p-x6S-y-HtunF_Hh-87n0XU73bw6OdoSp6kOxd6n6dbubunj7f8A">Open the demo →</a>
+          <a class="secondary" href="https://s.jonaslsa.com/d/2zVjdVttIEn6VjpNd7Ilkyz_YRjbmMANDmEAmAZZMEudAW2pZHdpq0WphOw7nzNVe78W-y97vo8yTbFVLlg2BnMxcLT4Hdavrr6u-rqrWopSU3BJN5pFH2PZg4cko0STahjGrKhYL6rFdIcrD0t-HJQv-00ncG5Yqd9f62ZrQXy8NsqXxV0sbw9IGrlyn8gG2jYztaXML1yy6XWYWrWwPLvtPfOnpecxIqCdiMBxGfRwQQaPx9rDEIlSJLxn1zWDCNCVeSFXCNBCkOrC7OY1ZiuiEwfsbzqaxVHpYIuADzSIknnJfh9s-u-Ees83EIjzimlNhJx4VbLuei9JcCzZ4tojKrHLbr2VTXEj0PBuNpD9fGBnuhEdl4PbKdcf5G7FJqxvPKlan4cCjN6FqzCPXITTVsjei3tVYyTTy3aeO4_Q8KaRynwab-OuB2ACMdevteFarVzc3ScrthEaJnTDFAyuZJ5pN7JRbq5e3wITOYWoRU9_n0dhtADtxSH0znvVGUsGSPZJay4lbh4VECu6Tp40t_PVQn53wz8ytt4DcTKeMj0PtdhxnJZwkMY0W2WZswQLtovTc_O4m_gyz23JAM-oB0ycyksDnMasYocQJ5VFhbCsztg3OwrUqm7ORktOlqtzw7kpZpxu0vUamrL0JyhqPKkOHCqY1OADnqK7qdNmkp9lM21qBEwOpJm4ax0x5NDHWhfVFETOQ7iy9YpzURCcJHjE7zJxUr9Y3e_d02FWnySYoKwZRswxpbruFotZFr21q1MUfsgg6YmLh8wROz9wdCeldLZnquavus60HsZm5kUdxqq2ECebpHKUIzt7KnE2EZ28ZBdym8WQOmAeQYjBvwKSoz9PEvY_eO9im-MuCxAFCims0a5RCNAsYaRm7d63AUOIuH7AiD_t9E0BoboXTrLcc_44V61DJrbiP8J6XqgTYY8khSygTNMW-ClthIcZf3jAVCDm1Z252qB9zWW4Z8_FnHPiwi1ax601DrplBEnPBEHuqaNybggJ7pBi9cs1_mwqBltLF3QgYWPvMk4pqLiMX9DCFaM1WiqktgwDSp5uDJZBSr6UPxCXAzOw7dzdG6tHtrZ3-fCONTG6_VmTLfq1I4Jg4i5TO1OAU0KDBqquE9DHJDD74bCI_AjNOMkYgMwkeEgckZQoZ2QzxXWb8oE9JqFgAST7UOk7cWi0p5FY_yYgmIqFVT05qKL0Gaf6Pf_6LQHEiOE_6NTog__0POQt5QmI6ZgSeXMMBCgglhYkuaEymNCY1VSOQOkjNr0EFITpkBLynWJKQEVVES0j3PtcoApyWKo-RKdehTDVhM-alGhwNi9V-Lbff-KhwTc0Uw0tLY52MLA2VsrxINNWAeb2z03AcK3NL4i6GpbzA2VhGhyV3WMJoGxG9olLmdRKKsEe9kNnIo6Qw5JG0Ey0V8N5aaIJLUWvltmJJ0F-NqaKTpGoS087OsITFXSs-KVcstbZ-Q0XK7q73eFB-Ir98eaIqiulUgaOgFziGkwZOHVEf3IxeBbM2-jHxBE0SrPlZBYAQ7UFoSAPj8iMS92sxeofgXz-sD3JBgt8wcnp-kEkE39VXVPHgNfeukAitJzTyYWwsNWNdhBuQEXPBkvVowzLVBKrsDbw3Y6NhKZwCcWQU8wmK-OP3fxM2GTHfpyPBEBY0mpMXZ8dHRkUVwMXyXYfAG0mAQszV3DXw-cfJEWIOhkv5EFKuGImVHIODLcARrioDzUiC6QAh0DA174x5EWN-An5kNMLFNK7ecRnWOgJNUih9cPOY6azZIdlfP3MREMGiGcPyET77NTNdpzX1hXB_RbpsvJZTxa5TMN8nkEoFi8bQeA1LzQasmLYwlALgC69GKRf-44aYWMHyOT6_bUhOWnSA-fR7DYkBfeC1x00x6W5pCjGzBwzKam5mUc6xtGgpYEUN9DLGVJ1hEmigl8SeNZPCfIPxfi0j-iajKRwg_C0-v4uDAlbRnF18fhcHeBHoT5j_ADXka2Pz-qus3BPMS8CdpKMJR8yZc6uXhwHSniFb4bSGQB1smPQhq1nMBs3Gly9qNVlPKGdSEiExdH8tj7xkLIZkTJIQLgz388dRkTjytAGHjUEKhbQDuwFYQa5vNkyepRAxldw9c_FaZYLcODhTc0LHULyw4iDlhgUdc6WXXdT49gIBADk5711gSyaw-CYr8vDGBM68CbygDUG3IDDZvEM7FNO42OYfisxscJdl5o87O7yKKqx4m04pbJpV89RXdqwP0lKW-FjprTn3HVSvPGtB3oHuw5-Dwss_52f08pogNuOJxiQ2XfM2uAoTpEm84HI5RX2UBFBUQzFfJmh_mQ_vJOc5yM6leNLPLm6ycusSHCi8wZnXufoicVt4shl0c9WM-VWeVUGxKYj-Kr9icvcB4JoV2TorIMuUHqGcbGfMX8NAH7o4Y0-MZuCk2O4-FgsE3v1SkZUSkDcneI_NWwZThHIHoW7FsJ_LXmIVMp7Kd1I-4PpFOiIn-7t7x_uJQS3SyQi97zFzel2SU4FLZxzEmzqGAqFFHYfgfE_RqYBtFVVJpVCUJgxdwQGEVDMIDVyjpmgIdjjAFMnIXjU5sGPcQ7VyzyX4dYFPxiRRHmAodxBkPip0Pl8PYPbJ4Z7_VierYB_8GrMIXJr3cznpXbrllwkAN7RxpieCNg66FiNgN-_bvu7XHpG5s8xoFIsyZtLsYF9WbktWySu5H0rlcqX4FsP-z77FLM-6-WZU1pawqCUr65-OyqJicXjQJe3iW72nwVAtuRk_n31v_xmnI8E9Cwu0DczbTccpWtHLPogiICpK8t4eWvvpdFqdNqtSjWvQCjuoDZCTfd3BIB9THVZBWrnecKzuD2WR143nNB9UnrfaBm3ZLR6YGl1sFaTAQgWwRCAqTm1T3jPgGDByhEhfYYVfqsN79bqkfB5wgYz5NQ8g9qfY4Axh75KAj67QpPzKZcRgd09myNICkjkOttYUZt8E8AVeyAI64QJpHv5CsiTDexsKasL2cK_9GmpZ0_Vs0f2hcGOjffuA5mcLefvX1ZK1izm2hdJ0hejxpS0Y5sHl7e1tpVwpfbRKKRytD3WrbnU6zVaj3bBKy3sehYPXfafjztlRKrtTfn7h7zf1-QE9uei8__zmXbu-tXtxMe_-8uZVcH10WLLqnW6723K2Wh0YbrXa9TYOSxcRa8evL4K3h9M9-vbau75xzjfre-G7n3alsA-8gxcHb1o_M14PbPv0XO56zVMV6rO9T42g0zoO5vv0euvs1aE-_Bza3suDq0bQdn58g7bH186bl3LvfN5Kp7_9-v56c3c2PzyaqcMX-ifd_TmMW-K4c_L25dvRL76Of6P7p-x6S-y-HtunF_Hh-87n0XU73bw6OdoSp6kOxd6n6dbubunj7f8A">Audit the link</a>
+          <a class="secondary" href="https://github.com/jonaslsaa/smartlinks/blob/main/public/demo/badge.ts">Script source</a>
+        </div>
+      </section>
+
+      <section aria-labelledby="riddle-title">
+        <p class="eyebrow">Demo 3 · Sealed riddle</p>
+        <h2 id="riddle-title">Mint a riddle with a sealed answer</h2>
+        <p>
+          Write a question and a secret answer. The answer is encrypted into the new link,
+          bound to that exact program: whoever holds it can guess against it and even read the
+          link's full source, but the answer stays ciphertext. Sealed secrets, minted in one
+          click.
+        </p>
+        <div class="demo-actions">
+          <a class="primary" href="https://s.jonaslsa.com/r/27Vjdctu4FX4VhNnW0gxJUbIsy9SPxxsn3uw67iZ2k02jjAORkIiYImgAtKwonulVr3vRd-l9H2WfpOcApCw59k67O-20M7FmZIIAzjn4zofzo6WjnNChapFFhA2Gy0hkSpNsAM_MlyxPacQO0rQ2cn4_clz4prO8N3Lqm3N9O5fqL6eGdmr6xdTWyNnCmctC3LNty257vL2Hc64e1Jir64Phh_6jWER6kTOS6Fk6HI2yPj6QlGbTwchhGarEl4zG5mHGNCVRQqViGhYUeuJ1yzVmKqMzBu-vOJvnQuqRQwADzTJcPOexTgYxu-IR88zAJTzjmtPUUxFN2aBZitJcp2z4zTKrsfpNv2GHOKH0wj6NRbxYGhnhjGc12B3VmkHwO-KRdje_rru7rQD-9WZUTnkWBoQWWvTGNLqYSlFkcfg4CIJeJFIhw8eTHfz0QOwEjA2bnfy60fR3dkjBPUUz5Skm-cRVC6XZzCu4e_vyBjYhOEwucxrHPJuGLdhOAtLcya97YyFhyhsLrcUsbMKEEimPyePWHn56qM9T_BMLm21YboZzxqeJDneD4FY4UTnNlvYwXsomOkTppfndHfyYzWE7AM2oB0yfiUzAvoi5qyeUOKM8WxnbtsZ2ACyc89mCjaWYV6pKw7u3yna7k07Usso6O6Cs9aAyBDRlWgMAOEZ1ftBls55m19rTEkCcCDkLizxnMqLKWJc0lyufgfSgQsWAtI0gpTxjXmJBavrNnd4dHZ4fbLMZyspB1LVlWthpo6h10WuHGnfxg1tSOmbpMuYKbs8iHKciuqg2NUuo7m5bd-K2hZFneaFdxVIW6ZKlSM7erTk7SM9e5QU8pkGyJMw9TDGcN2SSNOaFCu-yd4PbFD_WSRwoJLlGs8YFeHNFIy3ycNMKdCWe8h4rSrffNQGEllYE2812EG9YsU6V0oq7DO9FhVSwPRccooQ0TpPsC7etLET_iysmJ6mYe9ehvdQPQVZaxmL8GADvh-jWd715wjUzTGIhGOLNJc17c1DgjSWjF6H59miaoqV0uekBQ-uYRUJSzUUWgh4mka12ZjX0xGQC4TMsyTIRQq-FD-Ql0Mycu4QbPfXg8dZuf3mQlpXbb6yiZb-xCuAYOFchncnhKbBBg1UXivQxyAzfxWwm3sNmHNiNsMwEeAgcEJQ1RGTziO-s8cM-JYlkEwjyida5ChsNtZLrfxQZVamifiRmDZTegDD_81_-SiA5ERyrfoMOyT_-Ts4SrkhOp4zAf67hAk0IJSsTQ9Co5jQnDdkgEDpII25ABiE6YQTQk0wpMqaSaAHhPuYaRQBohYwYmXOdiEITds2iQgPQMOn3G6X9BqMVNA2TDD-4FPNk5lLIlLWl0lQD5-n-fisIXAuLCpcjp0xwHqbRkROOHPS2EdFbZcoyT0ISjmiUMA_3SJGa5ZnwlBYS9t64aEKoUWv9pu4K0O_nVNKZ8i8LppBV-_sjB_O7lnxWq7tybQnE0zmTmwt6fFJ7JD5_fiTrkulCZoRCPfACbhsAK3kcp4wgtGDbVj8nUUqVwsRv0wD46RD8Q7bROacMUnRcbuo3coSK4F8_aQ43JSLYMFJ2h7ULUG3ebsmHbyAcgNtIdTBYFhuH2eU-kIGVz8gGlkVykWsQB5qEcXnG5sZ2qw7eVNJlkWk-g-EWsKkYpzwiF2xBfv7z38g8EQziB0lEGisjxUiIaEamBfKHToHaCqnjGotwBnZkBC92vFJR7TQ6JgUQ2fLMJRBkLSFL0y2LgT0LRYoM4kdMxwBRxHOIiEgVfwNLzIgESqlExOCHKdO2JCL2r2_yE3IfJivkYMXL8rHfMAvWd5hcRHi8saGq09beSHZZcAn4QvBNWTaFUm3kNDsBsGkljJiaErFjaMCbhGqSUIXoKnNwkbNMkUwQTJxq_2HbLTowf2Bhql2wXJeEqf_yKaqt1RlW43tP0GnDzKbZlOScZmLTOJsbCV5iWKKK8Ywj9IbX6M6K9nbdrb8a6LDhlrlowrdqhwDb58-yGnXa63fvTCA62fS33rgfGMuBXUQlUGffvVwVH4DPEokKhwFBcG_AMhOUaARhTxmGW_wUznbam2TM1wI7OvNMLuwFwYCNK7dcKDjrPdvn8AGdU7CIYaDPecpqgftOvHeX6NZweXBy-ubpq1D6WhwL0PgEKr5a_eam3ltD5y3coiqKwK3H67IApD78OqQQp3WJ7JorjfycrwEGpzyr4gCwTszhzkvJmSIL3LqKT5BogEfwrbB6MdCZBeVFh2tg6Wul3t5vCAlYchATtShmIACf5FJMIWr75EkCvRYjImNkvICIKCaGbyqSPLdabqOJFT2GSDRjGE0gJmFQxIDik9MEfQ34Y5zLBKYSE70Qw_WIhFmwVPLHV8duqYIrKxzzMTGXEW5xJPLFGiP6UBKZroxjV4aDFYK3PCnnwT1_gGAA9pTJvVy6ua5qU8HzkNNNgoScDunLCDgok_iXyfsBmfvVjYXrDeeTFU0_1G8c14mc8J1Tq9VXjTn7X2vMs0Et-79ozFkt-9qYf23MvzbmXxvzr43518b8v92Y2x-wXbHemIv_fGOemZ_N1wpW_KEfMra4LSnkIPMVVGVMK98WvKYDr7rvytgdsNSIhH4Ai731RhkhnnGlAAofVJfFNYXSoGr0Tae62edvFtWuGmz9O52kEQjTplY2g19uwcr1VVFRDR9swP6FRuvIan2gvVohvk8Hg4Hc11A7PRFSQhh_sDs4qGD9sn-qeqhShL_RPpWdDxY5on5jqmkobyS0bOYdxcKnHPu2uAzRnBOBtP511qAtdr9PSr13TPpmqW5KRQeliN9y8PuVrHqhkohQCVyxFC58pnjMTJNg2yToddZ-vyCn91_9dcFrUSDEtum2M8GfYxYotmx9MNDY3sj-lgKV_Fr34t89jQUGusha3XnvOgXU-O-abtPd3d1utzot16mCHIUOoPtW57tnx4Xozvnr8_jptn59RF-d7_7p08u3nebewfn5ovv9y5PJ5fFzx23udjvddrDX3oXHvXan2cFH5zxjnfzH88mb5_ND-uYyurwKXu80D5O3Tw5E6h1FR98dvWw_Y7w58bzT1-Ig2j6ViT47_Nia7LZfTBZP6eXe2clz_fxT4kU_HF20Jp3g25doezDJT6fj2DuNnh2Ky4-vrg-P259-6rzI4pO4cyrfHh_vxLtn82fj6OzH7El-dabbP-09fXHJve8mr8YnQbPFPvFFkX3biV83f9qO9lrs48GB8_7mnw">Open the demo →</a>
+          <a class="secondary" href="https://s.jonaslsa.com/d/27Vjdctu4FX4VhNnW0gxJUbIsy9SPxxsn3uw67iZ2k02jjAORkIiYImgAtKwonulVr3vRd-l9H2WfpOcApCw59k67O-20M7FmZIIAzjn4zofzo6WjnNChapFFhA2Gy0hkSpNsAM_MlyxPacQO0rQ2cn4_clz4prO8N3Lqm3N9O5fqL6eGdmr6xdTWyNnCmctC3LNty257vL2Hc64e1Jir64Phh_6jWER6kTOS6Fk6HI2yPj6QlGbTwchhGarEl4zG5mHGNCVRQqViGhYUeuJ1yzVmKqMzBu-vOJvnQuqRQwADzTJcPOexTgYxu-IR88zAJTzjmtPUUxFN2aBZitJcp2z4zTKrsfpNv2GHOKH0wj6NRbxYGhnhjGc12B3VmkHwO-KRdje_rru7rQD-9WZUTnkWBoQWWvTGNLqYSlFkcfg4CIJeJFIhw8eTHfz0QOwEjA2bnfy60fR3dkjBPUUz5Skm-cRVC6XZzCu4e_vyBjYhOEwucxrHPJuGLdhOAtLcya97YyFhyhsLrcUsbMKEEimPyePWHn56qM9T_BMLm21YboZzxqeJDneD4FY4UTnNlvYwXsomOkTppfndHfyYzWE7AM2oB0yfiUzAvoi5qyeUOKM8WxnbtsZ2ACyc89mCjaWYV6pKw7u3yna7k07Usso6O6Cs9aAyBDRlWgMAOEZ1ftBls55m19rTEkCcCDkLizxnMqLKWJc0lyufgfSgQsWAtI0gpTxjXmJBavrNnd4dHZ4fbLMZyspB1LVlWthpo6h10WuHGnfxg1tSOmbpMuYKbs8iHKciuqg2NUuo7m5bd-K2hZFneaFdxVIW6ZKlSM7erTk7SM9e5QU8pkGyJMw9TDGcN2SSNOaFCu-yd4PbFD_WSRwoJLlGs8YFeHNFIy3ycNMKdCWe8h4rSrffNQGEllYE2812EG9YsU6V0oq7DO9FhVSwPRccooQ0TpPsC7etLET_iysmJ6mYe9ehvdQPQVZaxmL8GADvh-jWd715wjUzTGIhGOLNJc17c1DgjSWjF6H59miaoqV0uekBQ-uYRUJSzUUWgh4mka12ZjX0xGQC4TMsyTIRQq-FD-Ql0Mycu4QbPfXg8dZuf3mQlpXbb6yiZb-xCuAYOFchncnhKbBBg1UXivQxyAzfxWwm3sNmHNiNsMwEeAgcEJQ1RGTziO-s8cM-JYlkEwjyida5ChsNtZLrfxQZVamifiRmDZTegDD_81_-SiA5ERyrfoMOyT_-Ts4SrkhOp4zAf67hAk0IJSsTQ9Co5jQnDdkgEDpII25ABiE6YQTQk0wpMqaSaAHhPuYaRQBohYwYmXOdiEITds2iQgPQMOn3G6X9BqMVNA2TDD-4FPNk5lLIlLWl0lQD5-n-fisIXAuLCpcjp0xwHqbRkROOHPS2EdFbZcoyT0ISjmiUMA_3SJGa5ZnwlBYS9t64aEKoUWv9pu4K0O_nVNKZ8i8LppBV-_sjB_O7lnxWq7tybQnE0zmTmwt6fFJ7JD5_fiTrkulCZoRCPfACbhsAK3kcp4wgtGDbVj8nUUqVwsRv0wD46RD8Q7bROacMUnRcbuo3coSK4F8_aQ43JSLYMFJ2h7ULUG3ebsmHbyAcgNtIdTBYFhuH2eU-kIGVz8gGlkVykWsQB5qEcXnG5sZ2qw7eVNJlkWk-g-EWsKkYpzwiF2xBfv7z38g8EQziB0lEGisjxUiIaEamBfKHToHaCqnjGotwBnZkBC92vFJR7TQ6JgUQ2fLMJRBkLSFL0y2LgT0LRYoM4kdMxwBRxHOIiEgVfwNLzIgESqlExOCHKdO2JCL2r2_yE3IfJivkYMXL8rHfMAvWd5hcRHi8saGq09beSHZZcAn4QvBNWTaFUm3kNDsBsGkljJiaErFjaMCbhGqSUIXoKnNwkbNMkUwQTJxq_2HbLTowf2Bhql2wXJeEqf_yKaqt1RlW43tP0GnDzKbZlOScZmLTOJsbCV5iWKKK8Ywj9IbX6M6K9nbdrb8a6LDhlrlowrdqhwDb58-yGnXa63fvTCA62fS33rgfGMuBXUQlUGffvVwVH4DPEokKhwFBcG_AMhOUaARhTxmGW_wUznbam2TM1wI7OvNMLuwFwYCNK7dcKDjrPdvn8AGdU7CIYaDPecpqgftOvHeX6NZweXBy-ubpq1D6WhwL0PgEKr5a_eam3ltD5y3coiqKwK3H67IApD78OqQQp3WJ7JorjfycrwEGpzyr4gCwTszhzkvJmSIL3LqKT5BogEfwrbB6MdCZBeVFh2tg6Wul3t5vCAlYchATtShmIACf5FJMIWr75EkCvRYjImNkvICIKCaGbyqSPLdabqOJFT2GSDRjGE0gJmFQxIDik9MEfQ34Y5zLBKYSE70Qw_WIhFmwVPLHV8duqYIrKxzzMTGXEW5xJPLFGiP6UBKZroxjV4aDFYK3PCnnwT1_gGAA9pTJvVy6ua5qU8HzkNNNgoScDunLCDgok_iXyfsBmfvVjYXrDeeTFU0_1G8c14mc8J1Tq9VXjTn7X2vMs0Et-79ozFkt-9qYf23MvzbmXxvzr43518b8v92Y2x-wXbHemIv_fGOemZ_N1wpW_KEfMra4LSnkIPMVVGVMK98WvKYDr7rvytgdsNSIhH4Ai731RhkhnnGlAAofVJfFNYXSoGr0Tae62edvFtWuGmz9O52kEQjTplY2g19uwcr1VVFRDR9swP6FRuvIan2gvVohvk8Hg4Hc11A7PRFSQhh_sDs4qGD9sn-qeqhShL_RPpWdDxY5on5jqmkobyS0bOYdxcKnHPu2uAzRnBOBtP511qAtdr9PSr13TPpmqW5KRQeliN9y8PuVrHqhkohQCVyxFC58pnjMTJNg2yToddZ-vyCn91_9dcFrUSDEtum2M8GfYxYotmx9MNDY3sj-lgKV_Fr34t89jQUGusha3XnvOgXU-O-abtPd3d1utzot16mCHIUOoPtW57tnx4Xozvnr8_jptn59RF-d7_7p08u3nebewfn5ovv9y5PJ5fFzx23udjvddrDX3oXHvXan2cFH5zxjnfzH88mb5_ND-uYyurwKXu80D5O3Tw5E6h1FR98dvWw_Y7w58bzT1-Ig2j6ViT47_Nia7LZfTBZP6eXe2clz_fxT4kU_HF20Jp3g25doezDJT6fj2DuNnh2Ky4-vrg-P259-6rzI4pO4cyrfHh_vxLtn82fj6OzH7El-dabbP-09fXHJve8mr8YnQbPFPvFFkX3biV83f9qO9lrs48GB8_7mnw">Audit the link</a>
+          <a class="secondary" href="https://github.com/jonaslsaa/smartlinks/blob/main/public/demo/riddle.ts">Script source</a>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>
+        <a href="https://github.com/jonaslsaa/smartlinks">GitHub</a>
+        ·
+        <a href="/acceptable-use/">Acceptable Use</a>
+      </span>
+    </footer>
+  </body>
+</html>
