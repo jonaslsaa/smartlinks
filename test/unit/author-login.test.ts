@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -124,14 +124,26 @@ describe("author login", () => {
       expiresAt: 2_000_003_600,
     });
 
-    await writeStoredAuthor({ key, certificate }, path);
+    await writeStoredAuthor({ service: "https://s.jonaslsa.com", key, certificate }, path);
     const stored = await readStoredAuthor(path);
     expect(stored?.certificate).toEqual(certificate);
+    expect(stored?.service).toBe("https://s.jonaslsa.com");
     expect(stored && authorKey(stored)).toEqual(key);
     if (process.platform !== "win32") {
       expect((await stat(path)).mode & 0o777).toBe(0o600);
     }
     await expect(clearStoredAuthor(path)).resolves.toBe(true);
     await expect(readStoredAuthor(path)).resolves.toBeUndefined();
+  });
+
+  it("requires login again for legacy identities without a runtime scope", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "smartlinks-author-test-"));
+    temporaryDirectories.push(directory);
+    const path = join(directory, "author.json");
+    await writeFile(path, '{"version":1}\n', { mode: 0o600 });
+
+    await expect(readStoredAuthor(path)).rejects.toThrow(
+      "predates runtime-scoped signing. Run smartlinks login again",
+    );
   });
 });

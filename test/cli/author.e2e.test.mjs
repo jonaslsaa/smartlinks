@@ -34,7 +34,8 @@ async function createTestAuthor(configDirectory, options = {}) {
   await writeFile(
     join(configDirectory, "author.json"),
     `${JSON.stringify({
-      version: 1,
+      version: 2,
+      service: options.service ?? "https://s.jonaslsa.com",
       privateKey: toBase64Url(authorPrivate),
       publicKey: toBase64Url(authorPublic),
       certificate: [...unsigned, toBase64Url(certificateSignature)],
@@ -71,17 +72,21 @@ test("whoami reports signing readiness and fails closed for unusable identities"
     assert.equal(status.status, "valid");
     assert.equal(status.githubId, 123456);
     assert.equal(status.githubLogin, "jonaslsaa");
+    assert.equal(status.service, "https://s.jonaslsa.com");
     assert.equal(typeof status.issuedAt, "number");
     assert.equal(typeof status.expiresAt, "number");
     assert.equal(valid.stderr, "");
 
     const human = await runCli(["whoami"], { env: validEnv });
-    assert.match(human.stdout, /^github\.com\/jonaslsaa · certificate expires \d{4}-/u);
+    assert.match(
+      human.stdout,
+      /^github\.com\/jonaslsaa · https:\/\/s\.jonaslsa\.com · certificate expires \d{4}-/u,
+    );
     assert.equal(human.stderr, "");
 
     const malformedConfig = join(directory, "malformed-author");
     await mkdir(malformedConfig, { recursive: true });
-    await writeFile(join(malformedConfig, "author.json"), '{"version":1}\n', { mode: 0o600 });
+    await writeFile(join(malformedConfig, "author.json"), '{"version":2}\n', { mode: 0o600 });
     await assert.rejects(
       runCli(["whoami", "--json"], {
         env: { ...process.env, SMARTLINKS_CONFIG_DIR: malformedConfig },
@@ -154,7 +159,7 @@ test("whoami reports signing readiness and fails closed for unusable identities"
     };
     for (const args of [
       ["whoami", "--json"],
-      ["build", script, "--sign", "--json"],
+      ["build", script, "--json"],
     ]) {
       await assert.rejects(runCli(args, { env: mismatchedEnv }), (error) => {
         const output = args[0] === "whoami" ? JSON.parse(error.stdout) : error.stderr;
@@ -186,38 +191,44 @@ test("whoami reports signing readiness and fails closed for unusable identities"
         return true;
       },
     );
+
+    await assert.rejects(
+      runCli(["build", script, "--json"], {
+        env: {
+          ...process.env,
+          SMARTLINKS_CONFIG_DIR: expiredConfig,
+          SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: expiredIssuer,
+        },
+      }),
+      (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /certificate has expired.*--no-sign/iu);
+        return true;
+      },
+    );
   });
 });
 
-test("build --sign fails instead of silently producing an unsigned link", async () => {
+test("build stays unsigned without an identity and --no-sign bypasses stored identity checks", async () => {
   await withTemporaryScript("js", 'return { body: "unsigned" };', async (script) => {
     const configDirectory = join(dirname(script), "empty-config");
-    await assert.rejects(
-      runCli(["build", script, "--sign", "--json"], {
-        env: { ...process.env, SMARTLINKS_CONFIG_DIR: configDirectory },
-      }),
-      (error) => {
-        assert.equal(error.stdout, "");
-        assert.match(error.stderr, /Run smartlinks login first/u);
-        return true;
-      },
-    );
+    const unsigned = await runCli(["build", script, "--json"], {
+      env: { ...process.env, SMARTLINKS_CONFIG_DIR: configDirectory },
+    });
+    assert.equal(JSON.parse(unsigned.stdout).signed, false);
+    assert.equal(unsigned.stderr, "");
 
-    await assert.rejects(
-      runCli(["build", join(dirname(script), "missing.ts"), "--sign", "--secret", "TOKEN"], {
-        env: { ...process.env, SMARTLINKS_CONFIG_DIR: configDirectory },
-      }),
-      (error) => {
-        assert.equal(error.stdout, "");
-        assert.match(error.stderr, /Run smartlinks login first/u);
-        assert.doesNotMatch(error.stderr, /ENOENT|Secret TOKEN/u);
-        return true;
-      },
-    );
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(join(configDirectory, "author.json"), "not json\n", { mode: 0o600 });
+    const explicitlyUnsigned = await runCli(["build", script, "--no-sign", "--json"], {
+      env: { ...process.env, SMARTLINKS_CONFIG_DIR: configDirectory },
+    });
+    assert.equal(JSON.parse(explicitlyUnsigned.stdout).signed, false);
+    assert.equal(explicitlyUnsigned.stderr, "");
   });
 });
 
-test("build signs with the configured author and decode verifies it offline", async () => {
+test("build automatically signs with the configured author and decode verifies it offline", async () => {
   await withTemporaryScript("js", 'return { body: "signed" };', async (script) => {
     const configDirectory = join(dirname(script), "author-config");
     const issuerPublicKey = await createTestAuthor(configDirectory);
@@ -226,7 +237,7 @@ test("build signs with the configured author and decode verifies it offline", as
       SMARTLINKS_CONFIG_DIR: configDirectory,
       SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: issuerPublicKey,
     };
-    const built = await runCli(["build", script, "--sign", "--json"], { env });
+    const built = await runCli(["build", script, "--json"], { env });
     const output = JSON.parse(built.stdout);
     assert.equal(built.stderr, "");
     assert.equal(output.signed, true);
@@ -244,15 +255,81 @@ test("build signs with the configured author and decode verifies it offline", as
     assert.equal(typeof verifiedAuthor.expiresAt, "number");
 
     const outputFile = join(dirname(script), "signed-link.txt");
-    const receipt = await runCli(["build", script, "--sign", "--out", outputFile], { env });
+    const receipt = await runCli(["build", script, "--out", outputFile], { env });
     assert.match(receipt.stdout, /signed by github\.com\/jonaslsaa · \+[\d,]+ characters/u);
     assert.doesNotMatch(receipt.stdout, /https:\/\/s\.jonaslsa\.com\/r\//u);
     assert.match(await readFile(outputFile, "utf8"), /^https:\/\/s\.jonaslsa\.com\/r\//u);
 
-    const plain = await runCli(["build", script, "--sign"], { env });
+    const plain = await runCli(["build", script], { env });
     assert.match(plain.stdout, /^https:\/\/s\.jonaslsa\.com\/r\//u);
     assert.match(plain.stderr, /signed by github\.com\/jonaslsaa · \+[\d,]+ characters/u);
   });
+});
+
+test("automatic signing is scoped to the runtime that issued the identity", async () => {
+  await withTemporaryScript("js", 'return { body: "scoped" };', async (script) => {
+    const configDirectory = join(dirname(script), "author-config");
+    const issuerPublicKey = await createTestAuthor(configDirectory);
+    const env = {
+      ...process.env,
+      SMARTLINKS_CONFIG_DIR: configDirectory,
+      SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: issuerPublicKey,
+      SMARTLINKS_URL: "https://other-runtime.example",
+    };
+
+    await assert.rejects(runCli(["build", script, "--json"], { env }), (error) => {
+      assert.equal(error.stdout, "");
+      assert.match(error.stderr, /belongs to https:\/\/s\.jonaslsa\.com.*--no-sign/iu);
+      return true;
+    });
+
+    await assert.rejects(runCli(["whoami", "--json"], { env }), (error) => {
+      const status = JSON.parse(error.stdout);
+      assert.equal(status.status, "wrong-runtime");
+      assert.equal(status.githubId, 123456);
+      assert.equal(status.githubLogin, "jonaslsaa");
+      assert.equal(status.service, "https://s.jonaslsa.com");
+      assert.equal(status.selectedService, "https://other-runtime.example");
+      assert.equal(typeof status.issuedAt, "number");
+      assert.equal(typeof status.expiresAt, "number");
+      assert.equal(error.stderr, "");
+      return true;
+    });
+
+    const unsigned = await runCli(["build", script, "--no-sign", "--json"], { env });
+    const output = JSON.parse(unsigned.stdout);
+    assert.equal(output.signed, false);
+    assert.match(output.link, /^https:\/\/other-runtime\.example\/r\//u);
+  });
+});
+
+test("automatic signing never falls back to unsigned when the signature exceeds the budget", async () => {
+  const cases = Array.from(
+    { length: 1_200 },
+    (_, index) => `case "action${index}": return { body: "result${index}" };`,
+  ).join("\n");
+  await withTemporaryScript(
+    "js",
+    `switch (ctx.params.x) {\n${cases}\ndefault: return { status: 404 };\n}`,
+    async (script) => {
+      const configDirectory = join(dirname(script), "author-config");
+      const issuerPublicKey = await createTestAuthor(configDirectory);
+      const env = {
+        ...process.env,
+        SMARTLINKS_CONFIG_DIR: configDirectory,
+        SMARTLINKS_AUTHOR_CA_PUBLIC_KEY_128: issuerPublicKey,
+      };
+
+      await assert.rejects(runCli(["build", script, "--json"], { env }), (error) => {
+        assert.equal(error.stdout, "");
+        assert.match(error.stderr, /encoded payload.*limit.*--no-sign/isu);
+        return true;
+      });
+
+      const unsigned = await runCli(["build", script, "--no-sign", "--json"], { env });
+      assert.equal(JSON.parse(unsigned.stdout).signed, false);
+    },
+  );
 });
 
 test("author-keygen emits a usable Ed25519 issuer key pair", async () => {

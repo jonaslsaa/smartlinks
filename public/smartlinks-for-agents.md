@@ -199,8 +199,10 @@ the installed help as authoritative (`smartlinks --help`, `help build`, `help ru
 without executing the script (QuickJS validation is compile-only); `run` is the local execution
 and validation path.
 
-`SMARTLINKS_URL` overrides the runtime origin, including the host baked into built links; with no
-secrets nothing is fetched, so a wrong value silently emits links to a host that may not exist.
+`SMARTLINKS_URL` overrides the runtime origin, including the host baked into built links. An
+automatically selected author identity must belong to that origin. With no secrets and no identity
+(or with `--no-sign`), nothing is fetched, so a wrong value silently emits links to a host that may
+not exist.
 
 ## `smartlinks build <script.js|script.ts>`
 
@@ -219,7 +221,7 @@ secrets nothing is fetched, so a wrong value silently emits links to a host that
   whole pipeline and prints the receipt while keeping no artifact.
 - `--json`: machine-readable output; without `--copy` or `--out` it includes the execution URL
   once, never a decoder URL.
-- `--sign`: sign every immutable payload field with the identity configured by `smartlinks login`.
+- `--no-sign`: build unsigned even when a valid author identity is configured.
 - `--no-type-check`, `--no-minify`: as above.
 
 If a browser decoder URL is needed, replace the execution URL's first `/r/` path segment with
@@ -301,8 +303,10 @@ and on expired links, so neither expiry nor rate limits affect what a reader lea
 stores only that private key and its 90-day Smartlinks certificate. The temporary GitHub token is
 discarded during issuance. `smartlinks whoami [--json]` verifies the certificate and local signing
 key without building; it exits nonzero when the identity is missing, expired, or invalid.
-`smartlinks logout` removes the local author identity. A build requested with `--sign` fails rather
-than silently becoming unsigned when no valid certificate exists.
+`smartlinks logout` removes the local author identity. The credential is scoped to the runtime that
+issued it. Builds for that runtime sign automatically; builds without an identity stay unsigned.
+An expired, invalid, or wrong-runtime identity fails rather than silently producing an unsigned
+artifact. Use `--no-sign` to deliberately bypass the stored identity.
 
 Signing is provenance, not endorsement or additional authority. The Worker rejects invalid signed
 artifacts before execution, while unsigned links remain valid. An expired certificate leaves the

@@ -653,6 +653,8 @@ describe("Worker routes", () => {
     expect(review.headers.get("content-type")).toContain("text/html");
     const reviewHtml = await review.text();
     expect(reviewHtml).toContain("Review before running");
+    expect(reviewHtml).not.toContain('id="author-heading"');
+    expect(reviewHtml).not.toContain("Unsigned");
     expect(reviewHtml).toContain("Author-provided note");
     expect(reviewHtml).toContain('aria-labelledby="author-note-heading"');
     expect(reviewHtml).toContain('aria-labelledby="facts-heading"');
@@ -757,6 +759,8 @@ describe("Worker routes", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     const decodedHtml = await response.text();
     expect(decodedHtml).toContain("Decoded smartlink");
+    expect(decodedHtml).not.toContain('id="author-heading"');
+    expect(decodedHtml).not.toContain("Unsigned");
     expect(decodedHtml).toContain("Author-provided note");
     expect(decodedHtml).toContain("Explains &lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;");
     expect(decodedHtml).toContain("Smartlink facts");

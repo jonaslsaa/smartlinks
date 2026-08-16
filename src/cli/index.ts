@@ -11,6 +11,7 @@ import {
   formatNotAfter,
   isExpired,
   MAX_PAYLOAD_LENGTH,
+  PayloadTooLargeError,
   payloadFromInput,
 } from "../shared/codec.js";
 import { isRedirectStatus } from "../shared/http-status.js";
@@ -23,7 +24,7 @@ import {
   requestAuthorCertificate,
   validateIssuedCertificate,
 } from "./author-login.js";
-import { inspectConfiguredAuthor, requireConfiguredAuthor } from "./author-status.js";
+import { configuredAuthorForBuild, inspectConfiguredAuthor } from "./author-status.js";
 import { authorKey, clearStoredAuthor, writeStoredAuthor } from "./author-store.js";
 import { trustedAuthorIssuerKeys } from "./author-trust.js";
 import { createSmartlink } from "./build.js";
@@ -53,7 +54,7 @@ type BuildOptions = {
   copy?: boolean;
   out?: string;
   json?: boolean;
-  sign?: boolean;
+  sign: boolean;
 };
 
 type RunOptions = {
@@ -205,13 +206,13 @@ async function fetchPublicKey(service: string): Promise<z.infer<typeof publicKey
 async function buildCommand(file: string, options: BuildOptions): Promise<void> {
   const interactive = startUi("smartlinks build", options.json === true);
   const notAfter = options.expires === undefined ? undefined : parseExpiry(options.expires);
+  const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
   if (options.out) {
     await assertOutputDoesNotOverwriteInput(file, options.out);
   }
-  const author = options.sign ? await requireConfiguredAuthor() : undefined;
+  const author = options.sign === false ? undefined : await configuredAuthorForBuild(service);
   const originalSource = await readScriptSource(file, { typeCheck: options.typeCheck });
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
-  const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
 
   let publicKey: z.infer<typeof publicKeySchema> | undefined;
   if (Object.keys(secrets).length > 0) {
@@ -221,19 +222,29 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     spinner?.stop(`Fetched encryption key ${publicKey.keyId}`);
   }
 
-  const created = await createSmartlink({
-    source: originalSource,
-    service,
-    secrets,
-    ...(publicKey ? { publicKey } : {}),
-    ...(options.interstitial ? { interstitial: true } : {}),
-    ...(options.interstitialNote === undefined
-      ? {}
-      : { interstitialNote: options.interstitialNote }),
-    ...(notAfter !== undefined ? { notAfter } : {}),
-    minify: options.minify,
-    ...(author ? { author: { certificate: author.certificate, key: authorKey(author) } } : {}),
-  });
+  let created: Awaited<ReturnType<typeof createSmartlink>>;
+  try {
+    created = await createSmartlink({
+      source: originalSource,
+      service,
+      secrets,
+      ...(publicKey ? { publicKey } : {}),
+      ...(options.interstitial ? { interstitial: true } : {}),
+      ...(options.interstitialNote === undefined
+        ? {}
+        : { interstitialNote: options.interstitialNote }),
+      ...(notAfter !== undefined ? { notAfter } : {}),
+      minify: options.minify,
+      ...(author ? { author: { certificate: author.certificate, key: authorKey(author) } } : {}),
+    });
+  } catch (error) {
+    if (author && error instanceof PayloadTooLargeError) {
+      throw new Error(`${error.message} Use --no-sign if an unsigned link is acceptable.`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
   if (isExpired(notAfter)) {
     throw new Error("The link expired before the build completed. Choose a later expiry.");
   }
@@ -288,7 +299,8 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
           ...(fingerprint ? { fingerprint } : {}),
           ...(options.copy ? { copied: true } : {}),
           ...(options.out ? { out: options.out } : {}),
-          ...(author ? { signed: true, author: author.certificate[3] } : {}),
+          signed: author !== undefined,
+          ...(author ? { author: author.certificate[3] } : {}),
           ...(author ? { signingOverhead: created.signingOverhead } : {}),
         },
         null,
@@ -395,12 +407,14 @@ async function loginCommand(): Promise<void> {
       continue;
     }
     await validateIssuedCertificate(result.certificate, key, trustedAuthorIssuerKeys());
-    await writeStoredAuthor({ key, certificate: result.certificate });
+    await writeStoredAuthor({ service, key, certificate: result.certificate });
     const login = result.certificate[3];
     if (interactive) {
-      p.outro(`Signed in as github.com/${login}`);
+      p.outro(`Signed in as github.com/${login} · future builds for ${service} sign automatically`);
     } else {
-      console.log(`Signed in as github.com/${login}`);
+      console.log(
+        `Signed in as github.com/${login} · future builds for ${service} sign automatically`,
+      );
     }
     return;
   }
@@ -421,11 +435,12 @@ async function logoutCommand(): Promise<void> {
 }
 
 async function whoamiCommand(options: { json?: boolean }): Promise<void> {
-  const { status } = await inspectConfiguredAuthor();
+  const service = normalizeServiceUrl(process.env.SMARTLINKS_URL ?? DEFAULT_SERVICE_URL);
+  const { status } = await inspectConfiguredAuthor(service);
   if (options.json) {
     console.log(JSON.stringify(status, null, 2));
   } else if (status.status === "valid") {
-    const message = `github.com/${status.githubLogin} · certificate expires ${formatNotAfter(status.expiresAt)}`;
+    const message = `github.com/${status.githubLogin} · ${status.service} · certificate expires ${formatNotAfter(status.expiresAt)}`;
     const interactive = startUi("smartlinks whoami", false);
     if (interactive) {
       p.outro(message);
@@ -436,7 +451,11 @@ async function whoamiCommand(options: { json?: boolean }): Promise<void> {
     console.error("No author identity is configured. Run smartlinks login first.");
   } else if (status.status === "expired") {
     console.error(
-      `github.com/${status.githubLogin} · certificate expired ${formatNotAfter(status.expiresAt)} · run smartlinks login again`,
+      `github.com/${status.githubLogin} · ${status.service} · certificate expired ${formatNotAfter(status.expiresAt)} · run smartlinks login again`,
+    );
+  } else if (status.status === "wrong-runtime") {
+    console.error(
+      `github.com/${status.githubLogin} · identity belongs to ${status.service}, not ${status.selectedService} · run smartlinks login for this runtime`,
     );
   } else if ("reason" in status) {
     console.error(`The local author identity is invalid: ${status.reason}`);
@@ -667,7 +686,7 @@ program
   .option("--copy", "copy the link and print a fingerprint receipt")
   .option("--out <file>", "write the link privately and print a fingerprint receipt")
   .option("--json", "print machine-readable output")
-  .option("--sign", "sign with the author identity configured by smartlinks login")
+  .option("--no-sign", "build unsigned even when an author identity is configured")
   .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
   .addOption(new Option("--no-minify", "skip JavaScript minification"))
   .action(buildCommand);

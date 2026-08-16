@@ -13,16 +13,26 @@ import { trustedAuthorIssuerKeys } from "./author-trust.js";
 
 type CertificateStatus = Extract<AuthorCertificateVerification, { expiresAt: number }>;
 type InvalidStatus = Extract<AuthorCertificateVerification, { status: "invalid" }>;
-type ValidStatus = Omit<CertificateStatus, "status"> & { status: "valid" };
-type ExpiredStatus = Omit<CertificateStatus, "status"> & { status: "expired" };
+type ValidStatus = Omit<CertificateStatus, "status"> & { status: "valid"; service: string };
+type ExpiredStatus = Omit<CertificateStatus, "status"> & { status: "expired"; service: string };
+type ScopedInvalidStatus = InvalidStatus & { service?: string };
+type WrongRuntimeStatus = Omit<ValidStatus, "status"> & {
+  status: "wrong-runtime";
+  selectedService: string;
+};
 
-export type AuthorStatus = { status: "missing" } | ValidStatus | ExpiredStatus | InvalidStatus;
+export type AuthorStatus =
+  | { status: "missing" }
+  | ValidStatus
+  | ExpiredStatus
+  | WrongRuntimeStatus
+  | ScopedInvalidStatus;
 
 export type AuthorInspection =
   | { status: Exclude<AuthorStatus, ValidStatus> }
   | { status: ValidStatus; author: StoredAuthor };
 
-export async function inspectConfiguredAuthor(): Promise<AuthorInspection> {
+export async function inspectConfiguredAuthor(selectedService: string): Promise<AuthorInspection> {
   let author: StoredAuthor | undefined;
   try {
     author = await readStoredAuthor();
@@ -45,14 +55,23 @@ export async function inspectConfiguredAuthor(): Promise<AuthorInspection> {
     issuerPublicKeys: trustedAuthorIssuerKeys(),
   });
   if (status.status === "invalid") {
-    return { status };
+    return { status: { ...status, service: author.service } };
   }
   if (status.status === "expired") {
-    return { status: { ...status, status: "expired" } };
+    return { status: { ...status, status: "expired", service: author.service } };
   }
-  const validStatus: ValidStatus = { ...status, status: "valid" };
+  const validStatus: ValidStatus = { ...status, status: "valid", service: author.service };
   try {
     await verifyAuthorCredential(author.certificate, authorKey(author));
+    if (author.service !== selectedService) {
+      return {
+        status: {
+          ...validStatus,
+          status: "wrong-runtime",
+          selectedService,
+        },
+      };
+    }
     return { status: validStatus, author };
   } catch {
     return {
@@ -60,23 +79,34 @@ export async function inspectConfiguredAuthor(): Promise<AuthorInspection> {
         status: "invalid",
         githubId: validStatus.githubId,
         githubLogin: validStatus.githubLogin,
+        service: author.service,
         reason: "The stored author signing key is invalid. Run smartlinks login again.",
       },
     };
   }
 }
 
-export async function requireConfiguredAuthor(): Promise<StoredAuthor> {
-  const inspection = await inspectConfiguredAuthor();
+export async function configuredAuthorForBuild(service: string): Promise<StoredAuthor | undefined> {
+  const inspection = await inspectConfiguredAuthor(service);
   if ("author" in inspection) {
     return inspection.author;
   }
+
   const { status } = inspection;
   if (status.status === "missing") {
-    throw new Error("No author identity is configured. Run smartlinks login first.");
+    return undefined;
   }
   if (status.status === "expired") {
-    throw new Error("The local author certificate has expired. Run smartlinks login again.");
+    throw new Error(
+      "The local author certificate has expired. Run smartlinks login again or use --no-sign.",
+    );
   }
-  throw new Error(`The local author identity is invalid: ${status.reason}`);
+  if (status.status === "wrong-runtime") {
+    throw new Error(
+      `The local author identity belongs to ${status.service}, not ${status.selectedService}. Run smartlinks login for this runtime or use --no-sign.`,
+    );
+  }
+  throw new Error(
+    `The local author identity is invalid: ${status.reason} Use --no-sign to build unsigned.`,
+  );
 }
