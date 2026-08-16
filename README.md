@@ -281,9 +281,7 @@ execution URL once.
 
 Interstitials put a confirmation page between the click and the execution — use one for any
 human-triggered side effect. The page separates immutable system guidance, an optional author
-note, machine facts, and the decoded source. A confirmed run that ends in a cross-origin redirect
-is delivered as a brief continuation page, because browsers apply the runtime CSP's
-`form-action` to a form submission's redirects. Notes are whitespace-normalized, limited to 140
+note, machine facts, and the decoded source. Notes are whitespace-normalized, limited to 140
 Unicode characters, and public metadata; when a link contains sealed secrets, changing or removing
 its note makes those secrets undecryptable.
 
