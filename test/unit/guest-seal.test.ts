@@ -53,6 +53,19 @@ describe("guest token seal/open", () => {
     await expect(link("return 1", { c: ["()=>1"] }).open(token)).rejects.toThrow(
       "could not be opened",
     );
+    await expect(
+      link("return 1", { a: 1, k: { PASSWORD: "different-sealed-secret" } }).open(token),
+    ).rejects.toThrow("could not be opened");
+    const secretToken = await link("return 1", {
+      a: 1,
+      k: { PASSWORD: "victim-sealed-secret" },
+    }).seal("state");
+    await expect(
+      link("return 1", { a: 1, k: { PASSWORD: "attacker-sealed-secret" } }).open(secretToken),
+    ).rejects.toThrow("could not be opened");
+    expect(identity("return 1", { a: 1, k: { SECOND: "two", FIRST: "one" } })).toBe(
+      identity("return 1", { a: 1, k: { FIRST: "one", SECOND: "two" } }),
+    );
     await expect(link("return 1", {}, "other-master").open(token)).rejects.toThrow(
       "could not be opened",
     );
@@ -150,14 +163,14 @@ describe("guest token seal/open", () => {
   });
 
   it("pins the artifact canonicalization and token construction", async () => {
-    expect(identity("return 1")).toBe('["2","return 1",[],null,false]');
+    expect(identity("return 1")).toBe('["2","return 1",[],null,false,null,[]]');
     const golden = guest({
       masterSecret: "golden-master",
       artifactIdentity: identity("return 1"),
       domain: "production",
     });
     await expect(
-      golden.open("AazT-6Pw89AnnibljgzCknYUhTH3zZr-PPkPE3lQSlSf64HV85-fu19lERq7QBEaNf4", {
+      golden.open("AVV3jLo7PH4y4aaqFFvXngcBHP7RYS4lpkrSKCltWZUr3TqnX_4ZFv_-L4o5uRBo-oI", {
         context: "golden",
       }),
     ).resolves.toEqual({ golden: true, n: 7 });

@@ -56,21 +56,34 @@ function artifactIdentityValues(identity: ArtifactIdentity): readonly unknown[] 
   return identity.interstitialNote === undefined ? values : [...values, identity.interstitialNote];
 }
 
+function compareSealedSecretEntries(
+  left: readonly [string, string],
+  right: readonly [string, string],
+): number {
+  if (left[0] < right[0]) {
+    return -1;
+  }
+  if (left[0] > right[0]) {
+    return 1;
+  }
+  return 0;
+}
+
 export function payloadArtifactIdentity(
   decoded: Pick<DecodedPayload, "version" | "envelope">,
 ): string {
-  return JSON.stringify(
-    artifactIdentityValues({
-      version: decoded.version,
-      script: decoded.envelope.s,
-      closures: decoded.envelope.c ?? [],
-      ...(decoded.envelope.notAfter === undefined ? {} : { notAfter: decoded.envelope.notAfter }),
-      interstitial: decoded.envelope.i === true,
-      ...(decoded.envelope.interstitialNote === undefined
-        ? {}
-        : { interstitialNote: decoded.envelope.interstitialNote }),
-    }),
-  );
+  const identity = artifactIdentityValues({
+    version: decoded.version,
+    script: decoded.envelope.s,
+    closures: decoded.envelope.c ?? [],
+    ...(decoded.envelope.notAfter === undefined ? {} : { notAfter: decoded.envelope.notAfter }),
+    interstitial: decoded.envelope.i === true,
+    ...(decoded.envelope.interstitialNote === undefined
+      ? {}
+      : { interstitialNote: decoded.envelope.interstitialNote }),
+  });
+  const sealedSecrets = Object.entries(decoded.envelope.k ?? {}).sort(compareSealedSecretEntries);
+  return JSON.stringify([...identity, decoded.envelope.a ?? null, sealedSecrets]);
 }
 
 export function artifactSecretBinding(

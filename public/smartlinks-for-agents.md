@@ -94,9 +94,10 @@ Tokens let a link hand the client state the client can neither read nor forge, a
 a later request.
 
 Without options, a token is bound to the exact artifact: identical script, closures, expiry,
-interstitial flag, and author note. Rebuilding with any change rotates the key and invalidates
-outstanding tokens by design; children minted with `ctx.compile` are distinct artifacts and never
-share transparent tokens with their parent.
+interstitial flag, author note, authority, and sealed-secret ciphertexts. Rebuilding with any
+change (including rebuilding the same secrets, whose sealing uses fresh randomness) rotates the
+key and invalidates outstanding tokens by design; children minted with `ctx.compile` are distinct
+artifacts and never share transparent tokens with their parent.
 
 `options.key` (a string of at least 16 bytes) skips artifact binding, so tokens survive rebuilds
 and cross between cooperating links: generate the key once and supply it to both builds through
