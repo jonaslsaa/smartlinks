@@ -106,6 +106,55 @@ describe("local network simulation", () => {
     ]);
   });
 
+  it("applies configured statuses to allowed fetches in order, then uses the default", async () => {
+    const simulation = new LocalSimulation(
+      { method: "GET", params: {}, headers: {}, body: null },
+      {},
+      [204, 201],
+    );
+    const fetch = simulation.createGuestFetch([]);
+
+    await expect(fetch("http://127.0.0.1/private")).rejects.toThrow(
+      "private, local, or reserved IP addresses",
+    );
+    await expect(fetch("https://example.com/first")).resolves.toMatchObject({
+      status: 204,
+      headers: {},
+      text: "",
+    });
+    await expect(fetch("https://example.com/second")).resolves.toMatchObject({
+      status: 201,
+      headers: { "content-type": "application/json" },
+      text: "{}",
+    });
+    await expect(fetch("https://example.com/default")).resolves.toMatchObject({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      text: "{}",
+    });
+
+    const report = await simulation.success(new Response("done"), false);
+    expect(
+      report.events.map((event) => (event.type === "fetch" ? event.response : event.type)),
+    ).toEqual([
+      "fetch-blocked",
+      { status: 204, headers: {}, body: "", configuredResponseIndex: 1 },
+      {
+        status: 201,
+        headers: { "content-type": "application/json" },
+        body: "{}",
+        configuredResponseIndex: 2,
+      },
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      },
+    ]);
+    expect(formatSimulationReport(report)).toContain("Configured response 1 · HTTP 204");
+    expect(formatSimulationReport(report)).toContain("Synthetic response · HTTP 200 · {}");
+  });
+
   it("bounds human previews while leaving the report intact", () => {
     const body = "x".repeat(500);
     const report: SimulationReport = {

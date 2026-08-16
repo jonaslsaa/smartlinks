@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isBodylessStatus } from "./http-status.js";
 import { hardenResponse } from "./response-security.js";
 
 export const MAX_BINARY_RESPONSE_BYTES = 1_048_576;
@@ -128,9 +129,8 @@ export function mapScriptResult(input: unknown): Response {
   if (binaryBody && !headers.has("content-type")) {
     headers.set("content-type", "application/octet-stream");
   }
-  const body =
-    status === 204 || status === 205 || status === 304
-      ? null
-      : (binaryBody?.buffer ?? ("body" in result ? result.body : undefined) ?? "");
+  const body = isBodylessStatus(status)
+    ? null
+    : (binaryBody?.buffer ?? ("body" in result ? result.body : undefined) ?? "");
   return hardenResponse(new Response(body, { status, headers }));
 }
