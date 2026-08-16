@@ -51,6 +51,12 @@
 
       .compute {
         position: relative;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        color: inherit;
+        background: none;
+        font: inherit;
         cursor: help;
         text-decoration: underline dotted;
         text-underline-offset: 3px;
@@ -101,7 +107,7 @@
         <p>
           There is no backend behind these pages and nothing is deployed: no accounts, no
           database,
-          <span class="compute" tabindex="0" data-tip="A fresh QuickJS sandbox inside a Cloudflare Worker, created for each request and gone after it.">just some compute</span>.
+          <button type="button" class="compute" data-tip="A fresh QuickJS sandbox inside a Cloudflare Worker, created for each request and gone after it.">just some compute</button>.
           Every demo is a signed link built from the script published next to it in the
           repository, and on any Smartlink you can swap <code>/r/</code> for <code>/d/</code>
           in the address bar to audit exactly what it runs without executing it.
