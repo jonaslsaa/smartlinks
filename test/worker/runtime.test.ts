@@ -146,6 +146,8 @@ describe("Worker routes", () => {
           "content-security-policy-report-only": "script-src 'none'; report-to leaks",
           "cross-origin-embedder-policy": "require-corp; report-to=leaks",
           "cross-origin-opener-policy-report-only": "same-origin; report-to=leaks",
+          "document-isolation-policy": "isolate-and-credentialless; report-to=leaks",
+          "document-isolation-policy-report-only": "isolate-and-require-corp; report-to=leaks",
           "reporting-endpoints": "leaks=https://reports.example/modern"
         },
         body: "executed"
@@ -186,8 +188,10 @@ describe("Worker routes", () => {
     );
     expect(response.headers.get("content-security-policy")).not.toMatch(/report-uri/u);
     expect(response.headers.get("content-security-policy-report-only")).toBeNull();
-    expect(response.headers.get("cross-origin-embedder-policy")).toBeNull();
+    expect(response.headers.get("cross-origin-embedder-policy")).toBe("require-corp");
     expect(response.headers.get("cross-origin-opener-policy-report-only")).toBeNull();
+    expect(response.headers.get("document-isolation-policy")).toBe("isolate-and-credentialless");
+    expect(response.headers.get("document-isolation-policy-report-only")).toBeNull();
     expect(response.headers.get("reporting-endpoints")).toBeNull();
     expect(limit).toHaveBeenCalledOnce();
     await expect(response.text()).resolves.toBe("executed");
@@ -221,6 +225,30 @@ describe("Worker routes", () => {
     expect(limited.headers.get("access-control-allow-origin")).toBe("*");
     expect(limited.headers.get("retry-after")).toBe("60");
     expect(limited.headers.get("content-security-policy")).toBe(RUNTIME_CONTENT_SECURITY_POLICY);
+
+    class LimiterUnavailable extends Error {
+      override readonly name = "LimiterUnavailable";
+    }
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const failed = await worker.fetch(
+        new Request(created.link, { headers: { origin: "https://caller.example" } }),
+        testEnv({
+          limit: vi.fn(async () => {
+            throw new LimiterUnavailable("binding failed");
+          }),
+        }),
+      );
+      expect(failed.status).toBe(500);
+      expect(failed.headers.get("access-control-allow-origin")).toBe("*");
+      expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toMatchObject({
+        error: "LimiterUnavailable",
+        message: "request failed",
+        route: "/r",
+      });
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("does not let guest response headers opt an artifact into CORS", async () => {

@@ -390,10 +390,12 @@ export default {
       const message =
         status < 500 && error instanceof Error ? error.message : "Internal server error.";
       if (status >= 500) {
+        const loggedError =
+          error instanceof HttpError && error.cause instanceof Error ? error.cause : error;
         console.error(
           JSON.stringify({
             message: "request failed",
-            error: error instanceof Error ? error.name : "UnknownError",
+            error: loggedError instanceof Error ? loggedError.name : "UnknownError",
             route: new URL(request.url).pathname.split("/").slice(0, 2).join("/") || "/",
           }),
         );

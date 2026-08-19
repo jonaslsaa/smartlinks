@@ -25,14 +25,7 @@ const RESERVED_RESPONSE_HEADERS = [
   "access-control-expose-headers",
   "access-control-max-age",
   "clear-site-data",
-  "content-security-policy-report-only",
-  "cross-origin-embedder-policy",
-  "cross-origin-embedder-policy-report-only",
-  "cross-origin-opener-policy",
-  "cross-origin-opener-policy-report-only",
-  "document-policy-report-only",
   "nel",
-  "permissions-policy-report-only",
   "report-to",
   "reporting-endpoints",
   "set-cookie",
@@ -40,6 +33,31 @@ const RESERVED_RESPONSE_HEADERS = [
 ] as const;
 
 const CSP_REPORTING_DIRECTIVES = new Set(["report-to", "report-uri"]);
+const CROSS_ORIGIN_EMBEDDER_POLICIES = new Set(["credentialless", "require-corp", "unsafe-none"]);
+const CROSS_ORIGIN_OPENER_POLICIES = new Set([
+  "noopener-allow-popups",
+  "same-origin",
+  "same-origin-allow-popups",
+  "unsafe-none",
+]);
+const DOCUMENT_ISOLATION_POLICIES = new Set([
+  "isolate-and-credentialless",
+  "isolate-and-require-corp",
+  "none",
+]);
+
+function sanitizeStructuredPolicy(
+  headers: Headers,
+  name: string,
+  allowed: ReadonlySet<string>,
+): void {
+  const token = headers.get(name)?.split(";", 1)[0]?.trim().toLowerCase();
+  if (token !== undefined && allowed.has(token)) {
+    headers.set(name, token);
+  } else {
+    headers.delete(name);
+  }
+}
 
 function removeCspReporting(headers: Headers): void {
   const value = headers.get("content-security-policy");
@@ -64,6 +82,18 @@ function removeCspReporting(headers: Headers): void {
   } else {
     headers.delete("content-security-policy");
   }
+}
+
+function removeBrowserReporting(headers: Headers): void {
+  for (const name of [...headers.keys()]) {
+    if (name.endsWith("-report-only")) {
+      headers.delete(name);
+    }
+  }
+  removeCspReporting(headers);
+  sanitizeStructuredPolicy(headers, "cross-origin-embedder-policy", CROSS_ORIGIN_EMBEDDER_POLICIES);
+  sanitizeStructuredPolicy(headers, "cross-origin-opener-policy", CROSS_ORIGIN_OPENER_POLICIES);
+  sanitizeStructuredPolicy(headers, "document-isolation-policy", DOCUMENT_ISOLATION_POLICIES);
 }
 
 export function setCredentialFreeCorsHeaders(headers: Headers): void {
@@ -93,7 +123,7 @@ export function hardenResponse(response: Response): Response {
   for (const name of RESERVED_RESPONSE_HEADERS) {
     headers.delete(name);
   }
-  removeCspReporting(headers);
+  removeBrowserReporting(headers);
   // Separate CSP policies are enforced together, so an author can tighten the runtime policy
   // without weakening it.
   headers.append("content-security-policy", RUNTIME_CONTENT_SECURITY_POLICY);
@@ -119,7 +149,7 @@ export function hardenGuestResponse(response: Response, security: GuestResponseS
   for (const name of RESERVED_RESPONSE_HEADERS) {
     headers.delete(name);
   }
-  removeCspReporting(headers);
+  removeBrowserReporting(headers);
   headers.append(
     "content-security-policy",
     guestContentSecurityPolicy(security.browser, security.service),

@@ -544,6 +544,10 @@ return {
       const compiledLocation = compiledRedirect.headers.get("location");
       assert.ok(compiledLocation?.startsWith(`${server.url}/r/`));
 
+      const compiledPayload = new URL(compiledLocation).pathname.split("/").at(-1);
+      const unprefixed = await fetch(`${server.origin}/r/${compiledPayload}`);
+      assert.equal(unprefixed.status, 404);
+
       const compiled = await fetch(compiledLocation);
       assert.equal(compiled.status, 200);
       assert.equal(await compiled.text(), "compiled:Browser");

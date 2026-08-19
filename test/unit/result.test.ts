@@ -122,6 +122,11 @@ describe("script result mapping", () => {
           "cross-origin-opener-policy": 'same-origin; report-to="https://reports.example/coop"',
           "cross-origin-opener-policy-report-only":
             'same-origin; report-to="https://reports.example/coop-only"',
+          "document-isolation-policy":
+            'isolate-and-require-corp; report-to="https://reports.example/dip"',
+          "document-isolation-policy-report-only":
+            'isolate-and-require-corp; report-to="https://reports.example/dip-only"',
+          "integrity-policy-report-only": 'blocked-destinations=(script); endpoints=("leaks")',
           nel: '{"report_to":"leaks"}',
           "report-to": '{"group":"leaks","endpoints":[]}',
           "reporting-endpoints": 'leaks="https://reports.example/modern"',
@@ -135,10 +140,13 @@ describe("script result mapping", () => {
     expect(csp).toContain("img-src https://images.example");
     expect(csp).not.toMatch(/report-(?:to|uri)/u);
     expect(response.headers.get("content-security-policy-report-only")).toBeNull();
-    expect(response.headers.get("cross-origin-embedder-policy")).toBeNull();
+    expect(response.headers.get("cross-origin-embedder-policy")).toBe("require-corp");
     expect(response.headers.get("cross-origin-embedder-policy-report-only")).toBeNull();
-    expect(response.headers.get("cross-origin-opener-policy")).toBeNull();
+    expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin");
     expect(response.headers.get("cross-origin-opener-policy-report-only")).toBeNull();
+    expect(response.headers.get("document-isolation-policy")).toBe("isolate-and-require-corp");
+    expect(response.headers.get("document-isolation-policy-report-only")).toBeNull();
+    expect(response.headers.get("integrity-policy-report-only")).toBeNull();
     expect(response.headers.get("nel")).toBeNull();
     expect(response.headers.get("report-to")).toBeNull();
     expect(response.headers.get("reporting-endpoints")).toBeNull();
