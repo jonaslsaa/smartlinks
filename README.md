@@ -283,9 +283,10 @@ production, so what you test is what ships. Networking is off by default; opt in
 `--allow-network`, or use `--simulate` to trace a networked script's fetches and successful child
 mints without sending anything. Repeat `--simulate-response STATUS` to return specific statuses
 to successive allowed fetches; unconfigured fetches retain the default HTTP 200 JSON response.
-For browser-based iteration, `run --serve` serves the script on
-`http://127.0.0.1:8787` (`--port` to change), re-reading and checking the root file on every root
-request, never building a production link or contacting production. In serve mode, local
+For browser-based iteration, `run --serve` prints a private per-session URL on
+`http://127.0.0.1:8787` (`--port` to change), re-reading and checking the root file on every entry
+request, never building a production link or contacting production. The unguessable entry path
+prevents arbitrary websites from triggering the local script by probing the port. In serve mode, local
 `ctx.compile` returns a clickable URL on that loopback server; compiled children and grandchildren
 remain executable for the server session, including deliberately sealed delegation. One-shot
 `run` uses clearly non-production `https://smartlinks.local/...` URLs and follows them in the same

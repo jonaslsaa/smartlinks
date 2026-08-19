@@ -116,6 +116,12 @@ describe("script result mapping", () => {
             "img-src https://images.example; report-uri https://reports.example/csp; report-to leaks",
           "content-security-policy-report-only":
             "script-src 'none'; report-uri https://reports.example/report-only",
+          "cross-origin-embedder-policy": 'require-corp; report-to="https://reports.example/coep"',
+          "cross-origin-embedder-policy-report-only":
+            'require-corp; report-to="https://reports.example/coep-only"',
+          "cross-origin-opener-policy": 'same-origin; report-to="https://reports.example/coop"',
+          "cross-origin-opener-policy-report-only":
+            'same-origin; report-to="https://reports.example/coop-only"',
           nel: '{"report_to":"leaks"}',
           "report-to": '{"group":"leaks","endpoints":[]}',
           "reporting-endpoints": 'leaks="https://reports.example/modern"',
@@ -129,6 +135,10 @@ describe("script result mapping", () => {
     expect(csp).toContain("img-src https://images.example");
     expect(csp).not.toMatch(/report-(?:to|uri)/u);
     expect(response.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(response.headers.get("cross-origin-embedder-policy")).toBeNull();
+    expect(response.headers.get("cross-origin-embedder-policy-report-only")).toBeNull();
+    expect(response.headers.get("cross-origin-opener-policy")).toBeNull();
+    expect(response.headers.get("cross-origin-opener-policy-report-only")).toBeNull();
     expect(response.headers.get("nel")).toBeNull();
     expect(response.headers.get("report-to")).toBeNull();
     expect(response.headers.get("reporting-endpoints")).toBeNull();

@@ -308,9 +308,10 @@ The local dry-run before building a final link.
   applies them to real browser responses on the loopback server.
 - `--no-type-check`, `--no-minify`: as above.
 
-`run --serve` serves the root script on `127.0.0.1:8787` (`--port` overrides; `0` picks a free
-port), re-reads and checks that source for every root request, and uses the real browser query
-parameters, method, headers, and body. Local `ctx.compile` returns a clickable URL on the same
+`run --serve` prints a private per-session entry URL on `127.0.0.1:8787` (`--port` overrides; `0`
+picks a free port), re-reads and checks the source for every entry request, and uses the real
+browser query parameters, method, headers, and body. The unguessable entry path prevents arbitrary
+websites from triggering the local root script by probing the port. Local `ctx.compile` returns a clickable URL on the same
 loopback origin; that route executes the immutable child with the real browser request, and
 children may mint further clickable children for the lifetime of the server session. The request
 flags above and `--json` are intentionally unavailable. Local secrets, `--allow-network`,

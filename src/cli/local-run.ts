@@ -149,7 +149,16 @@ function compiledUrl(result: ScriptResult, service: string): URL | undefined {
   }
   try {
     const url = new URL(result);
-    return url.origin === service && /^\/r\/[^/]+$/u.test(url.pathname) ? url : undefined;
+    const serviceUrl = new URL(service);
+    const servicePath = serviceUrl.pathname.replace(/\/$/u, "");
+    const runnerPrefix = `${servicePath}/r/`;
+    const payload = url.pathname.slice(runnerPrefix.length);
+    return url.origin === serviceUrl.origin &&
+      url.pathname.startsWith(runnerPrefix) &&
+      payload !== "" &&
+      !payload.includes("/")
+      ? url
+      : undefined;
   } catch {
     return undefined;
   }

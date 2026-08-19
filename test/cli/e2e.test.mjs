@@ -74,12 +74,12 @@ async function startServe(script, args = [], options = {}) {
     stderr += chunk;
   });
 
-  const origin = await new Promise((resolve, reject) => {
+  const url = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error(`Serve mode did not start. stdout=${stdout} stderr=${stderr}`));
     }, 10_000);
     const inspectOutput = () => {
-      const match = stdout.match(/ at (http:\/\/127\.0\.0\.1:\d+)/u);
+      const match = stdout.match(/ at (http:\/\/127\.0\.0\.1:\d+\/local\/[A-Za-z0-9_-]+)/u);
       if (!match?.[1]) {
         return;
       }
@@ -103,8 +103,9 @@ async function startServe(script, args = [], options = {}) {
 
   return {
     child,
-    origin,
+    origin: new URL(url).origin,
     output: () => ({ stdout, stderr }),
+    url,
   };
 }
 
@@ -432,7 +433,7 @@ return {
       env: { SMARTLINKS_URL: "http://127.0.0.1:1" },
     });
     try {
-      const first = await fetch(`${server.origin}/?tag=one&tag=two&__confirm=1`, {
+      const first = await fetch(`${server.url}?tag=one&tag=two&__confirm=1`, {
         method: "POST",
         headers: { "content-type": "text/plain", "x-trace": "browser-request" },
         body: "hello",
@@ -452,7 +453,7 @@ return {
         secret: "local-secret",
       });
 
-      const oversized = await fetch(server.origin, {
+      const oversized = await fetch(server.url, {
         method: "POST",
         body: "x".repeat(1_048_577),
       });
@@ -465,14 +466,14 @@ return {
       const missing = await fetch(`${server.origin}/asset.css`);
       assert.equal(missing.status, 404);
 
-      const crossSite = await fetch(server.origin, {
+      const crossSite = await fetch(server.url, {
         headers: { accept: "text/html", origin: "https://attacker.example" },
       });
       assert.equal(crossSite.status, 403);
       assert.match(await crossSite.text(), /Cross-origin requests are not allowed/u);
 
       for (const fetchSite of ["same-site", "cross-site"]) {
-        const blocked = await requestWithHeaders(server.origin, {
+        const blocked = await requestWithHeaders(server.url, {
           accept: "text/html",
           "sec-fetch-site": fetchSite,
         });
@@ -480,12 +481,12 @@ return {
         assert.match(blocked.body, /Cross-site requests are not allowed/u, fetchSite);
       }
 
-      const wrongHost = await requestWithHeaders(server.origin, { host: "attacker.example" });
+      const wrongHost = await requestWithHeaders(server.url, { host: "attacker.example" });
       assert.equal(wrongHost.status, 400);
       assert.match(wrongHost.body, /Host header does not match/u);
 
       await writeFile(script, 'const value: number = "wrong";\nreturn { body: value };\n');
-      const typeError = await fetch(server.origin, { headers: { accept: "text/html" } });
+      const typeError = await fetch(server.url, { headers: { accept: "text/html" } });
       assert.equal(typeError.status, 422);
       const typeErrorBody = await typeError.text();
       assert.match(typeErrorBody, /Local Smartlinks preview/u);
@@ -496,12 +497,12 @@ return {
         script,
         `return { headers: { "content-type": "text/html" }, body: ${JSON.stringify(html)} };\n`,
       );
-      const edited = await fetch(server.origin);
+      const edited = await fetch(server.url);
       assert.equal(edited.status, 200);
       assert.equal(await edited.text(), html);
 
       await writeFile(script, 'return "https://example.com/next";\n');
-      const redirect = await fetch(server.origin, { redirect: "manual" });
+      const redirect = await fetch(server.url, { redirect: "manual" });
       assert.equal(redirect.status, 302);
       assert.equal(redirect.headers.get("location"), "https://example.com/next");
       assertGuestSecurityHeaders(redirect.headers);
@@ -510,23 +511,23 @@ return {
         script,
         'await fetch("https://example.com");\nreturn { body: "unreachable" };\n',
       );
-      const networkBlocked = await fetch(server.origin);
+      const networkBlocked = await fetch(server.url);
       assert.equal(networkBlocked.status, 422);
       assert.match((await networkBlocked.json()).error, /Network access is disabled/u);
 
       await writeFile(script, 'throw new Error("HEAD must not execute");\n');
-      const head = await fetch(server.origin, { method: "HEAD" });
+      const head = await fetch(server.url, { method: "HEAD" });
       assert.equal(head.status, 200);
       assert.equal(head.headers.get("x-smartlinks-preview"), "1");
       assert.equal(await head.text(), "");
 
-      const prefetch = await fetch(server.origin, { headers: { purpose: "prefetch" } });
+      const prefetch = await fetch(server.url, { headers: { purpose: "prefetch" } });
       assert.equal(prefetch.status, 200);
       assert.equal(prefetch.headers.get("x-smartlinks-preview"), "1");
       assert.equal(await prefetch.text(), "");
 
       await writeFile(script, "const completed = true;\n");
-      const defaultPage = await fetch(server.origin, { headers: { accept: "text/html" } });
+      const defaultPage = await fetch(server.url, { headers: { accept: "text/html" } });
       assert.equal(defaultPage.status, 200);
       assert.equal(defaultPage.headers.get("x-smartlinks-preview"), null);
       assertRuntimeSecurityHeaders(defaultPage.headers);
@@ -536,12 +537,12 @@ return {
         script,
         'const child = async (_childCtx: typeof ctx, name: string) => ({ body: "compiled:" + name });\nreturn ctx.compile(child, [ctx.params.name ?? "world"], { allowCrawlers: true });\n',
       );
-      const compiledRedirect = await fetch(`${server.origin}/?name=Browser`, {
+      const compiledRedirect = await fetch(`${server.url}?name=Browser`, {
         redirect: "manual",
       });
       assert.equal(compiledRedirect.status, 302);
       const compiledLocation = compiledRedirect.headers.get("location");
-      assert.ok(compiledLocation?.startsWith(`${server.origin}/r/`));
+      assert.ok(compiledLocation?.startsWith(`${server.url}/r/`));
 
       const compiled = await fetch(compiledLocation);
       assert.equal(compiled.status, 200);
@@ -587,10 +588,10 @@ return {
 };
 `,
       );
-      const parentPage = await fetch(server.origin);
+      const parentPage = await fetch(server.url);
       assert.equal(parentPage.status, 200);
       const childHref = (await parentPage.text()).match(/href="([^"]+)"/u)?.[1];
-      assert.ok(childHref?.startsWith(`${server.origin}/r/`));
+      assert.ok(childHref?.startsWith(`${server.url}/r/`));
       assert.equal(childHref.includes("smartlinks.local"), false);
 
       await writeFile(
@@ -600,7 +601,7 @@ return {
       const childPage = await fetch(childHref);
       assert.equal(childPage.status, 200);
       const leafHref = (await childPage.text()).match(/href="([^"]+)"/u)?.[1];
-      assert.ok(leafHref?.startsWith(`${server.origin}/r/`));
+      assert.ok(leafHref?.startsWith(`${server.url}/r/`));
 
       const leafUrl = new URL(leafHref);
       leafUrl.searchParams.set("query", "clicked");
@@ -625,7 +626,7 @@ return {
         script,
         `return { bodyBase64: ${JSON.stringify(binary.toString("base64"))} };\n`,
       );
-      const binaryResponse = await fetch(server.origin);
+      const binaryResponse = await fetch(server.url);
       assert.equal(binaryResponse.headers.get("content-type"), "application/octet-stream");
       assert.deepEqual(Buffer.from(await binaryResponse.arrayBuffer()), binary);
     } finally {
@@ -674,7 +675,7 @@ test("run --serve applies browser capabilities and CORS with production semantic
         "--cors",
       ]);
       try {
-        const preflight = await fetch(server.origin, {
+        const preflight = await fetch(server.url, {
           method: "OPTIONS",
           headers: {
             origin: "https://caller.example",
@@ -685,7 +686,7 @@ test("run --serve applies browser capabilities and CORS with production semantic
         assert.equal(preflight.status, 204);
         assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
 
-        const response = await fetch(server.origin, {
+        const response = await fetch(server.url, {
           headers: { origin: "https://caller.example", "sec-fetch-site": "cross-site" },
         });
         const policy = response.headers.get("content-security-policy") ?? "";
@@ -709,7 +710,14 @@ test("run --serve leaves exact-origin embedding decisions to the browser CSP", a
   await withTemporaryScript("js", 'return { body: "embedded" };\n', async (script) => {
     const server = await startServe(script, ["--allow-embed", "https://host.example"]);
     try {
-      const response = await requestWithHeaders(server.origin, {
+      const guessedRoot = await requestWithHeaders(server.origin, {
+        "sec-fetch-dest": "iframe",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "cross-site",
+      });
+      assert.equal(guessedRoot.status, 403);
+
+      const response = await requestWithHeaders(server.url, {
         "sec-fetch-dest": "iframe",
         "sec-fetch-mode": "navigate",
         "sec-fetch-site": "cross-site",
@@ -730,11 +738,12 @@ test("run --serve keeps opted-in failures readable to cross-origin callers", asy
   await withTemporaryScript("js", 'throw new Error("guest failure");\n', async (script) => {
     const server = await startServe(script, ["--cors"]);
     try {
-      const response = await fetch(server.origin, {
+      const response = await fetch(server.url, {
         headers: { origin: "https://caller.example" },
       });
       assert.equal(response.status, 422);
       assert.equal(response.headers.get("access-control-allow-origin"), "*");
+      assertRuntimeSecurityHeaders(response.headers);
       assert.deepEqual(await response.json(), { error: "guest failure" });
     } finally {
       await stopServe(server);

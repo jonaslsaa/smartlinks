@@ -2,16 +2,19 @@ import { RequestBodyTooLargeError, readBoundedRequestBody } from "../shared/requ
 import { hardenResponse } from "../shared/response-security.js";
 
 type HttpErrorOptions = ErrorOptions & {
+  credentialFreeCors?: boolean;
   headers?: HeadersInit;
 };
 
 export class HttpError extends Error {
+  readonly credentialFreeCors: boolean;
   readonly headers: Headers;
   readonly status: number;
 
   constructor(status: number, message: string, options?: HttpErrorOptions) {
     super(message, options);
     this.name = "HttpError";
+    this.credentialFreeCors = options?.credentialFreeCors === true;
     this.headers = new Headers(options?.headers);
     this.status = status;
   }
@@ -37,7 +40,7 @@ export function json(value: unknown, init: ResponseInit = {}): Response {
   headers.set("content-type", "application/json; charset=utf-8");
   headers.set("cache-control", "no-store");
   headers.set("x-content-type-options", "nosniff");
-  return Response.json(value, { ...init, headers });
+  return hardenResponse(Response.json(value, { ...init, headers }));
 }
 
 export async function readBoundedBody(

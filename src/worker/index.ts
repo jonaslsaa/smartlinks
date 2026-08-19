@@ -13,8 +13,8 @@ import {
 } from "../shared/request-context.js";
 import {
   corsPreflightResponse,
+  credentialFreeCorsResponse,
   type GuestResponseSecurity,
-  setCredentialFreeCorsHeaders,
 } from "../shared/response-security.js";
 import {
   InvalidScriptResponseError,
@@ -274,14 +274,17 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
     if (decoded.envelope.cors !== true) {
       throw error;
     }
-    const corsError =
+    const sourceError =
       error instanceof HttpError
         ? error
         : error instanceof ZodError
           ? new HttpError(400, error.message, { cause: error })
           : new HttpError(500, "Internal server error.", { cause: error });
-    setCredentialFreeCorsHeaders(corsError.headers);
-    throw corsError;
+    throw new HttpError(sourceError.status, sourceError.message, {
+      cause: sourceError.cause ?? sourceError,
+      credentialFreeCors: true,
+      headers: sourceError.headers,
+    });
   }
 }
 
@@ -399,7 +402,10 @@ export default {
       if (error instanceof HttpError) {
         responseInit.headers = error.headers;
       }
-      return json({ error: message }, responseInit);
+      const response = json({ error: message }, responseInit);
+      return error instanceof HttpError && error.credentialFreeCors
+        ? credentialFreeCorsResponse(response)
+        : response;
     }
   },
 } satisfies ExportedHandler<Env>;
