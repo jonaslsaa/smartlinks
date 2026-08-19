@@ -74,12 +74,15 @@ except `set-cookie`, `clear-site-data`, `x-smartlinks-preview`, and CORS respons
 boundaries are runtime-owned: an executed response cannot spoof preview status, acquire cookie
 state, or opt itself into CORS.
 
-A response can be a complete HTML document. The script cannot read its own URL, but relative
-references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the
-same link with new parameters; add `cache-control: no-store` when each execution should differ.
-To display or hand out an absolute working URL instead, mint a child with `ctx.compile` — the only
-URL an execution can obtain — at the cost of its single mint. Escape every interpolated value:
-query parameters and fetched data are attacker-controlled.
+A response can be a complete HTML document. Guest execution does not receive the current request
+URL directly, and the default `no-referrer` policy keeps it unavailable. Relative references still
+resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the same link with
+new parameters; add `cache-control: no-store` when each execution should differ. `referrer: full`
+deliberately exposes the previous page's complete URL to eligible later requests through
+`ctx.headers.referer` or `document.referrer`. To display or hand out a fresh absolute working URL,
+mint a child with `ctx.compile` — the only current execution URL the runtime supplies — at the cost
+of its single mint. Escape every interpolated value: query parameters and fetched data are
+attacker-controlled.
 
 ### Browser policy
 
