@@ -7,6 +7,12 @@ import { Command, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
 import { generateAuthorKeyPair, verifyAuthorProof } from "../shared/author.js";
 import {
+  type BrowserPolicy,
+  type BrowserSource,
+  browserSourceSchema,
+  normalizeBrowserPolicy,
+} from "../shared/browser-policy.js";
+import {
   decodePayload,
   formatNotAfter,
   isExpired,
@@ -63,7 +69,7 @@ type BuildOptions = {
   out?: string;
   json?: boolean;
   sign: boolean;
-};
+} & BrowserCliOptions;
 
 type RunOptions = {
   allowNetwork?: boolean;
@@ -79,7 +85,107 @@ type RunOptions = {
   serve?: boolean;
   typeCheck: boolean;
   json?: boolean;
+} & BrowserCliOptions;
+
+type BrowserCliOptions = {
+  allowScript: BrowserSource[];
+  allowConnect: BrowserSource[];
+  allowImage: BrowserSource[];
+  allowStyle: BrowserSource[];
+  allowFont: BrowserSource[];
+  allowMedia: BrowserSource[];
+  allowFrame: BrowserSource[];
+  allowForm: BrowserSource[];
+  allowEmbed: BrowserSource[];
+  referrer?: "none" | "origin" | "full";
+  cors?: boolean;
 };
+
+function collectBrowserSource(value: string, previous: BrowserSource[]): BrowserSource[] {
+  const parsed = browserSourceSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new InvalidArgumentError(parsed.error.issues[0]?.message ?? "Invalid browser source.");
+  }
+  return [...previous, parsed.data];
+}
+
+function browserPolicyFromCli(options: BrowserCliOptions): BrowserPolicy | undefined {
+  return normalizeBrowserPolicy({
+    scripts: options.allowScript,
+    connect: options.allowConnect,
+    images: options.allowImage,
+    styles: options.allowStyle,
+    fonts: options.allowFont,
+    media: options.allowMedia,
+    frames: options.allowFrame,
+    forms: options.allowForm,
+    embeddableBy: options.allowEmbed,
+    ...(options.referrer === undefined ? {} : { referrer: options.referrer }),
+  });
+}
+
+function addBrowserOptions(command: Command, interstitialConflicts = false): Command {
+  const source = "source: self, https, all, or an exact HTTPS origin; repeatable";
+  const embed = new Option(
+    "--allow-embed <source>",
+    `allow the source to embed the result; ${source}`,
+  )
+    .argParser(collectBrowserSource)
+    .default([]);
+  if (interstitialConflicts) {
+    embed.conflicts(["interstitial", "interstitialNote"]);
+  }
+  return command
+    .addOption(
+      new Option("--allow-script <source>", `allow external browser scripts; ${source}`)
+        .argParser(collectBrowserSource)
+        .default([]),
+    )
+    .addOption(
+      new Option("--allow-connect <source>", `allow browser fetch/WebSocket access; ${source}`)
+        .argParser(collectBrowserSource)
+        .default([]),
+    )
+    .addOption(
+      new Option("--allow-image <source>", `allow image loads; ${source}`)
+        .argParser(collectBrowserSource)
+        .default([]),
+    )
+    .addOption(
+      new Option("--allow-style <source>", `allow external stylesheets; ${source}`)
+        .argParser(collectBrowserSource)
+        .default([]),
+    )
+    .addOption(
+      new Option("--allow-font <source>", `allow font loads; ${source}`)
+        .argParser(collectBrowserSource)
+        .default([]),
+    )
+    .addOption(
+      new Option("--allow-media <source>", `allow audio and video loads; ${source}`)
+        .argParser(collectBrowserSource)
+        .default([]),
+    )
+    .addOption(
+      new Option("--allow-frame <source>", `allow embedded documents; ${source}`)
+        .argParser(collectBrowserSource)
+        .default([]),
+    )
+    .addOption(
+      new Option("--allow-form <source>", `allow form submissions; ${source}`)
+        .argParser(collectBrowserSource)
+        .default([]),
+    )
+    .addOption(embed)
+    .addOption(
+      new Option("--referrer <level>", "referrer disclosure: none, origin, or full").choices([
+        "none",
+        "origin",
+        "full",
+      ]),
+    )
+    .option("--cors", "allow credential-free cross-origin browser calls and preflight");
+}
 
 function parsePort(value: string): number {
   const port = Number(value);
@@ -224,6 +330,7 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
     typeCheck: options.typeCheck,
   });
   const secrets = await resolveSecrets(options.secret, { prompt: interactive });
+  const browser = browserPolicyFromCli(options);
 
   let publicKey: z.infer<typeof publicKeySchema> | undefined;
   if (Object.keys(secrets).length > 0) {
@@ -246,6 +353,8 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
         ? {}
         : { interstitialNote: options.interstitialNote }),
       ...(notAfter !== undefined ? { notAfter } : {}),
+      ...(browser ? { browser } : {}),
+      ...(options.cors === true ? { cors: true } : {}),
       minify: options.minify,
       ...(author ? { author: { certificate: author.certificate, key: authorKey(author) } } : {}),
     });
@@ -301,6 +410,8 @@ async function buildCommand(file: string, options: BuildOptions): Promise<void> 
           payloadCharacters: created.payload.length,
           payloadVersion: 2,
           allowCrawlers: options.allowCrawlers === true,
+          browser: browser ?? null,
+          cors: options.cors === true,
           ...(created.interstitialNote === undefined
             ? {}
             : { interstitialNote: created.interstitialNote }),
@@ -367,6 +478,8 @@ async function decodeCommand(input: string, options: { json?: boolean }): Promis
     `Version: ${metadata.payloadVersion}`,
     `Confirmation: ${metadata.interstitial ? "yes" : "no"}`,
     `Known crawler GETs: ${metadata.allowCrawlers ? "allowed" : "previewed"}`,
+    `Browser access: ${metadata.browser === null ? "default isolated page" : JSON.stringify(metadata.browser)}`,
+    `Cross-origin target: ${metadata.cors ? "allowed without credentials" : "no"}`,
     `Compile closures: ${metadata.compileClosures}`,
     `Sealed secrets: ${metadata.sealedSecrets.join(", ") || "none"}`,
     `Expiry: ${metadata.expiresAt === null ? "never" : `${metadata.expiresAt}${metadata.expired ? " (expired)" : ""}`}`,
@@ -495,6 +608,7 @@ async function whoamiCommand(options: { json?: boolean }): Promise<void> {
 
 async function runCommand(file: string, options: RunOptions): Promise<void> {
   const interactive = startUi("smartlinks run", options.json === true);
+  const browser = browserPolicyFromCli(options);
   const parameters = options.param.map((value) => splitAssignment(value, "Parameter"));
   const requestHeaders = options.header.map((value) => splitAssignment(value, "Header"));
   const executionOptions = {
@@ -509,6 +623,8 @@ async function runCommand(file: string, options: RunOptions): Promise<void> {
     simulate: options.simulate === true,
     simulationResponses: options.simulateResponse,
     typeCheck: options.typeCheck,
+    ...(browser ? { browser } : {}),
+    ...(options.cors === true ? { cors: true as const } : {}),
   };
 
   if (options.serve) {
@@ -702,22 +818,24 @@ const program = new Command()
     `\nExamples:\n  smartlinks build script.js --interstitial\n  smartlinks build script.js --secret GITHUB_TOKEN --copy\n  smartlinks decode 'https://service.example/r/2…'\n  smartlinks run script.js --param owner=jonaslsaa\n`,
   );
 
-program
-  .command("build")
-  .description("Minify a script and build an executable smartlink.")
-  .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to encode")
-  .option("-i, --interstitial", "require browser confirmation before execution")
-  .option("--interstitial-note <text>", "add an author note and require browser confirmation")
-  .option("--allow-crawlers", "let known crawlers and image proxies execute GET requests")
-  .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
-  .option("--expires <duration-or-date>", "expire after a duration or at an ISO 8601 date")
-  .option("--copy", "copy the link and print a fingerprint receipt")
-  .option("--out <file>", "write the link privately and print a fingerprint receipt")
-  .option("--json", "print machine-readable output")
-  .option("--no-sign", "build unsigned even when an author identity is configured")
-  .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
-  .addOption(new Option("--no-minify", "skip JavaScript minification"))
-  .action(buildCommand);
+addBrowserOptions(
+  program
+    .command("build")
+    .description("Minify a script and build an executable smartlink.")
+    .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to encode")
+    .option("-i, --interstitial", "require browser confirmation before execution")
+    .option("--interstitial-note <text>", "add an author note and require browser confirmation")
+    .option("--allow-crawlers", "let known crawlers and image proxies execute GET requests")
+    .option("-s, --secret <NAME[=value]>", "seal a secret; repeatable", collect, [])
+    .option("--expires <duration-or-date>", "expire after a duration or at an ISO 8601 date")
+    .option("--copy", "copy the link and print a fingerprint receipt")
+    .option("--out <file>", "write the link privately and print a fingerprint receipt")
+    .option("--json", "print machine-readable output")
+    .option("--no-sign", "build unsigned even when an author identity is configured")
+    .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
+    .addOption(new Option("--no-minify", "skip JavaScript minification")),
+  true,
+).action(buildCommand);
 
 program
   .command("login")
@@ -742,57 +860,58 @@ program
   .option("--json", "print machine-readable output")
   .action(decodeCommand);
 
-program
-  .command("run")
-  .description("Execute a script locally in the production QuickJS sandbox.")
-  .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to execute")
-  .addOption(
-    new Option("-p, --param <NAME=value>", "query parameter; repeatable")
-      .argParser(collect)
-      .default([])
-      .conflicts("serve"),
-  )
-  .option("-s, --secret <NAME[=value]>", "secret from value, environment, or prompt", collect, [])
-  .addOption(
-    new Option("-H, --header <NAME=value>", "request header; repeatable")
-      .argParser(collect)
-      .default([])
-      .conflicts("serve"),
-  )
-  .addOption(
-    new Option("-X, --method <method>", "request method").default("GET").conflicts("serve"),
-  )
-  .addOption(new Option("--body <text>", "request body").conflicts("serve"))
-  .addOption(
-    new Option("--allow-network", "allow guarded outbound fetch calls").conflicts("simulate"),
-  )
-  .addOption(
-    new Option("--simulate", "trace fetch calls without sending network requests").conflicts([
-      "allowNetwork",
-      "serve",
-    ]),
-  )
-  .addOption(
-    new Option(
-      "--simulate-response <status>",
-      "status for the next allowed simulated fetch; repeatable, no redirects",
+addBrowserOptions(
+  program
+    .command("run")
+    .description("Execute a script locally in the production QuickJS sandbox.")
+    .argument("<script.js|script.ts>", "JavaScript or TypeScript function body to execute")
+    .addOption(
+      new Option("-p, --param <NAME=value>", "query parameter; repeatable")
+        .argParser(collect)
+        .default([])
+        .conflicts("serve"),
     )
-      .argParser(collectSimulationResponse)
-      .default([])
-      .implies({ simulate: true })
-      .conflicts(["allowNetwork", "serve"]),
-  )
-  .option("--serve", "serve the script on a loopback HTTP server")
-  .addOption(
-    new Option("--port <number>", "serve port; use 0 to choose an available port")
-      .argParser(parsePort)
-      .default(8787)
-      .implies({ serve: true }),
-  )
-  .addOption(new Option("--json", "print machine-readable output").conflicts("serve"))
-  .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
-  .addOption(new Option("--no-minify", "skip JavaScript minification"))
-  .action(runCommand);
+    .option("-s, --secret <NAME[=value]>", "secret from value, environment, or prompt", collect, [])
+    .addOption(
+      new Option("-H, --header <NAME=value>", "request header; repeatable")
+        .argParser(collect)
+        .default([])
+        .conflicts("serve"),
+    )
+    .addOption(
+      new Option("-X, --method <method>", "request method").default("GET").conflicts("serve"),
+    )
+    .addOption(new Option("--body <text>", "request body").conflicts("serve"))
+    .addOption(
+      new Option("--allow-network", "allow guarded outbound fetch calls").conflicts("simulate"),
+    )
+    .addOption(
+      new Option("--simulate", "trace fetch calls without sending network requests").conflicts([
+        "allowNetwork",
+        "serve",
+      ]),
+    )
+    .addOption(
+      new Option(
+        "--simulate-response <status>",
+        "status for the next allowed simulated fetch; repeatable, no redirects",
+      )
+        .argParser(collectSimulationResponse)
+        .default([])
+        .implies({ simulate: true })
+        .conflicts(["allowNetwork", "serve"]),
+    )
+    .option("--serve", "serve the script on a loopback HTTP server")
+    .addOption(
+      new Option("--port <number>", "serve port; use 0 to choose an available port")
+        .argParser(parsePort)
+        .default(8787)
+        .implies({ serve: true }),
+    )
+    .addOption(new Option("--json", "print machine-readable output").conflicts("serve"))
+    .addOption(new Option("--no-type-check", "skip strict type checking for TypeScript input"))
+    .addOption(new Option("--no-minify", "skip JavaScript minification")),
+).action(runCommand);
 
 program
   .command("keygen", { hidden: true })

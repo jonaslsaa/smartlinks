@@ -31,6 +31,8 @@ async function signedPayload(now = FIXTURE_NOW) {
       allowCrawlers: true,
       notAfter: now + 1_800,
       interstitialNote: "Signed release helper",
+      browser: { scripts: ["https"] },
+      cors: true,
     },
     certificate,
     author,
@@ -101,6 +103,14 @@ describe("author signatures", () => {
       "author note",
       (decoded: DecodedPayload) => ({ ...decoded.envelope, interstitialNote: "Changed note" }),
     ],
+    [
+      "browser policy",
+      (decoded: DecodedPayload) => ({
+        ...decoded.envelope,
+        browser: { scripts: ["https://cdn.example" as const] },
+      }),
+    ],
+    ["CORS policy", (decoded: DecodedPayload) => ({ ...decoded.envelope, cors: undefined })],
   ] as const)("rejects a mutation to %s", async (_field, mutate) => {
     const fixture = await signedPayload();
     const tampered: DecodedPayload = {

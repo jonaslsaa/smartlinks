@@ -65,22 +65,43 @@ For an interstitial Smartlink, cross-origin 307/308 redirects are rejected; retu
 bare URL for navigation.
 `body` and `bodyBase64` are mutually exclusive. `bodyBase64` accepts padded or unpadded Base64,
 is limited to 1 MiB after decoding, and defaults to `application/octet-stream` when headers do
-not supply a content type; `content-disposition` remains author-controlled. Every mapped response
-receives the runtime's fixed Content Security Policy, `Referrer-Policy: no-referrer`,
-`X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`. An author CSP is enforced in
-addition to the runtime policy, so it may tighten but cannot weaken the floor; other headers remain
-author-controlled except `set-cookie`, `clear-site-data`, and `x-smartlinks-preview`. Browser
-cookie state is deliberately unsupported: responses cannot mutate it and requests never expose it
-to guest code. The preview marker is runtime-owned so an executed response cannot spoof it.
+not supply a content type; `content-disposition` remains author-controlled. Every authored
+response receives `X-Content-Type-Options: nosniff` and the artifact's authenticated browser
+policy. An author CSP is enforced as an additional policy, so it may tighten but cannot weaken the
+runtime floor. Other headers remain author-controlled except `set-cookie`, `clear-site-data`,
+`x-smartlinks-preview`, and CORS response headers. Those boundaries are runtime-owned: an executed
+response cannot spoof preview status, acquire cookie state, or opt itself into CORS.
 
 A response can be a complete HTML document. The script cannot read its own URL, but relative
 references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the
 same link with new parameters; add `cache-control: no-store` when each execution should differ.
 To display or hand out an absolute working URL instead, mint a child with `ctx.compile` — the only
-URL an execution can obtain — at the cost of its single mint.
-The runtime policy permits inline styles and same-origin forms while blocking scripts and external
-subresources. Escape every interpolated value — query parameters and fetched data are
-attacker-controlled.
+URL an execution can obtain — at the cost of its single mint. Escape every interpolated value:
+query parameters and fetched data are attacker-controlled.
+
+### Browser policy
+
+Authored responses always run under CSP `sandbox` without `allow-same-origin`. Inline scripts and
+styles, dynamic JavaScript and Wasm, data/blob assets and workers, forms back to the runtime,
+user-activated navigation, downloads, dialogs, and popups work by default. The opaque origin means
+cookies, persistent storage, service workers, and DOM access between Smartlinks remain unavailable
+even though they share a hostname. Runtime-owned previews, interstitials, errors, decoder pages,
+and the default completion page keep their separate strict non-executing policy.
+
+External boundaries are stored in the artifact's `browser` policy and shown by `decode`. Each
+source is `self`, `https`, `all`, or an exact HTTPS origin without a path or credentials. `self`
+is emitted as the explicit runtime origin because the page itself has an opaque origin; `https`
+allows any HTTPS origin; `all` is unrestricted and is the only embedding value that also matches
+opaque Smartlink parents. Fields are `scripts`, `connect`, `images`,
+`styles`, `fonts`, `media`, `frames`, `forms`, `embeddableBy`, and `referrer` (`none`, `origin`, or
+`full`). Omitted external fields allow nothing. Omitted `embeddableBy` makes the response
+nonembeddable; an author-supplied framing header may further restrict an embeddable artifact.
+
+`cors: true` makes the artifact a credential-free cross-origin target: the runtime owns wildcard
+CORS response headers and answers valid preflights before rate limiting or guest execution. It
+does not let the page initiate a request; the calling artifact separately needs the target in
+`browser.connect`. Opaque Smartlink pages send `Origin: null`, so origin-specific credentialed
+CORS is deliberately unavailable until artifacts have distinct origins.
 
 TypeScript is checked in isolation with strict compiler settings and built-in types for `ctx`,
 global `fetch`, and valid script results — no project `tsconfig`, no import resolution. The link
@@ -96,7 +117,8 @@ Tokens let a link hand the client state the client can neither read nor forge, a
 a later request.
 
 Without options, a token is bound to the exact artifact: identical script, closures, expiry,
-interstitial and crawler-execution policy, author note, authority, and sealed-secret ciphertexts.
+interstitial, crawler-execution and browser policy, CORS choice, author note, authority, and
+sealed-secret ciphertexts.
 Rebuilding with any change (including rebuilding the same secrets, whose sealing uses fresh
 randomness) rotates the key and invalidates outstanding tokens by design; children minted with
 `ctx.compile` are distinct artifacts and never share transparent tokens with their parent.
@@ -178,6 +200,9 @@ Options:
   overrides the parent and omission inherits. `HEAD` and explicit prefetch remain non-executing.
 - `note?: string` — child-specific author note, implies an interstitial. Notes do not inherit,
   and `note` cannot combine with `interstitial: false`.
+- `browser?: SmartlinksBrowserPolicy` and `cors?: true` — the child's browser boundary, chosen
+  independently rather than inherited. A child with nonempty `browser.embeddableBy` must
+  explicitly set `interstitial: false`; `note` is then impossible.
 - `seal?: Record<string, string>` — strings to encrypt for the child's `ctx.secrets`, each value
   at most 1,024 characters: direct parent secrets, derived values, or generated values.
 
@@ -223,6 +248,13 @@ not exist.
   max) and require confirmation.
 - `--allow-crawlers`: allow known crawler and image-proxy GETs to execute. Use only when the
   response itself is meant for them; all ordinary execution policies still apply.
+- Repeat `--allow-script`, `--allow-connect`, `--allow-image`, `--allow-style`, `--allow-font`,
+  `--allow-media`, `--allow-frame`, `--allow-form`, or `--allow-embed` with `self`, `https`,
+  `all`, or an exact HTTPS origin. These set the matching browser-policy field. Inline script and
+  style need no flag. `--allow-embed` cannot combine with an interstitial.
+- `--referrer none|origin|full`: disclosure policy; omission is `none`.
+- `--cors`: make this artifact a credential-free cross-origin target and answer preflight without
+  executing it. Callers still need `--allow-connect` for this origin.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline.
 - `--expires VALUE`: a duration (`30m`, `1h`, `7d`) or absolute ISO 8601 date, stored as integer
   Unix seconds in UTC; past dates are rejected.
@@ -265,6 +297,8 @@ The local dry-run before building a final link.
 - `--simulate-response STATUS`: imply simulation and set the next allowed fetch's status;
   repeatable. Redirect statuses are unsupported.
 - `--json`: machine-readable mapped response, or the simulation report with `--simulate`.
+- The same `--allow-*`, `--referrer`, and `--cors` browser-policy flags as `build`; `run --serve`
+  applies them to real browser responses on the loopback server.
 - `--no-type-check`, `--no-minify`: as above.
 
 `run --serve` serves the root script on `127.0.0.1:8787` (`--port` overrides; `0` picks a free
@@ -388,6 +422,11 @@ fails open or closed.
   response from the configured Smartlinks runtime: disable redirect following and verify the
   response origin before trusting it.
   Absence alone does not prove execution. Detection is intentionally best-effort.
+- Authored browser responses are always opaque-origin CSP sandboxes. Browser capability fields
+  may open external resources, connections, form targets, embedding, or referrer disclosure, but
+  cannot enable `allow-same-origin`, cookies, persistent storage, or service workers. CORS is
+  wildcard and credential-free. No browser capability implies an interstitial; embedding and an
+  interstitial are instead mechanically incompatible.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 
 ## Budgeting the payload

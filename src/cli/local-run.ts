@@ -1,3 +1,4 @@
+import type { BrowserPolicy } from "../shared/browser-policy.js";
 import { toBase64Url, utf8 } from "../shared/bytes.js";
 import {
   type DecodedPayload,
@@ -58,6 +59,8 @@ type LocalProgram = {
   closures: readonly string[];
   context: SandboxContext;
   simulation?: LocalSimulation;
+  browser?: BrowserPolicy;
+  cors?: true;
 };
 
 type LocalRuntimeOptions = {
@@ -153,8 +156,18 @@ function compiledUrl(result: ScriptResult, service: string): URL | undefined {
 }
 
 export type LocalRuntime = {
-  executePayload(payload: string, context: Omit<SandboxContext, "secrets">): Promise<ScriptResult>;
-  executeProgram(program: LocalProgram): Promise<ScriptResult>;
+  service: string;
+  executePayload(
+    payload: string,
+    context: Omit<SandboxContext, "secrets">,
+  ): Promise<LocalExecutionResult>;
+  executeProgram(program: LocalProgram): Promise<LocalExecutionResult>;
+};
+
+export type LocalExecutionResult = {
+  artifact: DecodedPayload;
+  result: ScriptResult;
+  service: string;
 };
 
 export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
@@ -200,20 +213,20 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
     initialDecoded: DecodedPayload,
     initialContext: SandboxContext,
     simulation?: LocalSimulation,
-  ): Promise<ScriptResult> => {
+  ): Promise<LocalExecutionResult> => {
     const environment = executionEnvironment(simulation);
     let decoded = initialDecoded;
     let context = initialContext;
     let result = await execute(decoded, context, environment, service, 1);
 
     if (!options.followCompiledLinks) {
-      return result;
+      return { artifact: decoded, result, service };
     }
 
     for (let followed = 0; ; followed += 1) {
       const url = compiledUrl(result, service);
       if (!url) {
-        return result;
+        return { artifact: decoded, result, service };
       }
       if (followed >= MAX_COMPILE_REDIRECTS) {
         throw new Error(
@@ -241,6 +254,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
   };
 
   return {
+    service,
     async executePayload(payload, context) {
       const decoded = decodePayload(payload);
       if (isExpired(decoded.envelope.notAfter)) {
@@ -258,6 +272,8 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
           envelope: {
             s: program.source,
             ...(program.closures.length ? { c: [...program.closures] } : {}),
+            ...(program.browser ? { browser: program.browser } : {}),
+            ...(program.cors === true ? { cors: true } : {}),
           },
         },
         program.context,
@@ -269,7 +285,7 @@ export function createLocalRuntime(options: LocalRuntimeOptions): LocalRuntime {
 
 export async function runLocalProgram(
   program: LocalProgram & Pick<LocalRuntimeOptions, "allowNetwork" | "blockedHostnames">,
-): Promise<ScriptResult> {
+): Promise<LocalExecutionResult> {
   if (program.allowNetwork && program.simulation) {
     throw new Error("Network access and network simulation cannot be enabled together.");
   }

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isCrawlerRequest, isPreviewRequest } from "../shared/bots.js";
+import type { BrowserPolicy, BrowserSource } from "../shared/browser-policy.js";
 import { decodePayload } from "../shared/codec.js";
 import { MAX_REQUEST_BODY_BYTES, RequestBodyTooLargeError } from "../shared/request-context.js";
 import { hardenResponse, markPreviewResponse } from "../shared/response-security.js";
@@ -135,17 +136,69 @@ async function webRequest(request: IncomingMessage, origin: string): Promise<Req
   return new Request(url, init);
 }
 
-function validateBrowserBoundary(request: IncomingMessage, origin: string): void {
+function validateBrowserBoundary(
+  request: IncomingMessage,
+  origin: string,
+  policy: { browser?: BrowserPolicy; cors: boolean },
+): void {
   if (request.headers.host !== new URL(origin).host) {
     throw new ServeRequestError(400, "The Host header does not match the local server.");
   }
-  if (request.headers.origin !== undefined && request.headers.origin !== origin) {
+  const requestOrigin = request.headers.origin;
+  const opaqueNavigation =
+    requestOrigin === "null" && request.headers["sec-fetch-mode"] === "navigate";
+  if (
+    requestOrigin !== undefined &&
+    requestOrigin !== origin &&
+    !opaqueNavigation &&
+    !policy.cors
+  ) {
     throw new ServeRequestError(403, "Cross-origin requests are not allowed.");
   }
   const fetchSite = request.headers["sec-fetch-site"];
-  if (fetchSite !== undefined && fetchSite !== "none" && fetchSite !== "same-origin") {
+  const crossSiteEmbedding =
+    (request.method === "GET" || request.method === "HEAD") &&
+    (request.headers["sec-fetch-dest"] === "iframe" ||
+      request.headers["sec-fetch-dest"] === "frame") &&
+    allowsEmbeddingRequest(request, origin, policy.browser?.embeddableBy);
+  if (
+    fetchSite !== undefined &&
+    fetchSite !== "none" &&
+    fetchSite !== "same-origin" &&
+    !opaqueNavigation &&
+    !crossSiteEmbedding &&
+    !policy.cors
+  ) {
     throw new ServeRequestError(403, "Cross-site requests are not allowed.");
   }
+}
+
+function allowsEmbeddingRequest(
+  request: IncomingMessage,
+  runtimeOrigin: string,
+  sources: BrowserSource[] | undefined,
+): boolean {
+  if (!sources?.length) {
+    return false;
+  }
+  if (sources.includes("all")) {
+    return true;
+  }
+  const referer = request.headers.referer;
+  if (referer === undefined) {
+    return false;
+  }
+  let ancestorOrigin: string;
+  try {
+    ancestorOrigin = new URL(referer).origin;
+  } catch {
+    return false;
+  }
+  return sources.some((source) => {
+    if (source === "self") return ancestorOrigin === runtimeOrigin;
+    if (source === "https") return ancestorOrigin.startsWith("https://");
+    return source === ancestorOrigin;
+  });
 }
 
 function errorResponse(error: unknown, accept: string | undefined): Response {
@@ -210,20 +263,29 @@ async function handleRequest(
   runtime: LocalRuntime | undefined,
 ): Promise<void> {
   try {
-    validateBrowserBoundary(incoming, origin);
+    const incomingUrl = new URL(incoming.url ?? "/", origin);
+    const payload = runnerPayload(incomingUrl.pathname);
+    const artifact = payload === undefined ? undefined : decodePayload(payload);
+    validateBrowserBoundary(incoming, origin, {
+      cors: artifact?.envelope.cors === true || (payload === undefined && options.cors === true),
+      ...(artifact?.envelope.browser
+        ? { browser: artifact.envelope.browser }
+        : payload === undefined && options.browser
+          ? { browser: options.browser }
+          : {}),
+    });
     const request = await webRequest(incoming, origin);
-    const { pathname } = new URL(request.url);
+    const { pathname } = incomingUrl;
     if (pathname === "/favicon.ico") {
       await writeResponse(incoming.method, outgoing, new Response(null, { status: 204 }));
       return;
     }
-    const payload = runnerPayload(pathname);
     if (pathname !== "/" && payload === undefined) {
       throw new ServeRequestError(404, "Only the root and locally compiled paths are served.");
     }
     const allowCrawlers =
       payload !== undefined && isCrawlerRequest(request)
-        ? decodePayload(payload).envelope.allowCrawlers === true
+        ? artifact?.envelope.allowCrawlers === true
         : false;
     if (isPreviewRequest(request, allowCrawlers)) {
       await writeResponse(

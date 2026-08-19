@@ -1,6 +1,12 @@
 import { deflateSync, Inflate } from "fflate";
 import { z } from "zod";
 import { authorProofSchema } from "./author.js";
+import {
+  browserPolicySchema,
+  browserSettingsFromWire,
+  browserSettingsToWire,
+  wireBrowserSettingsSchema,
+} from "./browser-policy.js";
 import { fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
 
 export const CURRENT_PAYLOAD_VERSION = "2" as const;
@@ -66,6 +72,8 @@ const envelopeObjectSchema = z
     allowCrawlers: z.literal(true).optional(),
     notAfter: notAfterSchema.optional(),
     interstitialNote: interstitialNoteSchema.optional(),
+    browser: browserPolicySchema.optional(),
+    cors: z.literal(true).optional(),
     u: authorProofSchema.optional(),
   })
   .strict();
@@ -83,11 +91,24 @@ export const envelopeSchema = envelopeObjectSchema.superRefine((envelope, contex
       message: "Signed sealed secrets require an author proof.",
     });
   }
+  if (envelope.i === true && envelope.browser?.embeddableBy?.length) {
+    context.addIssue({
+      code: "custom",
+      message: "Embeddable Smartlinks cannot require an interstitial.",
+    });
+  }
 });
 
 const wireEnvelopeSchema = envelopeObjectSchema
-  .omit({ allowCrawlers: true, notAfter: true, interstitialNote: true })
+  .omit({
+    allowCrawlers: true,
+    notAfter: true,
+    interstitialNote: true,
+    browser: true,
+    cors: true,
+  })
   .extend({
+    b: wireBrowserSettingsSchema.optional(),
     p: z.literal(true).optional(),
     n: notAfterSchema.optional(),
     m: interstitialNoteSchema.optional(),
@@ -128,13 +149,18 @@ export type RawDeflates = readonly [RawDeflate, ...RawDeflate[]];
 
 export function serializeEnvelope(input: Envelope): Uint8Array {
   const envelope = envelopeSchema.parse(input);
-  const { allowCrawlers, notAfter, interstitialNote, ...wireEnvelope } = envelope;
+  const { allowCrawlers, notAfter, interstitialNote, browser, cors, ...wireEnvelope } = envelope;
+  const browserSettings = browserSettingsToWire({
+    ...(browser ? { browser } : {}),
+    ...(cors === true ? { cors: true } : {}),
+  });
   const serialized = utf8(
     JSON.stringify({
       ...wireEnvelope,
       ...(allowCrawlers === true ? { p: true } : {}),
       ...(notAfter === undefined ? {} : { n: notAfter }),
       ...(interstitialNote === undefined ? {} : { m: interstitialNote }),
+      ...(browserSettings === undefined ? {} : { b: browserSettings }),
     }),
   );
   if (serialized.byteLength > MAX_DECOMPRESSED_LENGTH) {
@@ -235,6 +261,7 @@ export function parseDecompressedPayload(
   decompressed: Uint8Array,
 ): DecodedPayload {
   const {
+    b,
     n,
     m,
     p,
@@ -248,6 +275,7 @@ export function parseDecompressedPayload(
       ...(p === true ? { allowCrawlers: true } : {}),
       ...(n === undefined && legacyNotAfter === undefined ? {} : { notAfter: n ?? legacyNotAfter }),
       ...(m === undefined ? {} : { interstitialNote: m }),
+      ...browserSettingsFromWire(b),
     }),
   };
 }

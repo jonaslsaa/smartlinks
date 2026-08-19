@@ -11,6 +11,7 @@ import {
   userParams,
   userParamValues,
 } from "../shared/request-context.js";
+import { corsPreflightResponse, type GuestResponseSecurity } from "../shared/response-security.js";
 import {
   InvalidScriptResponseError,
   mapScriptResult,
@@ -166,6 +167,15 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
   if (isExpired(decoded.envelope.notAfter)) {
     return expiredPage();
   }
+  const responseSecurity: GuestResponseSecurity = {
+    service: url.origin,
+    ...(decoded.envelope.browser ? { browser: decoded.envelope.browser } : {}),
+    ...(decoded.envelope.cors === true ? { cors: true } : {}),
+  };
+  const preflight = corsPreflightResponse(request, responseSecurity);
+  if (preflight) {
+    return preflight;
+  }
   if (decoded.envelope.i) {
     if (request.method === "GET") {
       const action = new URL(url);
@@ -230,7 +240,7 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
 
   let response: Response;
   try {
-    response = mapScriptResult(result);
+    response = mapScriptResult(result, responseSecurity);
   } catch (error) {
     if (error instanceof InvalidScriptResponseError) {
       throw new HttpError(422, error.message, { cause: error });

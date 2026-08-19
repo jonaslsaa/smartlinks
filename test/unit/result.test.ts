@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  corsPreflightResponse,
   RUNTIME_CONTENT_SECURITY_POLICY,
   SMARTLINKS_PREVIEW_HEADER,
 } from "../../src/shared/response-security.js";
@@ -53,6 +54,83 @@ describe("script result mapping", () => {
     expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBeNull();
     expectRuntimeSecurityHeaders(response);
     await expect(response.text()).resolves.toBe("done");
+  });
+
+  it("applies authenticated guest browser policy while keeping the sandbox floor", () => {
+    const response = mapScriptResult(
+      {
+        headers: {
+          "access-control-allow-credentials": "true",
+          "access-control-allow-origin": "https://spoofed.example",
+          "content-security-policy": "img-src https://only.example",
+          "referrer-policy": "unsafe-url",
+          "x-frame-options": "DENY",
+        },
+        body: "guest",
+      },
+      {
+        service: "https://runtime.example",
+        browser: {
+          images: ["https"],
+          embeddableBy: ["https://host.example"],
+          referrer: "origin",
+        },
+        cors: true,
+      },
+    );
+    const csp = response.headers.get("content-security-policy") ?? "";
+
+    expect(csp).toContain("sandbox ");
+    expect(csp).not.toContain("allow-same-origin");
+    expect(csp).toContain("img-src data: blob: https:");
+    expect(csp).toContain("frame-ancestors https://host.example");
+    expect(csp).toContain("img-src https://only.example");
+    expect(response.headers.get("referrer-policy")).toBe("origin");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("access-control-allow-credentials")).toBeNull();
+    expect(response.headers.get("access-control-expose-headers")).toBe("*");
+  });
+
+  it("keeps runtime-owned CORS headers absent without an artifact opt-in", () => {
+    const response = mapScriptResult(
+      {
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-credentials": "true",
+        },
+        body: "guest",
+      },
+      { service: "https://runtime.example" },
+    );
+
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(response.headers.get("access-control-allow-credentials")).toBeNull();
+  });
+
+  it("answers valid CORS preflights without creating a guest response", () => {
+    const request = new Request("https://runtime.example/r/value", {
+      method: "OPTIONS",
+      headers: {
+        origin: "null",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type, x-task",
+      },
+    });
+    const response = corsPreflightResponse(request, {
+      service: "https://runtime.example",
+      cors: true,
+    });
+
+    expect(response?.status).toBe(204);
+    expect(response?.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response?.headers.get("access-control-allow-methods")).toBe("POST");
+    expect(response?.headers.get("access-control-allow-headers")).toBe("content-type, x-task");
+    expect(response?.headers.get("cache-control")).toBe("no-store");
+    expect(response?.headers.get("content-security-policy")).toContain(
+      RUNTIME_CONTENT_SECURITY_POLICY,
+    );
+    expect(corsPreflightResponse(request, { service: "https://runtime.example" })).toBeUndefined();
   });
 
   it("decodes binary response bodies without changing their bytes", async () => {

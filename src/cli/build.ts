@@ -1,4 +1,5 @@
 import { type AuthorCertificate, type AuthorKeyPair, signEnvelope } from "../shared/author.js";
+import { type BrowserPolicy, normalizeBrowserPolicy } from "../shared/browser-policy.js";
 import { interstitialNoteSchema } from "../shared/codec.js";
 import { compiledChildSource } from "../shared/mint.js";
 import { validateScript } from "../shared/sandbox.js";
@@ -13,6 +14,8 @@ export type CreateSmartlinkOptions = {
   interstitial?: boolean;
   interstitialNote?: string;
   allowCrawlers?: boolean;
+  browser?: BrowserPolicy;
+  cors?: true;
   notAfter?: number;
   secrets?: Record<string, string>;
   publicKey?: PublicKey;
@@ -72,6 +75,10 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
     interstitialNote = parsedNote.data;
   }
   const interstitial = options.interstitial === true || interstitialNote !== undefined;
+  const browser = normalizeBrowserPolicy(options.browser);
+  if (interstitial && browser?.embeddableBy?.length) {
+    throw new Error("Embeddable Smartlinks cannot require an interstitial.");
+  }
   const envelope = {
     s: source,
     ...(interstitial ? { i: true as const } : {}),
@@ -80,6 +87,8 @@ export async function createSmartlink(options: CreateSmartlinkOptions): Promise<
     ...(secretEntries.length ? { a: options.author ? (2 as const) : (1 as const) } : {}),
     ...(options.notAfter !== undefined ? { notAfter: options.notAfter } : {}),
     ...(interstitialNote === undefined ? {} : { interstitialNote }),
+    ...(browser ? { browser } : {}),
+    ...(options.cors === true ? { cors: true as const } : {}),
   };
   const sealedEntries = publicKey
     ? await Promise.all(

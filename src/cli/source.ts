@@ -95,13 +95,38 @@ type __SmartlinksJson =
   | null
   | __SmartlinksJson[]
   | { [name: string]: __SmartlinksJson };
-type __SmartlinksCompileOptions = {
+type SmartlinksBrowserSource = "self" | "https" | "all" | \`https://\${string}\`;
+type SmartlinksBrowserPolicy = {
+  scripts?: SmartlinksBrowserSource[];
+  connect?: SmartlinksBrowserSource[];
+  images?: SmartlinksBrowserSource[];
+  styles?: SmartlinksBrowserSource[];
+  fonts?: SmartlinksBrowserSource[];
+  media?: SmartlinksBrowserSource[];
+  frames?: SmartlinksBrowserSource[];
+  forms?: SmartlinksBrowserSource[];
+  embeddableBy?: SmartlinksBrowserSource[];
+  referrer?: "none" | "origin" | "full";
+};
+type __SmartlinksCompileBaseOptions = {
   seal?: Record<string, string>;
   ttlSeconds?: number;
-  interstitial?: boolean;
   allowCrawlers?: boolean;
-  note?: string;
+  cors?: true;
 };
+type __SmartlinksCompileOptions =
+  | (__SmartlinksCompileBaseOptions & {
+      interstitial?: boolean;
+      note?: string;
+      browser?: SmartlinksBrowserPolicy & { embeddableBy?: never };
+    })
+  | (__SmartlinksCompileBaseOptions & {
+      interstitial: false;
+      note?: never;
+      browser: SmartlinksBrowserPolicy & {
+        embeddableBy: [SmartlinksBrowserSource, ...SmartlinksBrowserSource[]];
+      };
+    });
 type __SmartlinksCompile = <
   const Args extends readonly __SmartlinksJson[],
   ChildSecrets extends __SmartlinksStringMap = __SmartlinksStringMap,

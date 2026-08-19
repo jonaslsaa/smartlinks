@@ -70,7 +70,9 @@ function factsHtml(decoded: DecodedPayload): string {
   const secrets = facts.sealedSecrets.length
     ? `${facts.sealedSecrets.length}: ${facts.sealedSecrets.map(escapeHtml).join(", ")}`
     : "None";
-  return `<section class="panel" aria-labelledby="facts-heading"><h2 class="eyebrow" id="facts-heading">Smartlink facts</h2><dl><dt>Payload version</dt><dd>${facts.payloadVersion}</dd><dt>Confirmation required</dt><dd>${facts.interstitial ? "Yes" : "No"}</dd><dt>Known crawler GETs</dt><dd>${facts.allowCrawlers ? "Allowed" : "Previewed"}</dd><dt>Expiry</dt><dd>${escapeHtml(expiry)}</dd><dt>Sealed secrets</dt><dd>${secrets}</dd><dt>Compile closures</dt><dd>${facts.compileClosures}</dd></dl></section>`;
+  const browser =
+    facts.browser === null ? "Default isolated page" : escapeHtml(JSON.stringify(facts.browser));
+  return `<section class="panel" aria-labelledby="facts-heading"><h2 class="eyebrow" id="facts-heading">Smartlink facts</h2><dl><dt>Payload version</dt><dd>${facts.payloadVersion}</dd><dt>Confirmation required</dt><dd>${facts.interstitial ? "Yes" : "No"}</dd><dt>Known crawler GETs</dt><dd>${facts.allowCrawlers ? "Allowed" : "Previewed"}</dd><dt>Browser access</dt><dd><code>${browser}</code></dd><dt>Cross-origin target</dt><dd>${facts.cors ? "Allowed without credentials" : "No"}</dd><dt>Expiry</dt><dd>${escapeHtml(expiry)}</dd><dt>Sealed secrets</dt><dd>${secrets}</dd><dt>Compile closures</dt><dd>${facts.compileClosures}</dd></dl></section>`;
 }
 
 export function previewPage(

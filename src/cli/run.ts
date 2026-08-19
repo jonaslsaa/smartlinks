@@ -1,3 +1,5 @@
+import type { BrowserPolicy } from "../shared/browser-policy.js";
+import { type DecodedPayload, decodePayload } from "../shared/codec.js";
 import {
   createRequestId,
   guestRequestHeaders,
@@ -8,6 +10,7 @@ import {
   userParams,
   userParamValues,
 } from "../shared/request-context.js";
+import { corsPreflightResponse } from "../shared/response-security.js";
 import { isBinaryLiteralResponse, mapScriptResult, type ScriptResult } from "../shared/result.js";
 import { prepareSmartlinkProgram } from "./build.js";
 import { type LocalRuntime, runLocalProgram } from "./local-run.js";
@@ -23,6 +26,8 @@ type LocalScriptOptions = {
   simulate?: boolean;
   simulationResponses?: readonly number[];
   typeCheck: boolean;
+  browser?: BrowserPolicy;
+  cors?: true;
 };
 
 type SyntheticRequestOptions = {
@@ -97,12 +102,31 @@ async function localRequestContext(request: Request): Promise<LocalRequestContex
   };
 }
 
-function mappedExecution(result: ScriptResult): LocalScriptExecution {
+function mappedExecution(
+  result: ScriptResult,
+  artifact: DecodedPayload,
+  service: string,
+): LocalScriptExecution {
   return {
     binary: isBinaryLiteralResponse(result),
     defaultPage: result === undefined,
-    response: mapScriptResult(result),
+    response: mapScriptResult(result, {
+      service,
+      ...(artifact.envelope.browser ? { browser: artifact.envelope.browser } : {}),
+      ...(artifact.envelope.cors === true ? { cors: true } : {}),
+    }),
   };
+}
+
+function preflightExecution(request: Request, artifact: DecodedPayload, service: string) {
+  const response = corsPreflightResponse(request, {
+    service,
+    ...(artifact.envelope.browser ? { browser: artifact.envelope.browser } : {}),
+    ...(artifact.envelope.cors === true ? { cors: true } : {}),
+  });
+  return response
+    ? ({ binary: false, defaultPage: false, response } satisfies LocalScriptExecution)
+    : undefined;
 }
 
 export async function executeLocalRequest(
@@ -138,8 +162,27 @@ export async function executeLocalRequest(
         secrets: options.secrets,
       },
       ...(simulation ? { simulation } : {}),
+      ...(options.browser ? { browser: options.browser } : {}),
+      ...(options.cors === true ? { cors: true as const } : {}),
     };
-    const result: ScriptResult = runtime
+    const artifact: DecodedPayload = {
+      version: "2",
+      envelope: {
+        s: source,
+        ...(closures.length ? { c: closures } : {}),
+        ...(options.browser ? { browser: options.browser } : {}),
+        ...(options.cors === true ? { cors: true } : {}),
+      },
+    };
+    const preflight = preflightExecution(
+      request,
+      artifact,
+      runtime?.service ?? "https://smartlinks.local",
+    );
+    if (preflight) {
+      return preflight;
+    }
+    const executed = runtime
       ? await runtime.executeProgram(program)
       : await runLocalProgram({
           ...program,
@@ -147,7 +190,7 @@ export async function executeLocalRequest(
           blockedHostnames: options.blockedHostnames,
         });
 
-    const execution = mappedExecution(result);
+    const execution = mappedExecution(executed.result, executed.artifact, executed.service);
 
     return {
       ...execution,
@@ -174,9 +217,13 @@ export async function executeLocalPayloadRequest(
   runtime: LocalRuntime,
 ): Promise<LocalScriptExecution> {
   try {
-    return mappedExecution(
-      await runtime.executePayload(payload, await localRequestContext(request)),
-    );
+    const artifact = decodePayload(payload);
+    const preflight = preflightExecution(request, artifact, new URL(request.url).origin);
+    if (preflight) {
+      return preflight;
+    }
+    const executed = await runtime.executePayload(payload, await localRequestContext(request));
+    return mappedExecution(executed.result, executed.artifact, executed.service);
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
       throw error;

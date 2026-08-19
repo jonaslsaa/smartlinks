@@ -8,6 +8,7 @@ import {
   signEnvelope,
   verifyAuthorProof,
 } from "../../src/shared/author.js";
+import { guestContentSecurityPolicy } from "../../src/shared/browser-policy.js";
 import { toBase64Url } from "../../src/shared/bytes.js";
 import { encodePayload, MAX_DECOMPRESSED_LENGTH } from "../../src/shared/codec.js";
 import {
@@ -97,13 +98,104 @@ describe("Worker routes", () => {
     expect(response.status).toBe(201);
     expect(response.headers.get("x-runtime")).toBe("quickjs");
     expect(response.headers.get("content-security-policy")).toBe(
-      `default-src *; script-src *, ${RUNTIME_CONTENT_SECURITY_POLICY}`,
+      `default-src *; script-src *, ${guestContentSecurityPolicy(undefined, origin)}`,
     );
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBeNull();
     await expect(response.text()).resolves.toBe("Jonas:sealed-value");
+  });
+
+  it("applies artifact-owned browser capabilities without giving the page a shared origin", async () => {
+    const created = await createSmartlink({
+      source: `return {
+        headers: { "x-page": "guest" },
+        body: "<script>document.body.dataset.ready='yes'</script>"
+      }`,
+      service: origin,
+      browser: {
+        scripts: ["self", "https://cdn.example"],
+        images: ["https"],
+        embeddableBy: ["https://host.example"],
+        referrer: "origin",
+      },
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+    const policy = response.headers.get("content-security-policy") ?? "";
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-page")).toBe("guest");
+    expect(policy).toContain("sandbox ");
+    expect(policy).not.toContain("allow-same-origin");
+    expect(policy).toContain("https://cdn.example");
+    expect(policy).toContain("img-src data: blob: https:");
+    expect(policy).toContain("frame-ancestors https://host.example");
+    expect(response.headers.get("referrer-policy")).toBe("origin");
+    expect(response.headers.get("x-frame-options")).toBeNull();
+  });
+
+  it("handles opted-in CORS preflight before execution and owns the CORS headers", async () => {
+    const created = await createSmartlink({
+      source: `return {
+        headers: {
+          "access-control-allow-origin": "https://spoofed.example",
+          "access-control-allow-credentials": "true"
+        },
+        body: "executed"
+      }`,
+      service: origin,
+      cors: true,
+      validate: validateWorkerScript,
+    });
+    const limit = vi.fn(async () => ({ success: true }));
+    const env = testEnv({ limit });
+    const preflight = await worker.fetch(
+      new Request(created.link, {
+        method: "OPTIONS",
+        headers: {
+          origin: "null",
+          "access-control-request-method": "POST",
+          "access-control-request-headers": "content-type, x-task",
+        },
+      }),
+      env,
+    );
+
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
+    expect(preflight.headers.get("access-control-allow-methods")).toBe("POST");
+    expect(preflight.headers.get("access-control-allow-headers")).toBe("content-type, x-task");
+    expect(limit).not.toHaveBeenCalled();
+
+    const response = await worker.fetch(
+      new Request(created.link, { headers: { origin: "null" } }),
+      env,
+    );
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("access-control-allow-credentials")).toBeNull();
+    expect(response.headers.get("access-control-expose-headers")).toBe("*");
+    expect(limit).toHaveBeenCalledOnce();
+    await expect(response.text()).resolves.toBe("executed");
+  });
+
+  it("does not let guest response headers opt an artifact into CORS", async () => {
+    const created = await createSmartlink({
+      source: `return {
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-credentials": "true"
+        },
+        body: "not cors"
+      }`,
+      service: origin,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(new Request(created.link), testEnv());
+
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(response.headers.get("access-control-allow-credentials")).toBeNull();
   });
 
   it("hardens the runtime-owned completion page", async () => {

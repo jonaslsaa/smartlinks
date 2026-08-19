@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { browserPolicySchema } from "./browser-policy.js";
 import {
   type DecodedPayload,
   type Envelope,
@@ -29,6 +30,8 @@ const compileOptionsSchema = z
     interstitial: z.boolean().optional(),
     allowCrawlers: z.boolean().optional(),
     note: interstitialNoteSchema.optional(),
+    browser: browserPolicySchema.optional(),
+    cors: z.literal(true).optional(),
   })
   .strict();
 
@@ -150,6 +153,7 @@ function assertNoPlaintextSecrets(
   args: readonly JsonValue[],
   argumentJson: string,
   interstitialNote: string | undefined,
+  browserJson: string,
   secrets: Readonly<Record<string, string>>,
 ): void {
   const containsSecret = (value: JsonValue, secret: string): boolean => {
@@ -179,7 +183,8 @@ function assertNoPlaintextSecrets(
         argumentJson.includes(value) ||
         args.some((argument) => containsSecret(argument, value)) ||
         closures.some((closure) => closure.includes(value)) ||
-        noteContainsSecret)
+        noteContainsSecret ||
+        browserJson.includes(value))
     ) {
       throw new Error(
         `Compile output contains plaintext from ctx.secrets.${name}. Pass it through options.seal instead.`,
@@ -209,6 +214,11 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
     if (compileOptions.note !== undefined && compileOptions.interstitial === false) {
       throw new Error("Invalid ctx.compile options: note cannot be used with interstitial: false.");
     }
+    if (compileOptions.browser?.embeddableBy?.length && compileOptions.interstitial !== false) {
+      throw new Error(
+        "Invalid ctx.compile options: embeddable children require interstitial: false.",
+      );
+    }
     const interstitial =
       compileOptions.note !== undefined
         ? true
@@ -222,6 +232,10 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
       args,
       argumentJson,
       compileOptions.note,
+      JSON.stringify({
+        browser: compileOptions.browser ?? null,
+        cors: compileOptions.cors === true,
+      }),
       options.parentSecrets,
     );
     await options.validate(options.parent.version, source);
@@ -236,6 +250,8 @@ export function createSmartlinkCompiler(options: SmartlinkCompilerOptions): Gues
       ...(secretEntries.length ? { a: 1 as const } : {}),
       ...(notAfter === undefined ? {} : { notAfter }),
       ...(compileOptions.note === undefined ? {} : { interstitialNote: compileOptions.note }),
+      ...(compileOptions.browser ? { browser: compileOptions.browser } : {}),
+      ...(compileOptions.cors === true ? { cors: true as const } : {}),
     };
     const publicKey = secretEntries.length ? await options.getPublicKey() : undefined;
     const sealedEntries = publicKey
