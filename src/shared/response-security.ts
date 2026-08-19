@@ -33,26 +33,25 @@ const RESERVED_RESPONSE_HEADERS = [
 ] as const;
 
 const CSP_REPORTING_DIRECTIVES = new Set(["report-to", "report-uri"]);
-const CROSS_ORIGIN_EMBEDDER_POLICIES = new Set(["credentialless", "require-corp", "unsafe-none"]);
-const CROSS_ORIGIN_OPENER_POLICIES = new Set([
-  "noopener-allow-popups",
-  "same-origin",
-  "same-origin-allow-popups",
-  "unsafe-none",
-]);
-const DOCUMENT_ISOLATION_POLICIES = new Set([
-  "isolate-and-credentialless",
-  "isolate-and-require-corp",
-  "none",
-]);
+const REPORT_ONLY_RESPONSE_HEADERS = [
+  "connection-allowlist-report-only",
+  "content-security-policy-report-only",
+  "cross-origin-embedder-policy-report-only",
+  "cross-origin-opener-policy-report-only",
+  "document-isolation-policy-report-only",
+  "document-policy-report-only",
+  "integrity-policy-report-only",
+  "permissions-policy-report-only",
+  "scripting-policy-report-only",
+] as const;
 
-function sanitizeStructuredPolicy(
-  headers: Headers,
-  name: string,
-  allowed: ReadonlySet<string>,
-): void {
-  const token = headers.get(name)?.split(";", 1)[0]?.trim().toLowerCase();
-  if (token !== undefined && allowed.has(token)) {
+// RFC 8941 tokens begin with an ASCII letter or `*`; the remaining characters are
+// `tchar` plus `:` and `/`. Policy parameters are deliberately discarded below.
+const STRUCTURED_FIELD_TOKEN = /^(?:[A-Za-z]|\*)[!#$%&'*+\-.^_`|~:/0-9A-Za-z]*$/u;
+
+function sanitizeStructuredPolicy(headers: Headers, name: string): void {
+  const token = headers.get(name)?.split(";", 1)[0]?.trim();
+  if (token !== undefined && STRUCTURED_FIELD_TOKEN.test(token)) {
     headers.set(name, token);
   } else {
     headers.delete(name);
@@ -85,15 +84,13 @@ function removeCspReporting(headers: Headers): void {
 }
 
 function removeBrowserReporting(headers: Headers): void {
-  for (const name of [...headers.keys()]) {
-    if (name.endsWith("-report-only")) {
-      headers.delete(name);
-    }
+  for (const name of REPORT_ONLY_RESPONSE_HEADERS) {
+    headers.delete(name);
   }
   removeCspReporting(headers);
-  sanitizeStructuredPolicy(headers, "cross-origin-embedder-policy", CROSS_ORIGIN_EMBEDDER_POLICIES);
-  sanitizeStructuredPolicy(headers, "cross-origin-opener-policy", CROSS_ORIGIN_OPENER_POLICIES);
-  sanitizeStructuredPolicy(headers, "document-isolation-policy", DOCUMENT_ISOLATION_POLICIES);
+  sanitizeStructuredPolicy(headers, "cross-origin-embedder-policy");
+  sanitizeStructuredPolicy(headers, "cross-origin-opener-policy");
+  sanitizeStructuredPolicy(headers, "document-isolation-policy");
 }
 
 export function setCredentialFreeCorsHeaders(headers: Headers): void {

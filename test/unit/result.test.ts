@@ -119,7 +119,8 @@ describe("script result mapping", () => {
           "cross-origin-embedder-policy": 'require-corp; report-to="https://reports.example/coep"',
           "cross-origin-embedder-policy-report-only":
             'require-corp; report-to="https://reports.example/coep-only"',
-          "cross-origin-opener-policy": 'same-origin; report-to="https://reports.example/coop"',
+          "cross-origin-opener-policy":
+            'restrict-properties; report-to="https://reports.example/coop"',
           "cross-origin-opener-policy-report-only":
             'same-origin; report-to="https://reports.example/coop-only"',
           "document-isolation-policy":
@@ -130,6 +131,7 @@ describe("script result mapping", () => {
           nel: '{"report_to":"leaks"}',
           "report-to": '{"group":"leaks","endpoints":[]}',
           "reporting-endpoints": 'leaks="https://reports.example/modern"',
+          "x-feature-report-only": "preserved application metadata",
         },
         body: "guest",
       },
@@ -142,7 +144,7 @@ describe("script result mapping", () => {
     expect(response.headers.get("content-security-policy-report-only")).toBeNull();
     expect(response.headers.get("cross-origin-embedder-policy")).toBe("require-corp");
     expect(response.headers.get("cross-origin-embedder-policy-report-only")).toBeNull();
-    expect(response.headers.get("cross-origin-opener-policy")).toBe("same-origin");
+    expect(response.headers.get("cross-origin-opener-policy")).toBe("restrict-properties");
     expect(response.headers.get("cross-origin-opener-policy-report-only")).toBeNull();
     expect(response.headers.get("document-isolation-policy")).toBe("isolate-and-require-corp");
     expect(response.headers.get("document-isolation-policy-report-only")).toBeNull();
@@ -150,6 +152,7 @@ describe("script result mapping", () => {
     expect(response.headers.get("nel")).toBeNull();
     expect(response.headers.get("report-to")).toBeNull();
     expect(response.headers.get("reporting-endpoints")).toBeNull();
+    expect(response.headers.get("x-feature-report-only")).toBe("preserved application metadata");
   });
 
   it("answers valid CORS preflights without creating a guest response", () => {
