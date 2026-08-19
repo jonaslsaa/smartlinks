@@ -108,6 +108,32 @@ describe("script result mapping", () => {
     expect(response.headers.get("access-control-allow-credentials")).toBeNull();
   });
 
+  it("removes browser reporting channels that could disclose the bearer URL", () => {
+    const response = mapScriptResult(
+      {
+        headers: {
+          "content-security-policy":
+            "img-src https://images.example; report-uri https://reports.example/csp; report-to leaks",
+          "content-security-policy-report-only":
+            "script-src 'none'; report-uri https://reports.example/report-only",
+          nel: '{"report_to":"leaks"}',
+          "report-to": '{"group":"leaks","endpoints":[]}',
+          "reporting-endpoints": 'leaks="https://reports.example/modern"',
+        },
+        body: "guest",
+      },
+      { service: "https://runtime.example" },
+    );
+    const csp = response.headers.get("content-security-policy") ?? "";
+
+    expect(csp).toContain("img-src https://images.example");
+    expect(csp).not.toMatch(/report-(?:to|uri)/u);
+    expect(response.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(response.headers.get("nel")).toBeNull();
+    expect(response.headers.get("report-to")).toBeNull();
+    expect(response.headers.get("reporting-endpoints")).toBeNull();
+  });
+
   it("answers valid CORS preflights without creating a guest response", () => {
     const request = new Request("https://runtime.example/r/value", {
       method: "OPTIONS",

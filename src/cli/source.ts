@@ -116,16 +116,14 @@ type __SmartlinksCompileBaseOptions = {
 };
 type __SmartlinksCompileOptions =
   | (__SmartlinksCompileBaseOptions & {
-      interstitial?: boolean;
+      interstitial?: true;
       note?: string;
       browser?: SmartlinksBrowserPolicy & { embeddableBy?: never };
     })
   | (__SmartlinksCompileBaseOptions & {
       interstitial: false;
       note?: never;
-      browser: SmartlinksBrowserPolicy & {
-        embeddableBy: [SmartlinksBrowserSource, ...SmartlinksBrowserSource[]];
-      };
+      browser?: SmartlinksBrowserPolicy;
     });
 type __SmartlinksCompile = <
   const Args extends readonly __SmartlinksJson[],

@@ -25,9 +25,62 @@ const RESERVED_RESPONSE_HEADERS = [
   "access-control-expose-headers",
   "access-control-max-age",
   "clear-site-data",
+  "content-security-policy-report-only",
+  "document-policy-report-only",
+  "nel",
+  "permissions-policy-report-only",
+  "report-to",
+  "reporting-endpoints",
   "set-cookie",
   SMARTLINKS_PREVIEW_HEADER,
 ] as const;
+
+const CSP_REPORTING_DIRECTIVES = new Set(["report-to", "report-uri"]);
+
+function removeCspReporting(headers: Headers): void {
+  const value = headers.get("content-security-policy");
+  if (value === null) {
+    return;
+  }
+  const policies = value
+    .split(",")
+    .map((policy) =>
+      policy
+        .split(";")
+        .map((entry) => entry.trim())
+        .filter((entry) => {
+          const name = entry.split(/\s/u, 1)[0]?.toLowerCase();
+          return name !== undefined && !CSP_REPORTING_DIRECTIVES.has(name);
+        })
+        .join("; "),
+    )
+    .filter(Boolean);
+  if (policies.length) {
+    headers.set("content-security-policy", policies.join(", "));
+  } else {
+    headers.delete("content-security-policy");
+  }
+}
+
+export function setCredentialFreeCorsHeaders(headers: Headers): void {
+  for (const name of RESERVED_RESPONSE_HEADERS) {
+    if (name.startsWith("access-control-")) {
+      headers.delete(name);
+    }
+  }
+  headers.set("access-control-allow-origin", "*");
+  headers.set("access-control-expose-headers", "*");
+}
+
+export function credentialFreeCorsResponse(response: Response): Response {
+  const headers = new Headers(response.headers);
+  setCredentialFreeCorsHeaders(headers);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 /** Applies the security policy owned by the Smartlinks runtime to a final response. */
 export function hardenResponse(response: Response): Response {
@@ -36,6 +89,7 @@ export function hardenResponse(response: Response): Response {
   for (const name of RESERVED_RESPONSE_HEADERS) {
     headers.delete(name);
   }
+  removeCspReporting(headers);
   // Separate CSP policies are enforced together, so an author can tighten the runtime policy
   // without weakening it.
   headers.append("content-security-policy", RUNTIME_CONTENT_SECURITY_POLICY);
@@ -61,6 +115,7 @@ export function hardenGuestResponse(response: Response, security: GuestResponseS
   for (const name of RESERVED_RESPONSE_HEADERS) {
     headers.delete(name);
   }
+  removeCspReporting(headers);
   headers.append(
     "content-security-policy",
     guestContentSecurityPolicy(security.browser, security.service),
@@ -76,8 +131,7 @@ export function hardenGuestResponse(response: Response, security: GuestResponseS
     headers.set("x-frame-options", "DENY");
   }
   if (security.cors === true) {
-    headers.set("access-control-allow-origin", "*");
-    headers.set("access-control-expose-headers", "*");
+    setCredentialFreeCorsHeaders(headers);
   }
 
   return new Response(response.body, {
@@ -126,7 +180,7 @@ export function corsPreflightResponse(
     }),
   );
   const headers = new Headers(hardened.headers);
-  headers.set("access-control-allow-origin", "*");
+  setCredentialFreeCorsHeaders(headers);
   headers.set("access-control-allow-methods", requestedMethod.toUpperCase());
   if (requestedHeaders !== null) {
     headers.set("access-control-allow-headers", requestedHeaders);

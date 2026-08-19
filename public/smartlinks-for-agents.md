@@ -68,9 +68,11 @@ is limited to 1 MiB after decoding, and defaults to `application/octet-stream` w
 not supply a content type; `content-disposition` remains author-controlled. Every authored
 response receives `X-Content-Type-Options: nosniff` and the artifact's authenticated browser
 policy. An author CSP is enforced as an additional policy, so it may tighten but cannot weaken the
-runtime floor. Other headers remain author-controlled except `set-cookie`, `clear-site-data`,
-`x-smartlinks-preview`, and CORS response headers. Those boundaries are runtime-owned: an executed
-response cannot spoof preview status, acquire cookie state, or opt itself into CORS.
+runtime floor; CSP reporting directives and browser reporting headers are removed because reports
+would disclose the bearer URL outside the browser policy. Other headers remain author-controlled
+except `set-cookie`, `clear-site-data`, `x-smartlinks-preview`, and CORS response headers. Those
+boundaries are runtime-owned: an executed response cannot spoof preview status, acquire cookie
+state, or opt itself into CORS.
 
 A response can be a complete HTML document. The script cannot read its own URL, but relative
 references resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the
@@ -252,7 +254,9 @@ not exist.
   `--allow-media`, `--allow-frame`, `--allow-form`, or `--allow-embed` with `self`, `https`,
   `all`, or an exact HTTPS origin. These set the matching browser-policy field. Inline script and
   style need no flag. `--allow-embed` cannot combine with an interstitial.
-- `--referrer none|origin|full`: disclosure policy; omission is `none`.
+- `--referrer none|origin|full`: disclosure policy; omission is `none`. `full` sends the complete
+  bearer Smartlink URL, including user query parameters, to eligible destinations; prefer
+  `origin` unless that disclosure is intentional.
 - `--cors`: make this artifact a credential-free cross-origin target and answer preflight without
   executing it. Callers still need `--allow-connect` for this origin.
 - `--secret NAME[=value]`: seal a secret; repeatable. Prefer environment values over inline.
@@ -425,7 +429,7 @@ fails open or closed.
 - Authored browser responses are always opaque-origin CSP sandboxes. Browser capability fields
   may open external resources, connections, form targets, embedding, or referrer disclosure, but
   cannot enable `allow-same-origin`, cookies, persistent storage, or service workers. CORS is
-  wildcard and credential-free. No browser capability implies an interstitial; embedding and an
+  wildcard and credential-free. No browser capability requires an interstitial; embedding and an
   interstitial are instead mechanically incompatible.
 - Browser and intermediary URL limits vary; shorter links are preferable even below the hard cap.
 

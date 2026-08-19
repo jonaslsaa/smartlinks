@@ -1,9 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isCrawlerRequest, isPreviewRequest } from "../shared/bots.js";
-import type { BrowserPolicy, BrowserSource } from "../shared/browser-policy.js";
+import { type BrowserPolicy, isEmbeddable } from "../shared/browser-policy.js";
 import { decodePayload } from "../shared/codec.js";
 import { MAX_REQUEST_BODY_BYTES, RequestBodyTooLargeError } from "../shared/request-context.js";
-import { hardenResponse, markPreviewResponse } from "../shared/response-security.js";
+import {
+  credentialFreeCorsResponse,
+  hardenResponse,
+  markPreviewResponse,
+} from "../shared/response-security.js";
 import { createLocalRuntime, type LocalRuntime } from "./local-run.js";
 import {
   executeLocalPayloadRequest,
@@ -160,7 +164,7 @@ function validateBrowserBoundary(
     (request.method === "GET" || request.method === "HEAD") &&
     (request.headers["sec-fetch-dest"] === "iframe" ||
       request.headers["sec-fetch-dest"] === "frame") &&
-    allowsEmbeddingRequest(request, origin, policy.browser?.embeddableBy);
+    isEmbeddable(policy.browser);
   if (
     fetchSite !== undefined &&
     fetchSite !== "none" &&
@@ -171,34 +175,6 @@ function validateBrowserBoundary(
   ) {
     throw new ServeRequestError(403, "Cross-site requests are not allowed.");
   }
-}
-
-function allowsEmbeddingRequest(
-  request: IncomingMessage,
-  runtimeOrigin: string,
-  sources: BrowserSource[] | undefined,
-): boolean {
-  if (!sources?.length) {
-    return false;
-  }
-  if (sources.includes("all")) {
-    return true;
-  }
-  const referer = request.headers.referer;
-  if (referer === undefined) {
-    return false;
-  }
-  let ancestorOrigin: string;
-  try {
-    ancestorOrigin = new URL(referer).origin;
-  } catch {
-    return false;
-  }
-  return sources.some((source) => {
-    if (source === "self") return ancestorOrigin === runtimeOrigin;
-    if (source === "https") return ancestorOrigin.startsWith("https://");
-    return source === ancestorOrigin;
-  });
 }
 
 function errorResponse(error: unknown, accept: string | undefined): Response {
@@ -262,18 +238,21 @@ async function handleRequest(
   options: ServeOptions,
   runtime: LocalRuntime | undefined,
 ): Promise<void> {
+  let cors = false;
   try {
     const incomingUrl = new URL(incoming.url ?? "/", origin);
     const payload = runnerPayload(incomingUrl.pathname);
     const artifact = payload === undefined ? undefined : decodePayload(payload);
-    validateBrowserBoundary(incoming, origin, {
+    const browserBoundary = {
       cors: artifact?.envelope.cors === true || (payload === undefined && options.cors === true),
       ...(artifact?.envelope.browser
         ? { browser: artifact.envelope.browser }
         : payload === undefined && options.browser
           ? { browser: options.browser }
           : {}),
-    });
+    };
+    cors = browserBoundary.cors;
+    validateBrowserBoundary(incoming, origin, browserBoundary);
     const request = await webRequest(incoming, origin);
     const { pathname } = incomingUrl;
     if (pathname === "/favicon.ico") {
@@ -311,7 +290,12 @@ async function handleRequest(
       outgoing.destroy(error instanceof Error ? error : undefined);
       return;
     }
-    await writeResponse(incoming.method, outgoing, errorResponse(error, incoming.headers.accept));
+    const response = errorResponse(error, incoming.headers.accept);
+    await writeResponse(
+      incoming.method,
+      outgoing,
+      cors ? credentialFreeCorsResponse(response) : response,
+    );
   }
 }
 

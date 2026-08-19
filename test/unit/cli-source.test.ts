@@ -289,11 +289,18 @@ describe("CLI script input", () => {
         `${child}return ctx.compile(child, [], {
           interstitial: false,
           note: "Review this",
-          browser: { embeddableBy: ["all"] },
         });`,
         "browser-child-note.ts",
       ),
     ).rejects.toThrow("not assignable");
+
+    await expect(
+      transpileScriptSource(
+        `${child}const browser: SmartlinksBrowserPolicy = { scripts: ["self"] };
+        return ctx.compile(child, [], { interstitial: false, browser });`,
+        "browser-child-reusable-policy.ts",
+      ),
+    ).resolves.toContain("const browser");
   });
 
   it("can explicitly skip semantic type checking", async () => {

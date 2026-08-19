@@ -141,7 +141,10 @@ describe("Worker routes", () => {
       source: `return {
         headers: {
           "access-control-allow-origin": "https://spoofed.example",
-          "access-control-allow-credentials": "true"
+          "access-control-allow-credentials": "true",
+          "content-security-policy": "img-src https://images.example; report-uri https://reports.example/csp",
+          "content-security-policy-report-only": "script-src 'none'; report-to leaks",
+          "reporting-endpoints": "leaks=https://reports.example/modern"
         },
         body: "executed"
       }`,
@@ -176,8 +179,40 @@ describe("Worker routes", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe("*");
     expect(response.headers.get("access-control-allow-credentials")).toBeNull();
     expect(response.headers.get("access-control-expose-headers")).toBe("*");
+    expect(response.headers.get("content-security-policy")).toContain(
+      "img-src https://images.example",
+    );
+    expect(response.headers.get("content-security-policy")).not.toMatch(/report-uri/u);
+    expect(response.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(response.headers.get("reporting-endpoints")).toBeNull();
     expect(limit).toHaveBeenCalledOnce();
     await expect(response.text()).resolves.toBe("executed");
+  });
+
+  it("keeps opted-in execution failures readable to cross-origin callers", async () => {
+    const created = await createSmartlink({
+      source: 'throw new Error("guest failure");',
+      service: origin,
+      cors: true,
+      validate: validateWorkerScript,
+    });
+    const response = await worker.fetch(
+      new Request(created.link, { headers: { origin: "https://caller.example" } }),
+      testEnv(),
+    );
+
+    expect(response.status).toBe(422);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("access-control-allow-credentials")).toBeNull();
+    await expect(response.json()).resolves.toEqual({ error: "The smartlink script failed." });
+
+    const limited = await worker.fetch(
+      new Request(created.link, { headers: { origin: "https://caller.example" } }),
+      testEnv({ limit: vi.fn(async () => ({ success: false })) }),
+    );
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("access-control-allow-origin")).toBe("*");
+    expect(limited.headers.get("retry-after")).toBe("60");
   });
 
   it("does not let guest response headers opt an artifact into CORS", async () => {

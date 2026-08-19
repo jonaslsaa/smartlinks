@@ -224,9 +224,15 @@ capabilities; `--cors` makes an artifact a credential-free cross-origin target a
 preflights without executing the script. The policy is authenticated and visible in `decode`.
 Author-supplied CSP is enforced in addition and can only tighten it.
 
+Referrer disclosure is off by default. The `full` setting deliberately sends the complete bearer
+Smartlink URL and user query parameters to eligible destinations; `origin` discloses only the
+runtime origin.
+
 `Referrer-Policy` and framing headers follow the artifact policy; every response also receives
 `X-Content-Type-Options: nosniff`. Other headers remain author-controlled except cookies, runtime
-preview markers, and CORS headers, which the runtime owns.
+preview markers, CORS headers, and browser reporting configuration, which the runtime owns.
+Reporting directives are removed from author CSP because reports would disclose the bearer URL
+outside the artifact's browser policy.
 
 TypeScript input is strictly type-checked against the Smartlinks `ctx`, global `fetch`, and
 response contract, then transpiled. Secret names supplied with `--secret` become required string

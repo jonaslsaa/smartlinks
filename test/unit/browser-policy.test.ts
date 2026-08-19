@@ -32,6 +32,12 @@ describe("browser policy", () => {
       browser: {
         scripts: ["https://cdn.example", "self"],
         connect: ["https"],
+        images: ["all"],
+        styles: ["https://styles.example"],
+        fonts: ["https://fonts.example"],
+        media: ["https://media.example"],
+        frames: ["https://frames.example"],
+        forms: ["https://forms.example"],
         embeddableBy: ["all"],
         referrer: "full" as const,
       },
@@ -39,7 +45,19 @@ describe("browser policy", () => {
     };
     const wire = browserSettingsToWire(settings);
 
-    expect(wire).toEqual({ s: ["@cdn.example", "s"], c: ["h"], e: ["*"], p: "f", x: true });
+    expect(wire).toEqual({
+      s: ["@cdn.example", "s"],
+      c: ["h"],
+      i: ["*"],
+      y: ["@styles.example"],
+      f: ["@fonts.example"],
+      m: ["@media.example"],
+      r: ["@frames.example"],
+      a: ["@forms.example"],
+      e: ["*"],
+      p: "f",
+      x: true,
+    });
     expect(JSON.stringify(wire)).not.toMatch(/scripts|connect|embeddable|referrer|cors/u);
     expect(browserSettingsFromWire(wire)).toEqual(settings);
   });
@@ -48,7 +66,7 @@ describe("browser policy", () => {
     const policy = guestContentSecurityPolicy(
       {
         scripts: ["self", "https://cdn.example"],
-        connect: ["https"],
+        connect: ["self", "https://api.example"],
         embeddableBy: ["https://host.example"],
       },
       "https://s.example",
@@ -62,7 +80,12 @@ describe("browser policy", () => {
     );
     expect(policy).toContain("worker-src data: blob: https://cdn.example https://s.example");
     expect(policy).toContain("img-src data: blob:");
-    expect(policy).toContain("connect-src https:");
+    expect(policy).toContain(
+      "connect-src https://api.example https://s.example wss://api.example wss://s.example",
+    );
+    expect(guestContentSecurityPolicy({ connect: ["https"] }, "https://s.example")).toContain(
+      "connect-src https: wss:",
+    );
     expect(policy).toContain("form-action https://s.example");
     expect(policy).toContain("frame-ancestors https://host.example");
   });

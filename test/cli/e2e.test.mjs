@@ -125,6 +125,7 @@ async function requestWithHeaders(url, headers) {
       response.once("end", () => {
         resolve({
           body: Buffer.concat(chunks).toString("utf8"),
+          headers: response.headers,
           status: response.statusCode,
         });
       });
@@ -702,6 +703,43 @@ test("run --serve applies browser capabilities and CORS with production semantic
       }
     },
   );
+});
+
+test("run --serve leaves exact-origin embedding decisions to the browser CSP", async () => {
+  await withTemporaryScript("js", 'return { body: "embedded" };\n', async (script) => {
+    const server = await startServe(script, ["--allow-embed", "https://host.example"]);
+    try {
+      const response = await requestWithHeaders(server.origin, {
+        "sec-fetch-dest": "iframe",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "cross-site",
+      });
+      assert.equal(response.status, 200);
+      assert.match(
+        response.headers["content-security-policy"] ?? "",
+        /frame-ancestors https:\/\/host\.example/u,
+      );
+      assert.equal(response.body, "embedded");
+    } finally {
+      await stopServe(server);
+    }
+  });
+});
+
+test("run --serve keeps opted-in failures readable to cross-origin callers", async () => {
+  await withTemporaryScript("js", 'throw new Error("guest failure");\n', async (script) => {
+    const server = await startServe(script, ["--cors"]);
+    try {
+      const response = await fetch(server.origin, {
+        headers: { origin: "https://caller.example" },
+      });
+      assert.equal(response.status, 422);
+      assert.equal(response.headers.get("access-control-allow-origin"), "*");
+      assert.deepEqual(await response.json(), { error: "guest failure" });
+    } finally {
+      await stopServe(server);
+    }
+  });
 });
 
 test("build rejects invalid browser policy combinations before producing a link", async () => {

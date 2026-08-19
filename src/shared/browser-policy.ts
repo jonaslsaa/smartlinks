@@ -243,6 +243,23 @@ function cspSources(sources: BrowserSource[] | undefined, runtimeOrigin: string)
   });
 }
 
+function connectCspSources(sources: BrowserSource[] | undefined, runtimeOrigin: string): string[] {
+  const networkSources = cspSources(sources, runtimeOrigin);
+  if (!sources?.length || sources.includes("all")) {
+    return networkSources;
+  }
+  const websocketSources = sources.map((source) => {
+    if (source === "self") {
+      return runtimeOrigin.replace(/^http/u, "ws");
+    }
+    if (source === "https") {
+      return "wss:";
+    }
+    return source.replace(/^https:/u, "wss:");
+  });
+  return [...new Set([...networkSources, ...websocketSources])];
+}
+
 function directive(name: string, defaults: string[], sources: string[]): string {
   const values = [...new Set([...defaults, ...sources])];
   return `${name} ${values.length ? values.join(" ") : "'none'"}`;
@@ -290,7 +307,7 @@ export function guestContentSecurityPolicy(
     directive("img-src", ["data:", "blob:"], cspSources(policy?.images, runtimeOrigin)),
     directive("font-src", ["data:", "blob:"], cspSources(policy?.fonts, runtimeOrigin)),
     directive("media-src", ["data:", "blob:"], cspSources(policy?.media, runtimeOrigin)),
-    directive("connect-src", [], cspSources(policy?.connect, runtimeOrigin)),
+    directive("connect-src", [], connectCspSources(policy?.connect, runtimeOrigin)),
     directive("frame-src", [], frames),
     directive("object-src", [], frames),
     directive("form-action", [runtimeOrigin], forms),
