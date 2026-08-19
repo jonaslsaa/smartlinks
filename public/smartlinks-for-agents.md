@@ -77,7 +77,8 @@ request URL, but browser JavaScript in the returned page can read the complete b
 `window.location.href`; treat included client code accordingly. The default `no-referrer` policy
 prevents automatic disclosure to later requests. Relative references still resolve against the
 URL, so `href="?q=value"` and a bare `<form method=get>` re-enter the same link with new parameters;
-add `cache-control: no-store` when each execution should differ. `ctx.compile` is how the QuickJS
+the form's complete redirect chain must also be allowed via `browser.forms` or `--allow-form`. Add
+`cache-control: no-store` when each execution should differ. `ctx.compile` is how the QuickJS
 function creates a fresh absolute working URL, at the cost of its single mint. Escape every
 interpolated value: query parameters and fetched data are attacker-controlled.
 
