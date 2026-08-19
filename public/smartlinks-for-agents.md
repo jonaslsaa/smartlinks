@@ -72,13 +72,14 @@ runtime floor. Browser reporting configuration is removed because reports would 
 bearer URL outside the browser policy. Other headers remain author-controlled except runtime-owned
 `set-cookie`, `clear-site-data`, `x-smartlinks-preview`, and CORS response headers.
 
-A response can be a complete HTML document. Guest execution does not receive the current request
-URL directly, and the default `no-referrer` policy keeps it unavailable. Relative references still
-resolve against it, so `href="?q=value"` and a bare `<form method=get>` re-enter the same link with
-new parameters; add `cache-control: no-store` when each execution should differ. To display or hand
-out a fresh absolute working URL, mint a child with `ctx.compile` — the only current execution URL
-the runtime supplies — at the cost of its single mint. Escape every interpolated value: query
-parameters and fetched data are attacker-controlled.
+A response can be a complete HTML document. The server-side QuickJS function is not given its
+request URL, but browser JavaScript in the returned page can read the complete bearer URL from
+`window.location.href`; treat included client code accordingly. The default `no-referrer` policy
+prevents automatic disclosure to later requests. Relative references still resolve against the
+URL, so `href="?q=value"` and a bare `<form method=get>` re-enter the same link with new parameters;
+add `cache-control: no-store` when each execution should differ. `ctx.compile` is how the QuickJS
+function creates a fresh absolute working URL, at the cost of its single mint. Escape every
+interpolated value: query parameters and fetched data are attacker-controlled.
 
 ### Browser policy
 
