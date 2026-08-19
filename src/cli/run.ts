@@ -1,4 +1,4 @@
-import type { BrowserPolicy } from "../shared/browser-policy.js";
+import type { ArtifactBrowserSettings, BrowserPolicy } from "../shared/browser-policy.js";
 import { type DecodedPayload, decodePayload } from "../shared/codec.js";
 import {
   createRequestId,
@@ -118,11 +118,11 @@ function mappedExecution(
   };
 }
 
-function preflightExecution(request: Request, artifact: DecodedPayload, service: string) {
+function preflightExecution(request: Request, settings: ArtifactBrowserSettings, service: string) {
   const response = corsPreflightResponse(request, {
     service,
-    ...(artifact.envelope.browser ? { browser: artifact.envelope.browser } : {}),
-    ...(artifact.envelope.cors === true ? { cors: true } : {}),
+    ...(settings.browser ? { browser: settings.browser } : {}),
+    ...(settings.cors === true ? { cors: true } : {}),
   });
   return response
     ? ({ binary: false, defaultPage: false, response } satisfies LocalScriptExecution)
@@ -165,18 +165,12 @@ export async function executeLocalRequest(
       ...(options.browser ? { browser: options.browser } : {}),
       ...(options.cors === true ? { cors: true as const } : {}),
     };
-    const artifact: DecodedPayload = {
-      version: "2",
-      envelope: {
-        s: source,
-        ...(closures.length ? { c: closures } : {}),
+    const preflight = preflightExecution(
+      request,
+      {
         ...(options.browser ? { browser: options.browser } : {}),
         ...(options.cors === true ? { cors: true } : {}),
       },
-    };
-    const preflight = preflightExecution(
-      request,
-      artifact,
       runtime?.service ?? "https://smartlinks.local",
     );
     if (preflight) {
@@ -218,7 +212,14 @@ export async function executeLocalPayloadRequest(
 ): Promise<LocalScriptExecution> {
   try {
     const artifact = decodePayload(payload);
-    const preflight = preflightExecution(request, artifact, new URL(request.url).origin);
+    const preflight = preflightExecution(
+      request,
+      {
+        ...(artifact.envelope.browser ? { browser: artifact.envelope.browser } : {}),
+        ...(artifact.envelope.cors === true ? { cors: true } : {}),
+      },
+      new URL(request.url).origin,
+    );
     if (preflight) {
       return preflight;
     }

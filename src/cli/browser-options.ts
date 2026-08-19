@@ -1,21 +1,55 @@
 import { type Command, InvalidArgumentError, Option } from "commander";
 import {
   type BrowserPolicy,
+  type BrowserResourceField,
   type BrowserSource,
   browserSourceSchema,
   normalizeBrowserPolicy,
 } from "../shared/browser-policy.js";
 
-export type BrowserCliOptions = {
-  allowScript: BrowserSource[];
-  allowConnect: BrowserSource[];
-  allowImage: BrowserSource[];
-  allowStyle: BrowserSource[];
-  allowFont: BrowserSource[];
-  allowMedia: BrowserSource[];
-  allowFrame: BrowserSource[];
-  allowForm: BrowserSource[];
-  allowEmbed: BrowserSource[];
+const BROWSER_CLI_RESOURCES = {
+  scripts: {
+    option: "allowScript",
+    flag: "script",
+    description: "allow external browser scripts",
+  },
+  connect: {
+    option: "allowConnect",
+    flag: "connect",
+    description: "allow browser fetch/WebSocket access",
+  },
+  images: { option: "allowImage", flag: "image", description: "allow image loads" },
+  styles: {
+    option: "allowStyle",
+    flag: "style",
+    description: "allow external stylesheets",
+  },
+  fonts: { option: "allowFont", flag: "font", description: "allow font loads" },
+  media: { option: "allowMedia", flag: "media", description: "allow audio and video loads" },
+  frames: {
+    option: "allowFrame",
+    flag: "frame",
+    description: "allow embedded documents",
+  },
+  forms: { option: "allowForm", flag: "form", description: "allow form submissions" },
+  embeddableBy: {
+    option: "allowEmbed",
+    flag: "embed",
+    description: "allow the source to embed the result",
+  },
+} as const satisfies Record<
+  BrowserResourceField,
+  { option: string; flag: string; description: string }
+>;
+
+type BrowserCliResource = (typeof BROWSER_CLI_RESOURCES)[BrowserResourceField];
+type BrowserCliResourceOption = BrowserCliResource["option"];
+const browserCliResourceEntries = Object.entries(BROWSER_CLI_RESOURCES) as [
+  BrowserResourceField,
+  BrowserCliResource,
+][];
+
+export type BrowserCliOptions = Record<BrowserCliResourceOption, BrowserSource[]> & {
   referrer?: "none" | "origin" | "full";
   cors?: boolean;
 };
@@ -29,73 +63,31 @@ function collectBrowserSource(value: string, previous: BrowserSource[]): Browser
 }
 
 export function browserPolicyFromCli(options: BrowserCliOptions): BrowserPolicy | undefined {
+  const resources: Partial<Record<BrowserResourceField, BrowserSource[]>> = {};
+  for (const [field, resource] of browserCliResourceEntries) {
+    resources[field] = options[resource.option];
+  }
   return normalizeBrowserPolicy({
-    scripts: options.allowScript,
-    connect: options.allowConnect,
-    images: options.allowImage,
-    styles: options.allowStyle,
-    fonts: options.allowFont,
-    media: options.allowMedia,
-    frames: options.allowFrame,
-    forms: options.allowForm,
-    embeddableBy: options.allowEmbed,
+    ...resources,
     ...(options.referrer === undefined ? {} : { referrer: options.referrer }),
   });
 }
 
 export function addBrowserOptions(command: Command, interstitialConflicts = false): Command {
   const source = "source: self, https, all, or an exact HTTPS origin; repeatable";
-  const embed = new Option(
-    "--allow-embed <source>",
-    `allow the source to embed the result; ${source}`,
-  )
-    .argParser(collectBrowserSource)
-    .default([]);
-  if (interstitialConflicts) {
-    embed.conflicts(["interstitial", "interstitialNote"]);
+  for (const [, resource] of browserCliResourceEntries) {
+    const option = new Option(
+      `--allow-${resource.flag} <source>`,
+      `${resource.description}; ${source}`,
+    )
+      .argParser(collectBrowserSource)
+      .default([]);
+    if (resource.option === "allowEmbed" && interstitialConflicts) {
+      option.conflicts(["interstitial", "interstitialNote"]);
+    }
+    command.addOption(option);
   }
   return command
-    .addOption(
-      new Option("--allow-script <source>", `allow external browser scripts; ${source}`)
-        .argParser(collectBrowserSource)
-        .default([]),
-    )
-    .addOption(
-      new Option("--allow-connect <source>", `allow browser fetch/WebSocket access; ${source}`)
-        .argParser(collectBrowserSource)
-        .default([]),
-    )
-    .addOption(
-      new Option("--allow-image <source>", `allow image loads; ${source}`)
-        .argParser(collectBrowserSource)
-        .default([]),
-    )
-    .addOption(
-      new Option("--allow-style <source>", `allow external stylesheets; ${source}`)
-        .argParser(collectBrowserSource)
-        .default([]),
-    )
-    .addOption(
-      new Option("--allow-font <source>", `allow font loads; ${source}`)
-        .argParser(collectBrowserSource)
-        .default([]),
-    )
-    .addOption(
-      new Option("--allow-media <source>", `allow audio and video loads; ${source}`)
-        .argParser(collectBrowserSource)
-        .default([]),
-    )
-    .addOption(
-      new Option("--allow-frame <source>", `allow embedded documents; ${source}`)
-        .argParser(collectBrowserSource)
-        .default([]),
-    )
-    .addOption(
-      new Option("--allow-form <source>", `allow form submissions; ${source}`)
-        .argParser(collectBrowserSource)
-        .default([]),
-    )
-    .addOption(embed)
     .addOption(
       new Option(
         "--referrer <level>",

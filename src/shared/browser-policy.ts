@@ -5,16 +5,26 @@ export const MAX_BROWSER_SOURCES = 16;
 export type BrowserSource = "self" | "https" | "all" | `https://${string}`;
 export type ReferrerDisclosure = "none" | "origin" | "full";
 
-export type BrowserPolicy = {
-  scripts?: BrowserSource[];
-  connect?: BrowserSource[];
-  images?: BrowserSource[];
-  styles?: BrowserSource[];
-  fonts?: BrowserSource[];
-  media?: BrowserSource[];
-  frames?: BrowserSource[];
-  forms?: BrowserSource[];
-  embeddableBy?: BrowserSource[];
+export const BROWSER_RESOURCE_WIRE_KEYS = {
+  scripts: "s",
+  connect: "c",
+  images: "i",
+  styles: "y",
+  fonts: "f",
+  media: "m",
+  frames: "r",
+  forms: "a",
+  embeddableBy: "e",
+} as const;
+
+export type BrowserResourceField = keyof typeof BROWSER_RESOURCE_WIRE_KEYS;
+type BrowserResourceWireKey = (typeof BROWSER_RESOURCE_WIRE_KEYS)[BrowserResourceField];
+const browserResourceEntries = Object.entries(BROWSER_RESOURCE_WIRE_KEYS) as [
+  BrowserResourceField,
+  BrowserResourceWireKey,
+][];
+
+export type BrowserPolicy = Partial<Record<BrowserResourceField, BrowserSource[]>> & {
   referrer?: ReferrerDisclosure;
 };
 
@@ -73,17 +83,13 @@ const browserSourcesSchema = z
   .max(MAX_BROWSER_SOURCES)
   .transform(canonicalSources);
 
+const browserResourceSchemaShape = Object.fromEntries(
+  browserResourceEntries.map(([field]) => [field, browserSourcesSchema.optional()]),
+) as Record<BrowserResourceField, z.ZodOptional<typeof browserSourcesSchema>>;
+
 const browserPolicyObjectSchema = z
   .object({
-    scripts: browserSourcesSchema.optional(),
-    connect: browserSourcesSchema.optional(),
-    images: browserSourcesSchema.optional(),
-    styles: browserSourcesSchema.optional(),
-    fonts: browserSourcesSchema.optional(),
-    media: browserSourcesSchema.optional(),
-    frames: browserSourcesSchema.optional(),
-    forms: browserSourcesSchema.optional(),
-    embeddableBy: browserSourcesSchema.optional(),
+    ...browserResourceSchemaShape,
     referrer: z.enum(["none", "origin", "full"]).optional(),
   })
   .strict();
@@ -110,18 +116,13 @@ export function normalizeBrowserPolicy(input: unknown): BrowserPolicy | undefine
 
 const wireSourceSchema = z.string().min(1).max(255);
 const wireSourcesSchema = z.array(wireSourceSchema).min(1).max(MAX_BROWSER_SOURCES);
+const wireResourceSchemaShape = Object.fromEntries(
+  browserResourceEntries.map(([, wireKey]) => [wireKey, wireSourcesSchema.optional()]),
+) as Record<BrowserResourceWireKey, z.ZodOptional<typeof wireSourcesSchema>>;
 
 export const wireBrowserSettingsSchema = z
   .object({
-    s: wireSourcesSchema.optional(),
-    c: wireSourcesSchema.optional(),
-    i: wireSourcesSchema.optional(),
-    y: wireSourcesSchema.optional(),
-    f: wireSourcesSchema.optional(),
-    m: wireSourcesSchema.optional(),
-    r: wireSourcesSchema.optional(),
-    a: wireSourcesSchema.optional(),
-    e: wireSourcesSchema.optional(),
+    ...wireResourceSchemaShape,
     p: z.union([z.literal("o"), z.literal("f")]).optional(),
     x: z.literal(true).optional(),
   })
@@ -158,25 +159,15 @@ export function browserSettingsToWire(
   settings: ArtifactBrowserSettings,
 ): WireBrowserSettings | undefined {
   const policy = normalizeBrowserPolicy(settings.browser);
-  const scripts = sourcesToWire(policy?.scripts);
-  const connect = sourcesToWire(policy?.connect);
-  const images = sourcesToWire(policy?.images);
-  const styles = sourcesToWire(policy?.styles);
-  const fonts = sourcesToWire(policy?.fonts);
-  const media = sourcesToWire(policy?.media);
-  const frames = sourcesToWire(policy?.frames);
-  const forms = sourcesToWire(policy?.forms);
-  const embeddableBy = sourcesToWire(policy?.embeddableBy);
+  const resources: Partial<Record<BrowserResourceWireKey, string[]>> = {};
+  for (const [field, wireKey] of browserResourceEntries) {
+    const sources = sourcesToWire(policy?.[field]);
+    if (sources) {
+      resources[wireKey] = sources;
+    }
+  }
   const wire = {
-    ...(scripts ? { s: scripts } : {}),
-    ...(connect ? { c: connect } : {}),
-    ...(images ? { i: images } : {}),
-    ...(styles ? { y: styles } : {}),
-    ...(fonts ? { f: fonts } : {}),
-    ...(media ? { m: media } : {}),
-    ...(frames ? { r: frames } : {}),
-    ...(forms ? { a: forms } : {}),
-    ...(embeddableBy ? { e: embeddableBy } : {}),
+    ...resources,
     ...(policy?.referrer === "origin"
       ? { p: "o" as const }
       : policy?.referrer === "full"
@@ -194,25 +185,15 @@ export function browserSettingsFromWire(
     return {};
   }
   const parsed = wireBrowserSettingsSchema.parse(wire);
-  const scripts = sourcesFromWire(parsed.s);
-  const connect = sourcesFromWire(parsed.c);
-  const images = sourcesFromWire(parsed.i);
-  const styles = sourcesFromWire(parsed.y);
-  const fonts = sourcesFromWire(parsed.f);
-  const media = sourcesFromWire(parsed.m);
-  const frames = sourcesFromWire(parsed.r);
-  const forms = sourcesFromWire(parsed.a);
-  const embeddableBy = sourcesFromWire(parsed.e);
+  const resources: Partial<Record<BrowserResourceField, BrowserSource[]>> = {};
+  for (const [field, wireKey] of browserResourceEntries) {
+    const sources = sourcesFromWire(parsed[wireKey]);
+    if (sources) {
+      resources[field] = sources;
+    }
+  }
   const browser = normalizeBrowserPolicy({
-    ...(scripts ? { scripts } : {}),
-    ...(connect ? { connect } : {}),
-    ...(images ? { images } : {}),
-    ...(styles ? { styles } : {}),
-    ...(fonts ? { fonts } : {}),
-    ...(media ? { media } : {}),
-    ...(frames ? { frames } : {}),
-    ...(forms ? { forms } : {}),
-    ...(embeddableBy ? { embeddableBy } : {}),
+    ...resources,
     ...(parsed.p === "o" ? { referrer: "origin" as const } : {}),
     ...(parsed.p === "f" ? { referrer: "full" as const } : {}),
   });

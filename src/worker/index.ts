@@ -153,6 +153,105 @@ async function verifiedAuthor(decoded: DecodedPayload, env: Env): Promise<Author
   return author;
 }
 
+async function executeDecodedRoute(
+  request: Request,
+  env: Env,
+  decoded: DecodedPayload,
+  author: AuthorVerification,
+  url: URL,
+  responseSecurity: GuestResponseSecurity,
+): Promise<Response> {
+  const preflight = corsPreflightResponse(request, responseSecurity);
+  if (preflight) {
+    return preflight;
+  }
+  if (decoded.envelope.i) {
+    if (request.method === "GET") {
+      const action = new URL(url);
+      action.searchParams.set("__confirm", "1");
+      return interstitialPage(decoded, author, `${action.pathname}${action.search}`);
+    }
+    if (request.method !== "POST" || url.searchParams.get("__confirm") !== "1") {
+      throw new HttpError(405, "This smartlink requires browser confirmation.");
+    }
+  }
+
+  await enforceExecutionRateLimit(request, env);
+  const secrets = await decryptSecrets(decoded, env);
+  const cryptoBudget = createCryptoOperationBudget();
+  const compile = createSmartlinkCompiler({
+    parent: decoded,
+    parentSecrets: secrets,
+    service: url.origin,
+    getPublicKey: () => {
+      const keyId = keyIdFromEnv(env);
+      return publicKeyFromPrivateSecret(keyId, privateKey(env, keyId));
+    },
+    encode: encodeWorkerPayload,
+    validate: validateWorkerScript,
+    cryptoBudget,
+  });
+  let result: ScriptResult;
+  try {
+    result = await runWorkerScript({
+      version: decoded.version,
+      source: decoded.envelope.s,
+      context: {
+        params: userParams(url.searchParams),
+        paramValues: userParamValues(url.searchParams),
+        method: request.method,
+        headers: guestRequestHeaders(request.headers),
+        body: await readBoundedBody(request),
+        secrets,
+        requestId: createRequestId(request.headers.get("cf-ray")),
+      },
+      fetch: createGuardedFetch({
+        blockedHostnames: [url.hostname, ...env.RUNTIME_HOSTNAMES],
+      }),
+      crypto: createGuestCrypto({
+        crypto,
+        budget: cryptoBudget,
+        tokenKeySource: {
+          masterSecret: readStringBinding(env, "TOKEN_MASTER_SECRET"),
+          artifactIdentity: payloadArtifactIdentity(decoded),
+          domain: "production",
+        },
+      }),
+      cryptoBudget,
+      compile,
+    });
+  } catch (error) {
+    if (error instanceof InvalidScriptResponseError) {
+      throw new HttpError(422, error.message, { cause: error });
+    }
+    throw new HttpError(422, "The smartlink script failed.", { cause: error });
+  }
+
+  let response: Response;
+  try {
+    response = mapScriptResult(result, responseSecurity);
+  } catch (error) {
+    if (error instanceof InvalidScriptResponseError) {
+      throw new HttpError(422, error.message, { cause: error });
+    }
+    throw new HttpError(422, "The smartlink returned an invalid response.", { cause: error });
+  }
+  if (decoded.envelope.i && [301, 302, 303, 307, 308].includes(response.status)) {
+    const location = response.headers.get("location");
+    const target = location === null ? undefined : crossOriginRedirectTarget(location, url);
+    if (target) {
+      if (response.status === 307 || response.status === 308) {
+        throw new HttpError(
+          422,
+          "A confirmed smartlink cannot forward a cross-origin 307 or 308 redirect: the confirmation is a POST, and continuing would change the method. Return a 303 or a bare URL when navigation is intended.",
+        );
+      }
+      return confirmedRedirectPage(target.href);
+    }
+  }
+  return response;
+}
+
 async function runRoute(request: Request, env: Env, payload: string): Promise<Response> {
   let decoded: DecodedPayload;
   try {
@@ -176,100 +275,8 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
     ...(decoded.envelope.browser ? { browser: decoded.envelope.browser } : {}),
     ...(decoded.envelope.cors === true ? { cors: true } : {}),
   };
-  const executeRequest = async (): Promise<Response> => {
-    const preflight = corsPreflightResponse(request, responseSecurity);
-    if (preflight) {
-      return preflight;
-    }
-    if (decoded.envelope.i) {
-      if (request.method === "GET") {
-        const action = new URL(url);
-        action.searchParams.set("__confirm", "1");
-        return interstitialPage(decoded, author, `${action.pathname}${action.search}`);
-      }
-      if (request.method !== "POST" || url.searchParams.get("__confirm") !== "1") {
-        throw new HttpError(405, "This smartlink requires browser confirmation.");
-      }
-    }
-
-    await enforceExecutionRateLimit(request, env);
-    const secrets = await decryptSecrets(decoded, env);
-    const cryptoBudget = createCryptoOperationBudget();
-    const compile = createSmartlinkCompiler({
-      parent: decoded,
-      parentSecrets: secrets,
-      service: url.origin,
-      getPublicKey: () => {
-        const keyId = keyIdFromEnv(env);
-        return publicKeyFromPrivateSecret(keyId, privateKey(env, keyId));
-      },
-      encode: encodeWorkerPayload,
-      validate: validateWorkerScript,
-      cryptoBudget,
-    });
-    let result: ScriptResult;
-    try {
-      result = await runWorkerScript({
-        version: decoded.version,
-        source: decoded.envelope.s,
-        context: {
-          params: userParams(url.searchParams),
-          paramValues: userParamValues(url.searchParams),
-          method: request.method,
-          headers: guestRequestHeaders(request.headers),
-          body: await readBoundedBody(request),
-          secrets,
-          requestId: createRequestId(request.headers.get("cf-ray")),
-        },
-        fetch: createGuardedFetch({
-          blockedHostnames: [url.hostname, ...env.RUNTIME_HOSTNAMES],
-        }),
-        crypto: createGuestCrypto({
-          crypto,
-          budget: cryptoBudget,
-          tokenKeySource: {
-            masterSecret: readStringBinding(env, "TOKEN_MASTER_SECRET"),
-            artifactIdentity: payloadArtifactIdentity(decoded),
-            domain: "production",
-          },
-        }),
-        cryptoBudget,
-        compile,
-      });
-    } catch (error) {
-      if (error instanceof InvalidScriptResponseError) {
-        throw new HttpError(422, error.message, { cause: error });
-      }
-      throw new HttpError(422, "The smartlink script failed.", { cause: error });
-    }
-
-    let response: Response;
-    try {
-      response = mapScriptResult(result, responseSecurity);
-    } catch (error) {
-      if (error instanceof InvalidScriptResponseError) {
-        throw new HttpError(422, error.message, { cause: error });
-      }
-      throw new HttpError(422, "The smartlink returned an invalid response.", { cause: error });
-    }
-    if (decoded.envelope.i && [301, 302, 303, 307, 308].includes(response.status)) {
-      const location = response.headers.get("location");
-      const target = location === null ? undefined : crossOriginRedirectTarget(location, url);
-      if (target) {
-        if (response.status === 307 || response.status === 308) {
-          throw new HttpError(
-            422,
-            "A confirmed smartlink cannot forward a cross-origin 307 or 308 redirect: the confirmation is a POST, and continuing would change the method. Return a 303 or a bare URL when navigation is intended.",
-          );
-        }
-        return confirmedRedirectPage(target.href);
-      }
-    }
-    return response;
-  };
-
   try {
-    return await executeRequest();
+    return await executeDecodedRoute(request, env, decoded, author, url, responseSecurity);
   } catch (error) {
     if (decoded.envelope.cors !== true) {
       throw error;
