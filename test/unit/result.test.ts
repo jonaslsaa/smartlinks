@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  corsPreflightResponse,
   RUNTIME_CONTENT_SECURITY_POLICY,
   SMARTLINKS_PREVIEW_HEADER,
 } from "../../src/shared/response-security.js";
@@ -53,6 +54,130 @@ describe("script result mapping", () => {
     expect(response.headers.get(SMARTLINKS_PREVIEW_HEADER)).toBeNull();
     expectRuntimeSecurityHeaders(response);
     await expect(response.text()).resolves.toBe("done");
+  });
+
+  it("applies authenticated guest browser policy while keeping the sandbox floor", () => {
+    const response = mapScriptResult(
+      {
+        headers: {
+          "access-control-allow-credentials": "true",
+          "access-control-allow-origin": "https://spoofed.example",
+          "content-security-policy": "img-src https://only.example",
+          "referrer-policy": "unsafe-url",
+          "x-frame-options": "DENY",
+        },
+        body: "guest",
+      },
+      {
+        service: "https://runtime.example",
+        browser: {
+          images: ["https"],
+          embeddableBy: ["https://host.example"],
+          referrer: "origin",
+        },
+        cors: true,
+      },
+    );
+    const csp = response.headers.get("content-security-policy") ?? "";
+
+    expect(csp).toContain("sandbox ");
+    expect(csp).not.toContain("allow-same-origin");
+    expect(csp).toContain("img-src data: blob: https:");
+    expect(csp).toContain("frame-ancestors https://host.example");
+    expect(csp).toContain("img-src https://only.example");
+    expect(response.headers.get("referrer-policy")).toBe("origin");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response.headers.get("access-control-allow-credentials")).toBeNull();
+    expect(response.headers.get("access-control-expose-headers")).toBe("*");
+  });
+
+  it("keeps runtime-owned CORS headers absent without an artifact opt-in", () => {
+    const response = mapScriptResult(
+      {
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-credentials": "true",
+        },
+        body: "guest",
+      },
+      { service: "https://runtime.example" },
+    );
+
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(response.headers.get("access-control-allow-credentials")).toBeNull();
+  });
+
+  it("removes browser reporting channels that could disclose the bearer URL", () => {
+    const response = mapScriptResult(
+      {
+        headers: {
+          "content-security-policy":
+            "img-src https://images.example; report-uri https://reports.example/csp; report-to leaks",
+          "content-security-policy-report-only":
+            "script-src 'none'; report-uri https://reports.example/report-only",
+          "cross-origin-embedder-policy": 'require-corp; report-to="https://reports.example/coep"',
+          "cross-origin-embedder-policy-report-only":
+            'require-corp; report-to="https://reports.example/coep-only"',
+          "cross-origin-opener-policy":
+            'restrict-properties; report-to="https://reports.example/coop"',
+          "cross-origin-opener-policy-report-only":
+            'same-origin; report-to="https://reports.example/coop-only"',
+          "document-isolation-policy":
+            'isolate-and-require-corp; report-to="https://reports.example/dip"',
+          "document-isolation-policy-report-only":
+            'isolate-and-require-corp; report-to="https://reports.example/dip-only"',
+          "integrity-policy-report-only": 'blocked-destinations=(script); endpoints=("leaks")',
+          nel: '{"report_to":"leaks"}',
+          "report-to": '{"group":"leaks","endpoints":[]}',
+          "reporting-endpoints": 'leaks="https://reports.example/modern"',
+          "x-feature-report-only": "preserved application metadata",
+        },
+        body: "guest",
+      },
+      { service: "https://runtime.example" },
+    );
+    const csp = response.headers.get("content-security-policy") ?? "";
+
+    expect(csp).toContain("img-src https://images.example");
+    expect(csp).not.toMatch(/report-(?:to|uri)/u);
+    expect(response.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(response.headers.get("cross-origin-embedder-policy")).toBe("require-corp");
+    expect(response.headers.get("cross-origin-embedder-policy-report-only")).toBeNull();
+    expect(response.headers.get("cross-origin-opener-policy")).toBe("restrict-properties");
+    expect(response.headers.get("cross-origin-opener-policy-report-only")).toBeNull();
+    expect(response.headers.get("document-isolation-policy")).toBe("isolate-and-require-corp");
+    expect(response.headers.get("document-isolation-policy-report-only")).toBeNull();
+    expect(response.headers.get("integrity-policy-report-only")).toBeNull();
+    expect(response.headers.get("nel")).toBeNull();
+    expect(response.headers.get("report-to")).toBeNull();
+    expect(response.headers.get("reporting-endpoints")).toBeNull();
+    expect(response.headers.get("x-feature-report-only")).toBe("preserved application metadata");
+  });
+
+  it("answers valid CORS preflights without creating a guest response", () => {
+    const request = new Request("https://runtime.example/r/value", {
+      method: "OPTIONS",
+      headers: {
+        origin: "null",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type, x-task",
+      },
+    });
+    const response = corsPreflightResponse(request, {
+      service: "https://runtime.example",
+      cors: true,
+    });
+
+    expect(response?.status).toBe(204);
+    expect(response?.headers.get("access-control-allow-origin")).toBe("*");
+    expect(response?.headers.get("access-control-allow-methods")).toBe("POST");
+    expect(response?.headers.get("access-control-allow-headers")).toBe("content-type, x-task");
+    expect(response?.headers.get("cache-control")).toBe("no-store");
+    expect(response?.headers.get("content-security-policy")).toContain(
+      RUNTIME_CONTENT_SECURITY_POLICY,
+    );
+    expect(corsPreflightResponse(request, { service: "https://runtime.example" })).toBeUndefined();
   });
 
   it("decodes binary response bodies without changing their bytes", async () => {

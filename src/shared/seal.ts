@@ -1,5 +1,6 @@
 import { Aes128Gcm, CipherSuite, DhkemX25519HkdfSha256, HkdfSha256 } from "@hpke/core";
 import type { AuthorCertificate } from "./author.js";
+import { type BrowserPolicy, browserSettingsIdentity } from "./browser-policy.js";
 import { concatBytes, fromBase64Url, text, toBase64Url, utf8 } from "./bytes.js";
 import type { DecodedPayload, Envelope, PayloadVersion } from "./codec.js";
 
@@ -32,6 +33,8 @@ type ArtifactIdentityFields = {
   interstitial: boolean;
   interstitialNote?: string;
   allowCrawlers: boolean;
+  browser?: BrowserPolicy;
+  cors: boolean;
 };
 
 type ArtifactSecretFields = ArtifactIdentityFields & {
@@ -56,7 +59,14 @@ function artifactIdentityValues(identity: ArtifactIdentity): readonly unknown[] 
   ];
   const noted =
     identity.interstitialNote === undefined ? values : [...values, identity.interstitialNote];
-  return identity.allowCrawlers ? [...noted, true] : noted;
+  const crawlers = identity.allowCrawlers ? [...noted, true] : noted;
+  return [
+    ...crawlers,
+    ...browserSettingsIdentity({
+      ...(identity.browser ? { browser: identity.browser } : {}),
+      ...(identity.cors ? { cors: true } : {}),
+    }),
+  ];
 }
 
 function compareSealedSecretEntries(
@@ -82,6 +92,8 @@ export function payloadArtifactIdentity(
     ...(decoded.envelope.notAfter === undefined ? {} : { notAfter: decoded.envelope.notAfter }),
     interstitial: decoded.envelope.i === true,
     allowCrawlers: decoded.envelope.allowCrawlers === true,
+    ...(decoded.envelope.browser ? { browser: decoded.envelope.browser } : {}),
+    cors: decoded.envelope.cors === true,
     ...(decoded.envelope.interstitialNote === undefined
       ? {}
       : { interstitialNote: decoded.envelope.interstitialNote }),
@@ -94,7 +106,7 @@ export function artifactSecretBinding(
   version: PayloadVersion,
   envelope: Pick<
     Envelope,
-    "s" | "c" | "i" | "a" | "allowCrawlers" | "notAfter" | "interstitialNote"
+    "s" | "c" | "i" | "a" | "allowCrawlers" | "notAfter" | "interstitialNote" | "browser" | "cors"
   >,
   secretName: string,
   authorCertificate?: AuthorCertificate,
@@ -110,6 +122,8 @@ export function artifactSecretBinding(
     ...(envelope.notAfter === undefined ? {} : { notAfter: envelope.notAfter }),
     interstitial: envelope.i === true,
     allowCrawlers: envelope.allowCrawlers === true,
+    ...(envelope.browser ? { browser: envelope.browser } : {}),
+    cors: envelope.cors === true,
     ...(envelope.interstitialNote === undefined
       ? {}
       : { interstitialNote: envelope.interstitialNote }),
@@ -137,6 +151,9 @@ function payloadSecretBinding(decoded: DecodedPayload, secretName: string): Secr
   }
   if (decoded.envelope.allowCrawlers === true) {
     throw new Error("Sealed crawler execution requires complete-artifact binding.");
+  }
+  if (decoded.envelope.browser !== undefined || decoded.envelope.cors === true) {
+    throw new Error("Sealed browser policy requires complete-artifact binding.");
   }
   return decoded.envelope.notAfter === undefined
     ? { script: decoded.envelope.s }

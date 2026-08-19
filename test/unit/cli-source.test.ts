@@ -257,6 +257,52 @@ describe("CLI script input", () => {
     ).rejects.toThrow("Types of parameters 'name' and 'childContext' are incompatible.");
   });
 
+  it("makes incompatible child browser policy combinations unrepresentable", async () => {
+    const child = 'const child = async (_ctx: typeof ctx) => ({ body: "child" });\n';
+
+    await expect(
+      transpileScriptSource(
+        `${child}return ctx.compile(child, [], {
+          interstitial: false,
+          browser: {
+            scripts: ["self", "https://cdn.example"],
+            embeddableBy: ["https://host.example"],
+            referrer: "origin",
+          },
+          cors: true,
+        });`,
+        "browser-child.ts",
+      ),
+    ).resolves.toContain("embeddableBy");
+
+    await expect(
+      transpileScriptSource(
+        `${child}return ctx.compile(child, [], {
+          browser: { embeddableBy: ["https://host.example"] },
+        });`,
+        "browser-child-inherits-interstitial.ts",
+      ),
+    ).rejects.toThrow("Property 'interstitial' is missing");
+
+    await expect(
+      transpileScriptSource(
+        `${child}return ctx.compile(child, [], {
+          interstitial: false,
+          note: "Review this",
+        });`,
+        "browser-child-note.ts",
+      ),
+    ).rejects.toThrow("not assignable");
+
+    await expect(
+      transpileScriptSource(
+        `${child}const browser: SmartlinksBrowserPolicy = { scripts: ["self"] };
+        return ctx.compile(child, [], { interstitial: false, browser });`,
+        "browser-child-reusable-policy.ts",
+      ),
+    ).resolves.toContain("const browser");
+  });
+
   it("can explicitly skip semantic type checking", async () => {
     const transpiled = await transpileScriptSource(
       'const value: number = "runtime";\nreturn value;',

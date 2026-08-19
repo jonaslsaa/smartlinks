@@ -49,7 +49,7 @@ describe("smartlink minting", () => {
     expect(envelope?.s).toContain('{\\"a\\":2,\\"z\\":1}');
   });
 
-  it("inherits parent expiry, interstitial, and crawler policy when options are omitted", async () => {
+  it("inherits execution policy but leaves child browser capabilities independent", async () => {
     const encode = vi.fn(async (envelope, version) => encodePayload(envelope, version));
     const compile = await compiler({
       parent: {
@@ -60,6 +60,8 @@ describe("smartlink minting", () => {
           i: true,
           allowCrawlers: true,
           notAfter: 2_000,
+          browser: { scripts: ["https"] },
+          cors: true,
         },
       },
       encode,
@@ -71,9 +73,42 @@ describe("smartlink minting", () => {
       allowCrawlers: true,
       notAfter: 2_000,
     });
+    expect(encode.mock.calls[0]?.[0].browser).toBeUndefined();
+    expect(encode.mock.calls[0]?.[0].cors).toBeUndefined();
 
     await compile(0, [], { allowCrawlers: false });
     expect(encode.mock.calls[1]?.[0].allowCrawlers).toBeUndefined();
+  });
+
+  it("requires embeddable children to explicitly disable inherited interstitials", async () => {
+    const encode = vi.fn(async (envelope, version) => encodePayload(envelope, version));
+    const compile = await compiler({
+      parent: {
+        version: "2",
+        envelope: {
+          s: "async ctx=>ctx.compile(0,[])",
+          c: ["async()=>({body:'ok'})"],
+          i: true,
+        },
+      },
+      encode,
+    });
+
+    await expect(
+      compile(0, [], { browser: { embeddableBy: ["https://host.example"] } }),
+    ).rejects.toThrow("require interstitial: false");
+    await expect(
+      compile(0, [], {
+        browser: { embeddableBy: ["https://host.example"] },
+        interstitial: false,
+        cors: true,
+      }),
+    ).resolves.toMatch(/^https:\/\/runtime\.example\/r\/2/u);
+    expect(encode.mock.calls[0]?.[0]).toMatchObject({
+      browser: { embeddableBy: ["https://host.example"] },
+      cors: true,
+    });
+    expect(encode.mock.calls[0]?.[0].i).toBeUndefined();
   });
 
   it("lets children opt into their own note without inheriting the parent's note", async () => {
@@ -137,6 +172,14 @@ describe("smartlink minting", () => {
     await expect(compile(0, [{ [secret]: "value" }], undefined)).rejects.toThrow(
       "Pass it through options.seal",
     );
+  });
+
+  it("rejects parent secret bytes embedded in browser policy", async () => {
+    const compile = await compiler({ parentSecrets: { HOST: "secret.example" } });
+
+    await expect(
+      compile(0, [], { browser: { scripts: ["https://secret.example"] } }),
+    ).rejects.toThrow("Pass it through options.seal");
   });
 
   it("rejects non-JSON tuples, prototype keys, and oversized argument data", async () => {

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { browserSettingsIdentity } from "./browser-policy.js";
 import { concatBytes, fromBase64Url, toBase64Url, utf8 } from "./bytes.js";
 import type { DecodedPayload, Envelope, PayloadVersion } from "./codec.js";
 
@@ -102,7 +103,8 @@ function artifactSigningBytes(
   envelope: Omit<Envelope, "u">,
   certificate: AuthorCertificate,
 ): Uint8Array {
-  const { s, i, a, c, k, allowCrawlers, notAfter, interstitialNote, ...unhandled } = envelope;
+  const { s, i, a, c, k, allowCrawlers, notAfter, interstitialNote, browser, cors, ...unhandled } =
+    envelope;
   const exhaustive: Record<string, never> = unhandled;
   void exhaustive;
   const sealedSecrets = Object.entries(envelope.k ?? {}).sort(([left], [right]) =>
@@ -120,7 +122,18 @@ function artifactSigningBytes(
     certificateFields(certificate),
   ];
   const authenticatedArtifact = allowCrawlers === true ? [...artifact, true] : artifact;
-  return concatBytes(ARTIFACT_DOMAIN, utf8(JSON.stringify(authenticatedArtifact)));
+  return concatBytes(
+    ARTIFACT_DOMAIN,
+    utf8(
+      JSON.stringify([
+        ...authenticatedArtifact,
+        ...browserSettingsIdentity({
+          ...(browser ? { browser } : {}),
+          ...(cors === true ? { cors: true } : {}),
+        }),
+      ]),
+    ),
+  );
 }
 
 async function importPublicKey(encoded: string): Promise<CryptoKey> {

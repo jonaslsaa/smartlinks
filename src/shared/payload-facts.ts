@@ -1,3 +1,4 @@
+import type { BrowserPolicy } from "./browser-policy.js";
 import { type DecodedPayload, formatNotAfter, isExpired } from "./codec.js";
 
 export type PayloadFacts = {
@@ -9,6 +10,8 @@ export type PayloadFacts = {
   notAfter: number | null;
   expiresAt: string | null;
   expired: boolean;
+  browser: BrowserPolicy | null;
+  cors: boolean;
 };
 
 export function payloadFacts(decoded: DecodedPayload): PayloadFacts {
@@ -22,5 +25,7 @@ export function payloadFacts(decoded: DecodedPayload): PayloadFacts {
     notAfter: notAfter ?? null,
     expiresAt: notAfter === undefined ? null : formatNotAfter(notAfter),
     expired: isExpired(notAfter),
+    browser: decoded.envelope.browser ?? null,
+    cors: decoded.envelope.cors === true,
   };
 }

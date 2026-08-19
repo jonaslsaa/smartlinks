@@ -98,11 +98,11 @@ or decoded link. Anyone holding the complete URL can run the program — that is
 handing over the *action*, not the credential. Scope it tight and let it expire.
 
 The ciphertext is bound to the complete immutable program: entry function, compile closures, baked
-child data, expiry, execution policy, and optional author note, plus the secret name. Change any
-of those and the secrets become undecryptable — nobody can lift your sealed token into a modified
-script. The expiry is part of that binding, so on links with sealed secrets it is cryptographically
-enforced. Use narrowly scoped, revocable secrets; the boundary section below spells out what
-sealing does and does not hide.
+child data, expiry, execution and browser policy, CORS choice, optional author note, and the secret
+name. Change any of those and the secrets become undecryptable — nobody can lift your sealed token
+into a modified script. The expiry is part of that binding, so on links with sealed secrets it is
+cryptographically enforced. Use narrowly scoped, revocable secrets; the boundary section below
+spells out what sealing does and does not hide.
 
 ## Give away less than you have
 
@@ -151,8 +151,10 @@ parent values enter through the tuple. Packaged helpers are definitions, not mut
 function objects, so every use outside a direct `ctx.compile` closure position must be a direct
 call. `ttlSeconds` can never extend a parent expiry. `interstitial` and `allowCrawlers` may be set
 explicitly or inherited; `note` adds a child-specific author note and implies an interstitial.
-`seal` accepts strings the parent deliberately chose: delegated, derived, or generated. A child
-carrying its own statically approved closures can mint again.
+Browser policy and CORS are chosen independently for each child rather than inherited. An
+embeddable child must explicitly set `interstitial: false`; the two browser flows cannot be
+combined. `seal` accepts strings the parent deliberately chose: delegated, derived, or generated.
+A child carrying its own statically approved closures can mint again.
 
 Two rules keep this safe. A parent whose mint branch is reachable by anyone holding its URL is an
 unauthenticated admin endpoint — keep parents private or verify a signed request before compiling.
@@ -212,12 +214,25 @@ cryptographically secure.
 
 Return an absolute URL for a `302` redirect, `{ status?, headers?, body? }` for a text response,
 `{ status?, headers?, bodyBase64 }` for bytes (1 MiB after decoding), or nothing for a small
-success page. `body` and `bodyBase64` are mutually exclusive. Every response receives the
-runtime's fixed Content Security Policy, `Referrer-Policy: no-referrer`,
-`X-Content-Type-Options: nosniff`, and `X-Frame-Options: DENY`; an author CSP can tighten but not
-replace that floor. Other headers remain author-controlled except `Set-Cookie` and
-`Clear-Site-Data` — browser cookie state is deliberately unsupported — and the runtime reserves
-`X-Smartlinks-Preview` so executed responses cannot impersonate previews.
+success page. `body` and `bodyBase64` are mutually exclusive.
+
+Authored HTML can use ordinary inline JavaScript and CSS. Every authored response is isolated by
+a mandatory CSP sandbox without `allow-same-origin`, so pages cannot use cookies, persistent
+storage, or service workers on the shared runtime origin. External scripts, connections,
+subresources, frames, form targets, embedding, and referrer disclosure are explicit artifact
+capabilities; `--cors` makes an artifact a credential-free cross-origin target and handles browser
+preflights without executing the script. The policy is authenticated and visible in `decode`.
+Author-supplied CSP is enforced in addition and can only tighten it.
+
+Referrer disclosure is off by default. The `full` setting deliberately sends the complete bearer
+Smartlink URL and user query parameters to eligible destinations; `origin` discloses only the
+runtime origin.
+
+`Referrer-Policy` and framing headers follow the artifact policy; every response also receives
+`X-Content-Type-Options: nosniff`. Other headers remain author-controlled except cookies, runtime
+preview markers, CORS headers, and browser reporting configuration, which the runtime owns.
+Reporting directives are removed from author CSP because reports would disclose the bearer URL
+outside the artifact's browser policy.
 
 TypeScript input is strictly type-checked against the Smartlinks `ctx`, global `fetch`, and
 response contract, then transpiled. Secret names supplied with `--secret` become required string
@@ -258,17 +273,20 @@ smartlinks logout                        Remove the local author signing identit
 
 Use `smartlinks --help` or `smartlinks help <command>` for every option. Useful build flags
 include `--secret`, `--expires`, `--interstitial`, `--interstitial-note`, `--allow-crawlers`,
-`--no-sign`, `--copy`, `--out`, `--json`, `--no-minify`, and `--no-type-check`. `--expires`
-accepts a duration such as `30m`, `1h`, or `7d`, or an absolute ISO 8601 date.
+the `--allow-*` browser capabilities, `--referrer`, `--cors`, `--no-sign`, `--copy`, `--out`,
+`--json`, `--no-minify`, and `--no-type-check`. Browser capability flags also apply to `run` and
+`run --serve`. `--expires` accepts a duration such as `30m`, `1h`, or `7d`, or an absolute ISO
+8601 date.
 
 `smartlinks run` is the local dry-run: the same wrapper, QuickJS engine, and policies as
 production, so what you test is what ships. Networking is off by default; opt in with
 `--allow-network`, or use `--simulate` to trace a networked script's fetches and successful child
 mints without sending anything. Repeat `--simulate-response STATUS` to return specific statuses
 to successive allowed fetches; unconfigured fetches retain the default HTTP 200 JSON response.
-For browser-based iteration, `run --serve` serves the script on
-`http://127.0.0.1:8787` (`--port` to change), re-reading and checking the root file on every root
-request, never building a production link or contacting production. In serve mode, local
+For browser-based iteration, `run --serve` prints a private per-session URL on
+`http://127.0.0.1:8787` (`--port` to change), re-reading and checking the root file on every entry
+request, never building a production link or contacting production. The unguessable entry path
+prevents arbitrary websites from triggering the local script by probing the port. In serve mode, local
 `ctx.compile` returns a clickable URL on that loopback server; compiled children and grandchildren
 remain executable for the server session, including deliberately sealed delegation. One-shot
 `run` uses clearly non-production `https://smartlinks.local/...` URLs and follows them in the same
@@ -322,6 +340,10 @@ section before putting authority into one.
   republishing as a different unsigned link.
 - **Tokens are replayable.** Statelessness makes true once-only impossible; anything
   time-sensitive should carry its own timestamp.
+- **Browser pages share a hostname, not an origin.** Authored pages are forced into opaque origins.
+  This permits useful JavaScript while keeping cookies, storage, service workers, and DOM access
+  between Smartlinks unavailable. External browser access exists only where the artifact policy
+  says it does; `cors` is credential-free and never restores a shared origin.
 - **Crawlers execute only when the author opts in.** By default, known crawler, prefetch, and
   `HEAD` requests receive a non-executing HTTP 200 preview carrying `x-smartlinks-preview: 1`,
   even after expiry — so a pasted link does not fire in chat unfurls. `--allow-crawlers` lets

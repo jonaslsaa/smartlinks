@@ -12,6 +12,11 @@ import {
   userParamValues,
 } from "../shared/request-context.js";
 import {
+  corsPreflightResponse,
+  credentialFreeCorsResponse,
+  type GuestResponseSecurity,
+} from "../shared/response-security.js";
+import {
   InvalidScriptResponseError,
   mapScriptResult,
   type ScriptResult,
@@ -148,23 +153,17 @@ async function verifiedAuthor(decoded: DecodedPayload, env: Env): Promise<Author
   return author;
 }
 
-async function runRoute(request: Request, env: Env, payload: string): Promise<Response> {
-  let decoded: DecodedPayload;
-  try {
-    decoded = await decodeWorkerPayload(payload);
-  } catch (error) {
-    throw new HttpError(400, error instanceof Error ? error.message : "Invalid smartlink.", {
-      cause: error,
-    });
-  }
-  const author = await verifiedAuthor(decoded, env);
-  if (isPreviewRequest(request, decoded.envelope.allowCrawlers === true)) {
-    return previewPage(decoded, author, request.method === "HEAD");
-  }
-
-  const url = new URL(request.url);
-  if (isExpired(decoded.envelope.notAfter)) {
-    return expiredPage();
+async function executeDecodedRoute(
+  request: Request,
+  env: Env,
+  decoded: DecodedPayload,
+  author: AuthorVerification,
+  url: URL,
+  responseSecurity: GuestResponseSecurity,
+): Promise<Response> {
+  const preflight = corsPreflightResponse(request, responseSecurity);
+  if (preflight) {
+    return preflight;
   }
   if (decoded.envelope.i) {
     if (request.method === "GET") {
@@ -230,7 +229,7 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
 
   let response: Response;
   try {
-    response = mapScriptResult(result);
+    response = mapScriptResult(result, responseSecurity);
   } catch (error) {
     if (error instanceof InvalidScriptResponseError) {
       throw new HttpError(422, error.message, { cause: error });
@@ -251,6 +250,49 @@ async function runRoute(request: Request, env: Env, payload: string): Promise<Re
     }
   }
   return response;
+}
+
+async function runRoute(request: Request, env: Env, payload: string): Promise<Response> {
+  let decoded: DecodedPayload;
+  try {
+    decoded = await decodeWorkerPayload(payload);
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : "Invalid smartlink.", {
+      cause: error,
+    });
+  }
+  const author = await verifiedAuthor(decoded, env);
+  if (isPreviewRequest(request, decoded.envelope.allowCrawlers === true)) {
+    return previewPage(decoded, author, request.method === "HEAD");
+  }
+
+  const url = new URL(request.url);
+  if (isExpired(decoded.envelope.notAfter)) {
+    return expiredPage();
+  }
+  const responseSecurity: GuestResponseSecurity = {
+    service: url.origin,
+    ...(decoded.envelope.browser ? { browser: decoded.envelope.browser } : {}),
+    ...(decoded.envelope.cors === true ? { cors: true } : {}),
+  };
+  try {
+    return await executeDecodedRoute(request, env, decoded, author, url, responseSecurity);
+  } catch (error) {
+    if (decoded.envelope.cors !== true) {
+      throw error;
+    }
+    const sourceError =
+      error instanceof HttpError
+        ? error
+        : error instanceof ZodError
+          ? new HttpError(400, error.message, { cause: error })
+          : new HttpError(500, "Internal server error.", { cause: error });
+    throw new HttpError(sourceError.status, sourceError.message, {
+      cause: sourceError.cause ?? sourceError,
+      credentialFreeCors: true,
+      headers: sourceError.headers,
+    });
+  }
 }
 
 function crossOriginRedirectTarget(location: string, requestUrl: URL): URL | undefined {
@@ -355,10 +397,12 @@ export default {
       const message =
         status < 500 && error instanceof Error ? error.message : "Internal server error.";
       if (status >= 500) {
+        const loggedError =
+          error instanceof HttpError && error.cause instanceof Error ? error.cause : error;
         console.error(
           JSON.stringify({
             message: "request failed",
-            error: error instanceof Error ? error.name : "UnknownError",
+            error: loggedError instanceof Error ? loggedError.name : "UnknownError",
             route: new URL(request.url).pathname.split("/").slice(0, 2).join("/") || "/",
           }),
         );
@@ -367,7 +411,10 @@ export default {
       if (error instanceof HttpError) {
         responseInit.headers = error.headers;
       }
-      return json({ error: message }, responseInit);
+      const response = json({ error: message }, responseInit);
+      return error instanceof HttpError && error.credentialFreeCors
+        ? credentialFreeCorsResponse(response)
+        : response;
     }
   },
 } satisfies ExportedHandler<Env>;

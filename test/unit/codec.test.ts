@@ -4,6 +4,7 @@ import { encodePayloadForCli } from "../../src/cli/encode.js";
 import {
   CURRENT_PAYLOAD_VERSION,
   decodePayload,
+  type Envelope,
   encodePayload,
   encodePayloadWith,
   MAX_SCRIPT_LENGTH,
@@ -16,7 +17,7 @@ import { formatStoredScript, minifyScriptBody, wrapScriptBody } from "../../src/
 
 describe("payload codec", () => {
   it("round-trips current payloads", () => {
-    const envelope = {
+    const envelope: Envelope = {
       s: "async a=>a.params.to",
       i: true as const,
       a: 1 as const,
@@ -51,6 +52,43 @@ describe("payload codec", () => {
     expect(JSON.parse(allowedSerialized)).toEqual({ s: allowed.s, p: true });
     expect(allowedSerialized).not.toContain("allowCrawlers");
     expect(decodePayload(encodePayload(allowed)).envelope).toEqual(allowed);
+  });
+
+  it("keeps authenticated browser capabilities compact on the wire", () => {
+    const envelope: Envelope = {
+      s: "async()=>1",
+      browser: {
+        scripts: ["https://cdn.example", "self"],
+        connect: ["https"],
+        embeddableBy: ["https://host.example"],
+        referrer: "origin" as const,
+      },
+      cors: true as const,
+    };
+    const serialized = new TextDecoder().decode(serializeEnvelope(envelope));
+
+    expect(JSON.parse(serialized)).toEqual({
+      s: envelope.s,
+      b: {
+        s: ["@cdn.example", "s"],
+        c: ["h"],
+        e: ["@host.example"],
+        p: "o",
+        x: true,
+      },
+    });
+    expect(serialized).not.toMatch(/browser|scripts|connect|embeddable|referrer|cors/u);
+    expect(decodePayload(encodePayload(envelope)).envelope).toEqual(envelope);
+  });
+
+  it("rejects the mechanically incompatible embed and interstitial combination", () => {
+    expect(() =>
+      serializeEnvelope({
+        s: "async()=>1",
+        i: true,
+        browser: { embeddableBy: ["all"] },
+      }),
+    ).toThrow("cannot require an interstitial");
   });
 
   it("normalizes author notes and uses a compact wire key", () => {

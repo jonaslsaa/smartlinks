@@ -50,6 +50,12 @@ describe("guest token seal/open", () => {
     await expect(link("return 1", { allowCrawlers: true }).open(token)).rejects.toThrow(
       "could not be opened",
     );
+    await expect(link("return 1", { browser: { scripts: ["https"] } }).open(token)).rejects.toThrow(
+      "could not be opened",
+    );
+    await expect(link("return 1", { cors: true }).open(token)).rejects.toThrow(
+      "could not be opened",
+    );
     await expect(
       link("return 1", { i: true, interstitialNote: "note" }).open(token),
     ).rejects.toThrow("could not be opened");

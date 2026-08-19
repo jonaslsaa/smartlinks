@@ -90,6 +90,13 @@ be fixed, anyone with a link can run it, etc.).
     the tuple maps to its remaining parameters. Parent bindings, including `ctx`,
     are rejected as captures.
     Compile arguments are data and must not be interpreted as executable code.
+13. **Browser policy is authenticated artifact data**: authored responses always
+    run in a CSP sandbox without `allow-same-origin`. Inline scripts and styles
+    work by default; external resources, connections, form targets, embedding,
+    referrer disclosure, and credential-free CORS are explicit capabilities.
+    Children choose these independently. Embedding and an interstitial are
+    mechanically incompatible. Cookies, persistent storage, and service workers
+    remain unavailable until artifacts have distinct origins.
 
 ## URL and envelope format
 
@@ -110,7 +117,8 @@ https://<domain>/r/<payload>?<user params...>
   "c": ["<compile closure>"],
   "k": { "TOKEN": "<base64url sealed blob>" },
   "n": 2000000000,
-  "m": "<author note>"
+  "m": "<author note>",
+  "b": { "s": ["h"], "x": true }
 }
 ```
 
@@ -118,8 +126,8 @@ https://<domain>/r/<payload>?<user params...>
   marker (optional), `c` = ordered compile closure table (optional), `k` =
   sealed secrets by name (optional), `n` = `notAfter` expiry as integer Unix
   seconds (optional), `m` = author-provided interstitial note (optional, requires
-  `i`). Decoders still accept the earlier verbose `notAfter` wire key, but
-  authors emit only `n`.
+  `i`), `b` = compact browser policy and CORS settings (optional). Decoders still
+  accept the earlier verbose `notAfter` wire key, but authors emit only `n`.
 - Query params starting with `__` are reserved for the service
   (`__confirm`); all others belong to the script.
 - Sealed blob layout: `keyId (1 byte) || hpke enc || ciphertext`.
@@ -151,7 +159,7 @@ Host↔guest boundary passes plain JSON-able values only.
 | Route | Behavior |
 |---|---|
 | `GET /` | Temporary redirect to the public landing page |
-| `ALL /r/<payload>` | Runner: preview check → decode → expiry check → interstitial → rate limit → decrypt secrets (verify complete-artifact AAD for modern links) → read body → sandbox, including one optional mint → map return value to response |
+| `ALL /r/<payload>` | Runner: preview check → decode → expiry check → opted-in CORS preflight → interstitial → rate limit → decrypt secrets (verify complete-artifact AAD for modern links) → read body → sandbox, including one optional mint → map return value with the authenticated browser policy |
 | `GET /d/<payload>` | Decoder: pretty-printed entry script, compile closures, and envelope metadata; "audit before you click" page |
 | `GET /pk` | Current public key + key ID (JSON) — the CLI uses this to seal |
 
@@ -170,7 +178,7 @@ repo and **imports the same codec/seal/sandbox modules the worker uses** so
 link formats can never drift. Commands:
 
 ```
-smartlinks build <script.js|script.ts> [--interstitial] [--interstitial-note TEXT] [--secret NAME[=value]] [--expires 7d]
+smartlinks build <script.js|script.ts> [--interstitial] [--interstitial-note TEXT] [--secret NAME[=value]] [--expires 7d] [--allow-* SOURCE] [--cors]
     # strictly type-check .ts input, transpile, compress + encode; fetch /pk
     # and HPKE-seal secrets bound to the script and expiry. --copy or --out
     # keeps the finished link out of terminal output while reporting its size.
@@ -180,7 +188,7 @@ smartlinks build <script.js|script.ts> [--interstitial] [--interstitial-note TEX
 smartlinks decode <link | payload>
     # print the pretty-printed script + envelope metadata
 
-smartlinks run <script.js|script.ts> [--param a=1 ...] [--method POST] [--body ...]
+smartlinks run <script.js|script.ts> [--param a=1 ...] [--method POST] [--body ...] [--allow-* SOURCE] [--cors]
     # type-check .ts input and execute locally in the same QuickJS sandbox as
     # production, with fake ctx; secrets provided via env. Prints the mapped
     # response. ctx.compile uses ephemeral local encryption; run follows and

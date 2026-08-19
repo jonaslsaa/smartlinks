@@ -1,8 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isCrawlerRequest, isPreviewRequest } from "../shared/bots.js";
+import { type BrowserPolicy, isEmbeddable } from "../shared/browser-policy.js";
+import { toBase64Url } from "../shared/bytes.js";
 import { decodePayload } from "../shared/codec.js";
 import { MAX_REQUEST_BODY_BYTES, RequestBodyTooLargeError } from "../shared/request-context.js";
-import { hardenResponse, markPreviewResponse } from "../shared/response-security.js";
+import {
+  credentialFreeCorsResponse,
+  hardenResponse,
+  markPreviewResponse,
+} from "../shared/response-security.js";
 import { createLocalRuntime, type LocalRuntime } from "./local-run.js";
 import {
   executeLocalPayloadRequest,
@@ -135,15 +141,39 @@ async function webRequest(request: IncomingMessage, origin: string): Promise<Req
   return new Request(url, init);
 }
 
-function validateBrowserBoundary(request: IncomingMessage, origin: string): void {
+function validateBrowserBoundary(
+  request: IncomingMessage,
+  origin: string,
+  policy: { browser?: BrowserPolicy; cors: boolean },
+): void {
   if (request.headers.host !== new URL(origin).host) {
     throw new ServeRequestError(400, "The Host header does not match the local server.");
   }
-  if (request.headers.origin !== undefined && request.headers.origin !== origin) {
+  const requestOrigin = request.headers.origin;
+  const opaqueNavigation =
+    requestOrigin === "null" && request.headers["sec-fetch-mode"] === "navigate";
+  if (
+    requestOrigin !== undefined &&
+    requestOrigin !== origin &&
+    !opaqueNavigation &&
+    !policy.cors
+  ) {
     throw new ServeRequestError(403, "Cross-origin requests are not allowed.");
   }
   const fetchSite = request.headers["sec-fetch-site"];
-  if (fetchSite !== undefined && fetchSite !== "none" && fetchSite !== "same-origin") {
+  const crossSiteEmbedding =
+    (request.method === "GET" || request.method === "HEAD") &&
+    (request.headers["sec-fetch-dest"] === "iframe" ||
+      request.headers["sec-fetch-dest"] === "frame") &&
+    isEmbeddable(policy.browser);
+  if (
+    fetchSite !== undefined &&
+    fetchSite !== "none" &&
+    fetchSite !== "same-origin" &&
+    !opaqueNavigation &&
+    !crossSiteEmbedding &&
+    !policy.cors
+  ) {
     throw new ServeRequestError(403, "Cross-site requests are not allowed.");
   }
 }
@@ -163,21 +193,23 @@ function errorResponse(error: unknown, accept: string | undefined): Response {
   if (accept?.includes("text/html")) {
     return localPage("Smartlinks local error", "The local Smartlink did not run", message, status);
   }
-  return Response.json(
-    { error: message },
-    {
-      status,
-      headers: {
-        "cache-control": "no-store",
-        "cross-origin-resource-policy": "same-origin",
-        "x-content-type-options": "nosniff",
+  return hardenResponse(
+    Response.json(
+      { error: message },
+      {
+        status,
+        headers: {
+          "cache-control": "no-store",
+          "cross-origin-resource-policy": "same-origin",
+          "x-content-type-options": "nosniff",
+        },
       },
-    },
+    ),
   );
 }
 
-function runnerPayload(pathname: string): string | undefined {
-  const prefix = "/r/";
+function runnerPayload(pathname: string, servicePath: string): string | undefined {
+  const prefix = `${servicePath}/r/`;
   if (!pathname.startsWith(prefix)) {
     return undefined;
   }
@@ -206,24 +238,41 @@ async function handleRequest(
   incoming: IncomingMessage,
   outgoing: ServerResponse,
   origin: string,
+  entryPath: string,
   options: ServeOptions,
   runtime: LocalRuntime | undefined,
 ): Promise<void> {
+  let cors = false;
   try {
-    validateBrowserBoundary(incoming, origin);
+    const incomingUrl = new URL(incoming.url ?? "/", origin);
+    const isEntry = incomingUrl.pathname === entryPath;
+    const payload = isEntry ? undefined : runnerPayload(incomingUrl.pathname, entryPath);
+    const artifact = payload === undefined ? undefined : decodePayload(payload);
+    const browserBoundary = {
+      cors: artifact?.envelope.cors === true || (isEntry && options.cors === true),
+      ...(artifact?.envelope.browser
+        ? { browser: artifact.envelope.browser }
+        : isEntry && options.browser
+          ? { browser: options.browser }
+          : {}),
+    };
+    cors = browserBoundary.cors;
+    validateBrowserBoundary(incoming, origin, browserBoundary);
     const request = await webRequest(incoming, origin);
-    const { pathname } = new URL(request.url);
+    const { pathname } = incomingUrl;
     if (pathname === "/favicon.ico") {
       await writeResponse(incoming.method, outgoing, new Response(null, { status: 204 }));
       return;
     }
-    const payload = runnerPayload(pathname);
-    if (pathname !== "/" && payload === undefined) {
-      throw new ServeRequestError(404, "Only the root and locally compiled paths are served.");
+    if (!isEntry && payload === undefined) {
+      throw new ServeRequestError(
+        404,
+        "Only the private entry URL and locally compiled paths are served.",
+      );
     }
     const allowCrawlers =
       payload !== undefined && isCrawlerRequest(request)
-        ? decodePayload(payload).envelope.allowCrawlers === true
+        ? artifact?.envelope.allowCrawlers === true
         : false;
     if (isPreviewRequest(request, allowCrawlers)) {
       await writeResponse(
@@ -249,17 +298,25 @@ async function handleRequest(
       outgoing.destroy(error instanceof Error ? error : undefined);
       return;
     }
-    await writeResponse(incoming.method, outgoing, errorResponse(error, incoming.headers.accept));
+    const response = errorResponse(error, incoming.headers.accept);
+    await writeResponse(
+      incoming.method,
+      outgoing,
+      cors ? credentialFreeCorsResponse(response) : response,
+    );
   }
 }
 
 export async function serveLocalScript(options: ServeOptions): Promise<void> {
   let origin = "";
   let runtime: LocalRuntime | undefined;
+  const entryPath = `/local/${toBase64Url(crypto.getRandomValues(new Uint8Array(18)))}`;
   const server = createServer((request, response) => {
-    void handleRequest(request, response, origin, options, runtime).catch((error: unknown) => {
-      response.destroy(error instanceof Error ? error : undefined);
-    });
+    void handleRequest(request, response, origin, entryPath, options, runtime).catch(
+      (error: unknown) => {
+        response.destroy(error instanceof Error ? error : undefined);
+      },
+    );
   });
   server.headersTimeout = 10_000;
   server.requestTimeout = 20_000;
@@ -294,13 +351,13 @@ export async function serveLocalScript(options: ServeOptions): Promise<void> {
       allowNetwork: options.allowNetwork,
       blockedHostnames: options.blockedHostnames,
       followCompiledLinks: false,
-      service: origin,
+      service: `${origin}${entryPath}`,
     });
   } catch (error) {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     throw error;
   }
-  options.onListen(origin);
+  options.onListen(`${origin}${entryPath}`);
 
   await new Promise<void>((resolve, reject) => {
     let stopping = false;

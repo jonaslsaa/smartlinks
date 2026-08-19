@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { isBodylessStatus } from "./http-status.js";
-import { hardenResponse } from "./response-security.js";
+import {
+  type GuestResponseSecurity,
+  hardenGuestResponse,
+  hardenResponse,
+} from "./response-security.js";
 
 export const MAX_BINARY_RESPONSE_BYTES = 1_048_576;
 
@@ -97,7 +101,7 @@ function decodeBase64Body(value: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-export function mapScriptResult(input: unknown): Response {
+export function mapScriptResult(input: unknown, security?: GuestResponseSecurity): Response {
   const result = parseScriptResult(input);
   if (result === undefined) {
     return hardenResponse(
@@ -116,7 +120,8 @@ export function mapScriptResult(input: unknown): Response {
     if (url.protocol !== "http:" && url.protocol !== "https:") {
       throw new Error("A redirect result must use http: or https:.");
     }
-    return hardenResponse(Response.redirect(url.href, 302));
+    const response = Response.redirect(url.href, 302);
+    return security ? hardenGuestResponse(response, security) : hardenResponse(response);
   }
 
   const headers = new Headers(result.headers);
@@ -132,5 +137,6 @@ export function mapScriptResult(input: unknown): Response {
   const body = isBodylessStatus(status)
     ? null
     : (binaryBody?.buffer ?? ("body" in result ? result.body : undefined) ?? "");
-  return hardenResponse(new Response(body, { status, headers }));
+  const response = new Response(body, { status, headers });
+  return security ? hardenGuestResponse(response, security) : hardenResponse(response);
 }

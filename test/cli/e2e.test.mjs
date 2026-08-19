@@ -26,6 +26,17 @@ function assertRuntimeSecurityHeaders(headers) {
   assert.equal(get("x-frame-options"), "DENY");
 }
 
+function assertGuestSecurityHeaders(headers) {
+  const get = (name) =>
+    typeof headers.get === "function" ? headers.get(name) : (headers[name] ?? null);
+  const policy = get("content-security-policy") ?? "";
+  assert.match(policy, /(?:^|, )default-src 'none'; sandbox /u);
+  assert.doesNotMatch(policy, /allow-same-origin/u);
+  assert.equal(get("referrer-policy"), "no-referrer");
+  assert.equal(get("x-content-type-options"), "nosniff");
+  assert.equal(get("x-frame-options"), "DENY");
+}
+
 function fingerprint(value) {
   return `sha256:${createHash("sha256").update(value).digest("hex").slice(0, 12)}`;
 }
@@ -63,12 +74,12 @@ async function startServe(script, args = [], options = {}) {
     stderr += chunk;
   });
 
-  const origin = await new Promise((resolve, reject) => {
+  const url = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       reject(new Error(`Serve mode did not start. stdout=${stdout} stderr=${stderr}`));
     }, 10_000);
     const inspectOutput = () => {
-      const match = stdout.match(/ at (http:\/\/127\.0\.0\.1:\d+)/u);
+      const match = stdout.match(/ at (http:\/\/127\.0\.0\.1:\d+\/local\/[A-Za-z0-9_-]+)/u);
       if (!match?.[1]) {
         return;
       }
@@ -92,8 +103,9 @@ async function startServe(script, args = [], options = {}) {
 
   return {
     child,
-    origin,
+    origin: new URL(url).origin,
     output: () => ({ stdout, stderr }),
+    url,
   };
 }
 
@@ -114,6 +126,7 @@ async function requestWithHeaders(url, headers) {
       response.once("end", () => {
         resolve({
           body: Buffer.concat(chunks).toString("utf8"),
+          headers: response.headers,
           status: response.statusCode,
         });
       });
@@ -149,12 +162,29 @@ test("the built CLI exposes its version and public subcommands", async () => {
     buildHelp.stdout,
     /--out <file>\s+write the link privately and print a\s+fingerprint receipt/u,
   );
+  for (const option of [
+    "allow-script",
+    "allow-connect",
+    "allow-image",
+    "allow-style",
+    "allow-font",
+    "allow-media",
+    "allow-frame",
+    "allow-form",
+    "allow-embed",
+    "referrer",
+    "cors",
+  ]) {
+    assert.match(buildHelp.stdout, new RegExp(`--${option}\\b`, "u"));
+  }
 
   const runHelp = await runCli(["help", "run"]);
   assert.match(runHelp.stdout, /--no-type-check\b/u);
   assert.match(runHelp.stdout, /--serve\b/u);
   assert.match(runHelp.stdout, /--port <number>/u);
   assert.match(runHelp.stdout, /--simulate\b/u);
+  assert.match(runHelp.stdout, /--allow-script\b/u);
+  assert.match(runHelp.stdout, /--cors\b/u);
 
   const decodeHelp = await runCli(["help", "decode"]);
   assert.match(decodeHelp.stdout, /<link-or-payload\|->/u);
@@ -231,7 +261,7 @@ return {
     assert.equal(response.headers["set-cookie"], undefined);
     assert.equal(response.headers["x-smartlinks-preview"], undefined);
     assert.equal(response.headers["x-smartlinks-e2e"], "run");
-    assertRuntimeSecurityHeaders(response.headers);
+    assertGuestSecurityHeaders(response.headers);
     const received = JSON.parse(response.body);
     assert.match(received.requestId, /^[0-9a-f-]{36}$/u);
     delete received.requestId;
@@ -403,7 +433,7 @@ return {
       env: { SMARTLINKS_URL: "http://127.0.0.1:1" },
     });
     try {
-      const first = await fetch(`${server.origin}/?tag=one&tag=two&__confirm=1`, {
+      const first = await fetch(`${server.url}?tag=one&tag=two&__confirm=1`, {
         method: "POST",
         headers: { "content-type": "text/plain", "x-trace": "browser-request" },
         body: "hello",
@@ -413,7 +443,7 @@ return {
       assert.ok(
         first.headers.get("content-security-policy")?.includes("img-src https://images.example"),
       );
-      assertRuntimeSecurityHeaders(first.headers);
+      assertGuestSecurityHeaders(first.headers);
       assert.deepEqual(await first.json(), {
         params: { tag: "two" },
         paramValues: { tag: ["one", "two"] },
@@ -423,7 +453,7 @@ return {
         secret: "local-secret",
       });
 
-      const oversized = await fetch(server.origin, {
+      const oversized = await fetch(server.url, {
         method: "POST",
         body: "x".repeat(1_048_577),
       });
@@ -436,14 +466,14 @@ return {
       const missing = await fetch(`${server.origin}/asset.css`);
       assert.equal(missing.status, 404);
 
-      const crossSite = await fetch(server.origin, {
+      const crossSite = await fetch(server.url, {
         headers: { accept: "text/html", origin: "https://attacker.example" },
       });
       assert.equal(crossSite.status, 403);
       assert.match(await crossSite.text(), /Cross-origin requests are not allowed/u);
 
       for (const fetchSite of ["same-site", "cross-site"]) {
-        const blocked = await requestWithHeaders(server.origin, {
+        const blocked = await requestWithHeaders(server.url, {
           accept: "text/html",
           "sec-fetch-site": fetchSite,
         });
@@ -451,12 +481,12 @@ return {
         assert.match(blocked.body, /Cross-site requests are not allowed/u, fetchSite);
       }
 
-      const wrongHost = await requestWithHeaders(server.origin, { host: "attacker.example" });
+      const wrongHost = await requestWithHeaders(server.url, { host: "attacker.example" });
       assert.equal(wrongHost.status, 400);
       assert.match(wrongHost.body, /Host header does not match/u);
 
       await writeFile(script, 'const value: number = "wrong";\nreturn { body: value };\n');
-      const typeError = await fetch(server.origin, { headers: { accept: "text/html" } });
+      const typeError = await fetch(server.url, { headers: { accept: "text/html" } });
       assert.equal(typeError.status, 422);
       const typeErrorBody = await typeError.text();
       assert.match(typeErrorBody, /Local Smartlinks preview/u);
@@ -467,37 +497,37 @@ return {
         script,
         `return { headers: { "content-type": "text/html" }, body: ${JSON.stringify(html)} };\n`,
       );
-      const edited = await fetch(server.origin);
+      const edited = await fetch(server.url);
       assert.equal(edited.status, 200);
       assert.equal(await edited.text(), html);
 
       await writeFile(script, 'return "https://example.com/next";\n');
-      const redirect = await fetch(server.origin, { redirect: "manual" });
+      const redirect = await fetch(server.url, { redirect: "manual" });
       assert.equal(redirect.status, 302);
       assert.equal(redirect.headers.get("location"), "https://example.com/next");
-      assertRuntimeSecurityHeaders(redirect.headers);
+      assertGuestSecurityHeaders(redirect.headers);
 
       await writeFile(
         script,
         'await fetch("https://example.com");\nreturn { body: "unreachable" };\n',
       );
-      const networkBlocked = await fetch(server.origin);
+      const networkBlocked = await fetch(server.url);
       assert.equal(networkBlocked.status, 422);
       assert.match((await networkBlocked.json()).error, /Network access is disabled/u);
 
       await writeFile(script, 'throw new Error("HEAD must not execute");\n');
-      const head = await fetch(server.origin, { method: "HEAD" });
+      const head = await fetch(server.url, { method: "HEAD" });
       assert.equal(head.status, 200);
       assert.equal(head.headers.get("x-smartlinks-preview"), "1");
       assert.equal(await head.text(), "");
 
-      const prefetch = await fetch(server.origin, { headers: { purpose: "prefetch" } });
+      const prefetch = await fetch(server.url, { headers: { purpose: "prefetch" } });
       assert.equal(prefetch.status, 200);
       assert.equal(prefetch.headers.get("x-smartlinks-preview"), "1");
       assert.equal(await prefetch.text(), "");
 
       await writeFile(script, "const completed = true;\n");
-      const defaultPage = await fetch(server.origin, { headers: { accept: "text/html" } });
+      const defaultPage = await fetch(server.url, { headers: { accept: "text/html" } });
       assert.equal(defaultPage.status, 200);
       assert.equal(defaultPage.headers.get("x-smartlinks-preview"), null);
       assertRuntimeSecurityHeaders(defaultPage.headers);
@@ -507,12 +537,16 @@ return {
         script,
         'const child = async (_childCtx: typeof ctx, name: string) => ({ body: "compiled:" + name });\nreturn ctx.compile(child, [ctx.params.name ?? "world"], { allowCrawlers: true });\n',
       );
-      const compiledRedirect = await fetch(`${server.origin}/?name=Browser`, {
+      const compiledRedirect = await fetch(`${server.url}?name=Browser`, {
         redirect: "manual",
       });
       assert.equal(compiledRedirect.status, 302);
       const compiledLocation = compiledRedirect.headers.get("location");
-      assert.ok(compiledLocation?.startsWith(`${server.origin}/r/`));
+      assert.ok(compiledLocation?.startsWith(`${server.url}/r/`));
+
+      const compiledPayload = new URL(compiledLocation).pathname.split("/").at(-1);
+      const unprefixed = await fetch(`${server.origin}/r/${compiledPayload}`);
+      assert.equal(unprefixed.status, 404);
 
       const compiled = await fetch(compiledLocation);
       assert.equal(compiled.status, 200);
@@ -558,10 +592,10 @@ return {
 };
 `,
       );
-      const parentPage = await fetch(server.origin);
+      const parentPage = await fetch(server.url);
       assert.equal(parentPage.status, 200);
       const childHref = (await parentPage.text()).match(/href="([^"]+)"/u)?.[1];
-      assert.ok(childHref?.startsWith(`${server.origin}/r/`));
+      assert.ok(childHref?.startsWith(`${server.url}/r/`));
       assert.equal(childHref.includes("smartlinks.local"), false);
 
       await writeFile(
@@ -571,7 +605,7 @@ return {
       const childPage = await fetch(childHref);
       assert.equal(childPage.status, 200);
       const leafHref = (await childPage.text()).match(/href="([^"]+)"/u)?.[1];
-      assert.ok(leafHref?.startsWith(`${server.origin}/r/`));
+      assert.ok(leafHref?.startsWith(`${server.url}/r/`));
 
       const leafUrl = new URL(leafHref);
       leafUrl.searchParams.set("query", "clicked");
@@ -596,7 +630,7 @@ return {
         script,
         `return { bodyBase64: ${JSON.stringify(binary.toString("base64"))} };\n`,
       );
-      const binaryResponse = await fetch(server.origin);
+      const binaryResponse = await fetch(server.url);
       assert.equal(binaryResponse.headers.get("content-type"), "application/octet-stream");
       assert.deepEqual(Buffer.from(await binaryResponse.arrayBuffer()), binary);
     } finally {
@@ -628,6 +662,116 @@ test("run --serve rejects one-shot request flags", async () => {
     assert.match(error.stderr, /option '--allow-network' cannot be used with option '--simulate'/u);
     return true;
   });
+});
+
+test("run --serve applies browser capabilities and CORS with production semantics", async () => {
+  await withTemporaryScript(
+    "js",
+    'return { headers: { "x-local": "yes" }, body: "browser" };\n',
+    async (script) => {
+      const server = await startServe(script, [
+        "--allow-script",
+        "https",
+        "--allow-embed",
+        "all",
+        "--referrer",
+        "full",
+        "--cors",
+      ]);
+      try {
+        const preflight = await fetch(server.url, {
+          method: "OPTIONS",
+          headers: {
+            origin: "https://caller.example",
+            "access-control-request-method": "POST",
+            "access-control-request-headers": "content-type",
+          },
+        });
+        assert.equal(preflight.status, 204);
+        assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
+
+        const response = await fetch(server.url, {
+          headers: { origin: "https://caller.example", "sec-fetch-site": "cross-site" },
+        });
+        const policy = response.headers.get("content-security-policy") ?? "";
+        assert.equal(response.status, 200);
+        assert.match(policy, /sandbox /u);
+        assert.doesNotMatch(policy, /allow-same-origin/u);
+        assert.match(policy, /script-src [^;]* https:/u);
+        assert.doesNotMatch(policy, /frame-ancestors/u);
+        assert.equal(response.headers.get("x-frame-options"), null);
+        assert.equal(response.headers.get("referrer-policy"), "unsafe-url");
+        assert.equal(response.headers.get("access-control-allow-origin"), "*");
+        assert.equal(await response.text(), "browser");
+      } finally {
+        await stopServe(server);
+      }
+    },
+  );
+});
+
+test("run --serve leaves exact-origin embedding decisions to the browser CSP", async () => {
+  await withTemporaryScript("js", 'return { body: "embedded" };\n', async (script) => {
+    const server = await startServe(script, ["--allow-embed", "https://host.example"]);
+    try {
+      const guessedRoot = await requestWithHeaders(server.origin, {
+        "sec-fetch-dest": "iframe",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "cross-site",
+      });
+      assert.equal(guessedRoot.status, 403);
+
+      const response = await requestWithHeaders(server.url, {
+        "sec-fetch-dest": "iframe",
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-site": "cross-site",
+      });
+      assert.equal(response.status, 200);
+      assert.match(
+        response.headers["content-security-policy"] ?? "",
+        /frame-ancestors https:\/\/host\.example/u,
+      );
+      assert.equal(response.body, "embedded");
+    } finally {
+      await stopServe(server);
+    }
+  });
+});
+
+test("run --serve keeps opted-in failures readable to cross-origin callers", async () => {
+  await withTemporaryScript("js", 'throw new Error("guest failure");\n', async (script) => {
+    const server = await startServe(script, ["--cors"]);
+    try {
+      const response = await fetch(server.url, {
+        headers: { origin: "https://caller.example" },
+      });
+      assert.equal(response.status, 422);
+      assert.equal(response.headers.get("access-control-allow-origin"), "*");
+      assertRuntimeSecurityHeaders(response.headers);
+      assert.deepEqual(await response.json(), { error: "guest failure" });
+    } finally {
+      await stopServe(server);
+    }
+  });
+});
+
+test("build rejects invalid browser policy combinations before producing a link", async () => {
+  await assert.rejects(
+    runCli(["build", "missing.ts", "--interstitial", "--allow-embed", "https://host.example"]),
+    (error) => {
+      assert.equal(error.stdout, "");
+      assert.match(error.stderr, /cannot be used with option '-i, --interstitial'/u);
+      return true;
+    },
+  );
+  await assert.rejects(
+    runCli(["build", "missing.ts", "--allow-script", "https://cdn.example/path"]),
+    (error) => {
+      assert.equal(error.stdout, "");
+      assert.match(error.stderr, /exact HTTPS origins without paths/u);
+      return true;
+    },
+  );
 });
 
 test("build output round-trips through decode as a URL and raw payload", async () => {
@@ -675,6 +819,17 @@ return "https://example.com/" + name;
                 "--interstitial-note",
                 "  Deploys\n the reviewed release  ",
                 "--allow-crawlers",
+                "--allow-script",
+                "self",
+                "--allow-script",
+                "https://cdn.example",
+                "--allow-connect",
+                "https",
+                "--allow-image",
+                "all",
+                "--referrer",
+                "origin",
+                "--cors",
                 "--expires",
                 "2100-01-01T00:00:00Z",
                 "--no-minify",
@@ -694,6 +849,13 @@ return "https://example.com/" + name;
         assert.equal(built.expired, false);
         assert.equal(built.interstitialNote, "Deploys the reviewed release");
         assert.equal(built.allowCrawlers, true);
+        assert.deepEqual(built.browser, {
+          scripts: ["https://cdn.example", "self"],
+          connect: ["https"],
+          images: ["all"],
+          referrer: "origin",
+        });
+        assert.equal(built.cors, true);
         assert.equal(built.characters, built.link.length);
         assert.equal(built.fits, true);
         assert.equal(typeof built.payloadCharacters, "number");
@@ -706,6 +868,8 @@ return "https://example.com/" + name;
         assert.equal(decodedFromUrl.payloadVersion, 2);
         assert.equal(decodedFromUrl.interstitial, true);
         assert.equal(decodedFromUrl.allowCrawlers, true);
+        assert.deepEqual(decodedFromUrl.browser, built.browser);
+        assert.equal(decodedFromUrl.cors, true);
         assert.equal(decodedFromUrl.compileClosures, 2);
         assert.equal(decodedFromUrl.closures.length, 2);
         assert.match(decodedFromUrl.closures[0], /first-sentinel/u);
